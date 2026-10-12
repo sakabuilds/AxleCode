@@ -1,4 +1,4 @@
-import { EnvironmentId, UNSCOPED_CHAT_PROJECT_ID } from "@axle/contracts";
+import { UNSCOPED_CHAT_PROJECT_ID } from "@axle/contracts";
 import { scopeProjectRef } from "@axle/client-runtime/environment";
 import { createFileRoute } from "@tanstack/react-router";
 import { RotateCcwIcon } from "lucide-react";
@@ -42,10 +42,9 @@ function IndexDraftLanding() {
   );
   const unscopedProjectRef = useMemo(
     () =>
-      scopeProjectRef(
-        primaryEnvironmentId ?? EnvironmentId.make("local"),
-        UNSCOPED_CHAT_PROJECT_ID,
-      ),
+      primaryEnvironmentId === null
+        ? null
+        : scopeProjectRef(primaryEnvironmentId, UNSCOPED_CHAT_PROJECT_ID),
     [primaryEnvironmentId],
   );
   const startProjectRef = useMemo(
@@ -57,7 +56,7 @@ function IndexDraftLanding() {
   );
 
   useEffect(() => {
-    if (!bootstrapped || startingRef.current) {
+    if (!bootstrapped || startProjectRef === null || startingRef.current) {
       return;
     }
     startingRef.current = true;

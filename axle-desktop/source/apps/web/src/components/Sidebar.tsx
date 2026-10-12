@@ -53,7 +53,6 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   type ContextMenuItem,
   DEFAULT_SERVER_SETTINGS,
-  EnvironmentId,
   ProjectId,
   type ScopedThreadRef,
   type ResolvedKeybindingsConfig,
@@ -3985,15 +3984,24 @@ export default function Sidebar() {
     shortcutLabelForCommand(keybindings, "chat.new", newThreadShortcutLabelOptions);
   const unscopedChatProjectRef = useMemo(
     () =>
-      scopeProjectRef(
-        primaryEnvironmentId ?? EnvironmentId.make("local"),
-        UNSCOPED_CHAT_PROJECT_ID,
-      ),
+      primaryEnvironmentId === null
+        ? null
+        : scopeProjectRef(primaryEnvironmentId, UNSCOPED_CHAT_PROJECT_ID),
     [primaryEnvironmentId],
   );
   const handleNewChat = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
+    }
+    if (unscopedChatProjectRef === null) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "Still connecting",
+          description: "The local environment is starting up. Try again in a moment.",
+        }),
+      );
+      return;
     }
     void handleNewThread(unscopedChatProjectRef, { envMode: "local" }).catch((error) => {
       toastManager.add(
