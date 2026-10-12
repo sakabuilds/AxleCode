@@ -1,0 +1,50 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$ExpectedVersion,
+    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot)
+)
+
+$packageFiles = @(
+    'axle-desktop/source/apps/server/package.json',
+    'axle-desktop/source/apps/desktop/package.json',
+    'axle-desktop/source/apps/web/package.json',
+    'axle-desktop/source/packages/contracts/package.json'
+)
+
+$mismatches = [System.Collections.Generic.List[string]]::new()
+$cargoToml = Join-Path $RepoRoot 'Cargo.toml'
+$cargoVersion = Select-String -Path $cargoToml -Pattern '^version\s*=\s*"([^"]+)"' |
+    Select-Object -First 1 -ExpandProperty Matches |
+    Select-Object -ExpandProperty Groups |
+    Where-Object Name -eq 1 |
+    Select-Object -ExpandProperty Value
+if ($cargoVersion -ne $ExpectedVersion) {
+    $mismatches.Add("Cargo.toml: expected $ExpectedVersion, found $cargoVersion")
+}
+
+foreach ($relativePath in $packageFiles) {
+    $path = Join-Path $RepoRoot $relativePath
+    $manifest = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+    if ($manifest.version -ne $ExpectedVersion) {
+        $mismatches.Add("$relativePath`: expected $ExpectedVersion, found $($manifest.version)")
+    }
+}
+
+$cargoLock = Get-Content -Raw -LiteralPath (Join-Path $RepoRoot 'Cargo.lock')
+foreach ($packageName in @('axle_agent', 'axle_ai', 'axle_cli', 'axle_compaction', 'axle_config', 'axle_extensions', 'axle_prompt', 'axle_session', 'axle_tools')) {
+    $escapedName = [regex]::Escape($packageName)
+    $pattern = '(?ms)\[\[package\]\]\s+name = "' + $escapedName + '"\s+version = "([^"]+)"'
+    $match = [regex]::Match($cargoLock, $pattern)
+    if (-not $match.Success -or $match.Groups[1].Value -ne $ExpectedVersion) {
+        $found = if ($match.Success) { $match.Groups[1].Value } else { '<missing>' }
+        $mismatches.Add("Cargo.lock/$packageName`: expected $ExpectedVersion, found $found")
+    }
+}
+
+if ($mismatches.Count -gt 0) {
+    $mismatches | ForEach-Object { Write-Error $_ }
+    exit 1
+}
+
+Write-Output "Release parity OK: $ExpectedVersion"
