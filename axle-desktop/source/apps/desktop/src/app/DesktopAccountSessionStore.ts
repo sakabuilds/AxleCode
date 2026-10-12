@@ -8,6 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as OptionModule from "effect/Option";
 import * as Path from "effect/Path";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
@@ -62,9 +63,8 @@ const make = Effect.gen(function* () {
     }
     const document = yield* readDocument.pipe(Effect.orElseSucceed(() => OptionModule.none()));
     if (OptionModule.isNone(document)) return OptionModule.none<string>();
-    const encrypted = yield* Encoding.decodeBase64(document.value.encryptedToken).pipe(
-      Effect.orElseSucceed(() => new Uint8Array()),
-    );
+    const decoded = Encoding.decodeBase64(document.value.encryptedToken);
+    const encrypted = Result.isSuccess(decoded) ? decoded.success : new Uint8Array();
     if (encrypted.byteLength === 0) return OptionModule.none<string>();
     return yield* safeStorage.decryptString(encrypted).pipe(
       Effect.map(OptionModule.some),
@@ -96,7 +96,7 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => undefined),
     );
     const temporaryPath = `${accountSessionPath}.${process.pid}.tmp`;
-    yield* fileSystem.writeFileString(temporaryPath, `${encoded}\n`).pipe(
+    const persisted = yield* fileSystem.writeFileString(temporaryPath, `${encoded}\n`).pipe(
       Effect.flatMap(() => fileSystem.chmod(temporaryPath, 0o600)),
       Effect.flatMap(() => fileSystem.rename(temporaryPath, accountSessionPath)),
       Effect.ensuring(
@@ -104,7 +104,10 @@ const make = Effect.gen(function* () {
           .remove(temporaryPath, { force: true })
           .pipe(Effect.orElseSucceed(() => undefined)),
       ),
+      Effect.as(true),
+      Effect.orElseSucceed(() => false),
     );
+    if (!persisted) return false;
     yield* fileSystem.chmod(accountSessionPath, 0o600).pipe(
       Effect.orElseSucceed(() => undefined),
     );

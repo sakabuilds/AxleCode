@@ -356,8 +356,8 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
     const layer = DesktopWindow.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          desktopAssetsLayer,
-          desktopEnvironmentLayer,
+          makeDesktopAssetsLayer(),
+          makeDesktopEnvironmentLayer(),
           DesktopAppSettings.layerTest(),
           desktopServerExposureLayer,
           electronMenuLayer,

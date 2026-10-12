@@ -399,8 +399,14 @@ async function revokePluginSession(request, env) {
   if (!isOpaqueToken(token)) {
     return fail("Axle session is missing or expired.", 401, "unauthorized");
   }
-  // Logout clears the persistent client token. Keep this path off KV so auth
-  // remains available after the namespace's daily quota is exhausted.
+  // Logout clears the persistent client token. Best-effort cleanup of any
+  // legacy KV-backed session keeps older tokens from being replayed, while a
+  // missing store or an exhausted KV quota must not break logout.
+  try {
+    await bestEffortDelete(requireStore(env), `session:${await sha256(token)}`);
+  } catch {
+    // KV is not configured; logout still succeeds.
+  }
   return json({ revoked: true });
 }
 
