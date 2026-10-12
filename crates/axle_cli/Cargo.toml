@@ -1,0 +1,32 @@
+[package]
+name = "axle_cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "axle"
+path = "src/main.rs"
+
+[dependencies]
+axle_ai = { path = "../axle_ai" }
+axle_tools = { path = "../axle_tools" }
+axle_memory = { path = "../axle_memory" }
+axle_session = { path = "../axle_session" }
+axle_compaction = { path = "../axle_compaction" }
+axle_prompt = { path = "../axle_prompt" }
+axle_extensions = { path = "../axle_extensions" }
+axle_agent = { path = "../axle_agent" }
+axle_config = { path = "../axle_config" }
+tokio.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+dotenvy.workspace = true
+base64.workspace = true
