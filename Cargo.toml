@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/axle_config",
+    "crates/axle_ai",
+    "crates/axle_tools",
+    "crates/axle_session",
+    "crates/axle_memory",
+    "crates/axle_compaction",
+    "crates/axle_prompt",
+    "crates/axle_extensions",
+    "crates/axle_agent",
+    "crates/axle_cli",
+]
+
+[workspace.package]
+version = "1.1.22"
+edition = "2021"
+authors = ["Axle Team"]
+
+[workspace.dependencies]
+tokio = { version = "1.38", features = ["full"] }
+tokio-stream = "0.1"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+async-trait = "0.1"
+futures = "0.3"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+base64 = "0.22"
+rand = "0.8"
+sha2 = "0.10"
+url = "2.5"
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+uuid = { version = "1.8", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+jsonwebtoken = "9"
+regex = "1.10"
+glob = "0.3"
+walkdir = "2.5"
+ignore = "0.4"
+similar = "2.6"
+boa_engine = "0.19"
+
+clap = { version = "4.5", features = ["derive"] }
+dotenvy = "0.15"
+toml = "0.9"
