@@ -24,6 +24,7 @@ import * as Arr from "effect/Array";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Result from "effect/Result";
+import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import {
   canCheckForUpdate,
@@ -40,6 +41,10 @@ import { useTheme } from "../../hooks/useTheme";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
+import {
+  desktopNetworkAccessStateAtom,
+  refreshDesktopNetworkAccessState,
+} from "../../state/desktopNetworkAccess";
 import {
   getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
@@ -969,6 +974,8 @@ export function GeneralSettingsPanel() {
         />
       </SettingsSection>
 
+      {isElectron ? <RemoteAccessSettingsSection /> : null}
+
       <SettingsSection title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (
           <AboutVersionSection />
@@ -989,6 +996,147 @@ export function GeneralSettingsPanel() {
         />
       </SettingsSection>
     </SettingsPageContainer>
+  );
+}
+
+function RemoteAccessSettingsSection() {
+  const networkAccess = useAtomValue(desktopNetworkAccessStateAtom);
+  const [isChangingMode, setIsChangingMode] = useState(false);
+  const [isChangingTailscale, setIsChangingTailscale] = useState(false);
+  const snapshot = AsyncResult.getOrElse(networkAccess, () => null);
+  const exposure = snapshot?.serverExposureState ?? null;
+  const isNetworkAccessible = exposure?.mode === "network-accessible";
+
+  const handleModeChange = useCallback(
+    (nextEnabled: boolean) => {
+      const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
+      if (!bridge || exposure === null || isChangingMode) {
+        return;
+      }
+      if (nextEnabled === isNetworkAccessible) {
+        return;
+      }
+      const confirmed = window.confirm(
+        nextEnabled
+          ? "Turn on remote access? Axle will restart and this server will also be reachable from your local network."
+          : "Turn off remote access? Axle will restart and this server will only be reachable from this computer.",
+      );
+      if (!confirmed) {
+        return;
+      }
+      setIsChangingMode(true);
+      void bridge
+        .setServerExposureMode(nextEnabled ? "network-accessible" : "local-only")
+        .then(() => {
+          refreshDesktopNetworkAccessState();
+          toastManager.add(
+            stackedThreadToast({
+              type: "info",
+              title: nextEnabled ? "Remote access is on" : "Remote access is off",
+              description: "Axle is restarting to apply the new network mode.",
+            }),
+          );
+        })
+        .catch(() => {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not change remote access",
+              description: "Axle couldn't update the network mode. Try again.",
+            }),
+          );
+        })
+        .finally(() => {
+          setIsChangingMode(false);
+        });
+    },
+    [exposure, isChangingMode, isNetworkAccessible],
+  );
+
+  const handleTailscaleChange = useCallback(
+    (nextEnabled: boolean) => {
+      const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
+      if (!bridge || exposure === null || isChangingTailscale) {
+        return;
+      }
+      if (nextEnabled === exposure.tailscaleServeEnabled) {
+        return;
+      }
+      const confirmed = window.confirm(
+        nextEnabled
+          ? "Share this server over Tailscale? Axle will restart and run Tailscale Serve."
+          : "Stop sharing over Tailscale? Axle will restart and remove Tailscale Serve.",
+      );
+      if (!confirmed) {
+        return;
+      }
+      setIsChangingTailscale(true);
+      void bridge
+        .setTailscaleServeEnabled({ enabled: nextEnabled })
+        .then(() => {
+          refreshDesktopNetworkAccessState();
+          toastManager.add(
+            stackedThreadToast({
+              type: "info",
+              title: nextEnabled ? "Tailscale sharing is on" : "Tailscale sharing is off",
+              description: "Axle is restarting to apply the change.",
+            }),
+          );
+        })
+        .catch(() => {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Could not change Tailscale sharing",
+              description: "Axle couldn't update Tailscale Serve. Check that Tailscale is running.",
+            }),
+          );
+        })
+        .finally(() => {
+          setIsChangingTailscale(false);
+        });
+    },
+    [exposure, isChangingTailscale],
+  );
+
+  const endpointDescription =
+    exposure === null
+      ? "Checking this computer's network settings..."
+      : isNetworkAccessible
+        ? (exposure.endpointUrl ?? "Reachable from other devices on your local network.")
+        : "This server is only reachable from this computer.";
+
+  return (
+    <SettingsSection title="Remote access">
+      <SettingsRow
+        title="Share on local network"
+        description={endpointDescription}
+        control={
+          <Switch
+            checked={isNetworkAccessible}
+            disabled={exposure === null || isChangingMode}
+            onCheckedChange={(checked) => handleModeChange(Boolean(checked))}
+            aria-label="Share on local network"
+          />
+        }
+      />
+      <SettingsRow
+        title="Share over Tailscale"
+        description={
+          exposure?.tailscaleServeEnabled === true
+            ? `Tailscale Serve is on (port ${exposure.tailscaleServePort}).`
+            : "Serve this server to other devices on your tailnet with Tailscale."
+        }
+        control={
+          <Switch
+            checked={exposure?.tailscaleServeEnabled ?? false}
+            disabled={exposure === null || isChangingTailscale}
+            onCheckedChange={(checked) => handleTailscaleChange(Boolean(checked))}
+            aria-label="Share over Tailscale"
+          />
+        }
+      />
+    </SettingsSection>
   );
 }
 
