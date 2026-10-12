@@ -1,0 +1,26 @@
+[package]
+name = "axle_tools"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+
+[dependencies]
+axle_ai = { path = "../axle_ai" }
+axle_memory = { path = "../axle_memory" }
+axle_config = { path = "../axle_config" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+regex.workspace = true
+walkdir.workspace = true
+glob.workspace = true
+similar.workspace = true
+reqwest.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile = "3.8"
