@@ -346,8 +346,8 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "$AXLE_LINUX_GPG_PRIVATE_KEY" || -z "$AXLE_LINUX_GPG_KEY_ID" ]]; then
-            echo "Linux signing requires AXLE_LINUX_GPG_PRIVATE_KEY and AXLE_LINUX_GPG_KEY_ID repository secrets." >&2
-            exit 1
+            echo "::warning title=Linux AppImage signing skipped::AXLE_LINUX_GPG_PRIVATE_KEY / AXLE_LINUX_GPG_KEY_ID are not configured; publishing an unsigned AppImage. Add both repository secrets to enable signed Linux builds."
+            exit 0
           fi
           key_path="$RUNNER_TEMP/axle-linux-signing-key.asc"
           if [[ "$AXLE_LINUX_GPG_PRIVATE_KEY" == "-----BEGIN"* ]]; then
