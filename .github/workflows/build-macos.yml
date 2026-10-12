@@ -29,8 +29,20 @@ jobs:
       - name: Test platform update routes
         run: npm --prefix axle-download-worker test
 
-  build-macos-x64:
+  prepare-release:
     needs: test-update-feeds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure GitHub release exists (tag builds only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 || \
+            gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --title "Axle ${GITHUB_REF_NAME}" --draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  build-macos-x64:
+    needs: [test-update-feeds, prepare-release]
     runs-on: macos-14
     defaults:
       run:
@@ -125,7 +137,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-macos-arm64:
-    needs: test-update-feeds
+    needs: [test-update-feeds, prepare-release]
     runs-on: macos-latest
     defaults:
       run:
@@ -220,7 +232,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-linux-x64:
-    needs: test-update-feeds
+    needs: [test-update-feeds, prepare-release]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -381,7 +393,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   build-windows:
-    needs: test-update-feeds
+    needs: [test-update-feeds, prepare-release]
     runs-on: windows-latest
     defaults:
       run:
@@ -470,6 +482,6 @@ jobs:
     steps:
       - name: Finalize release
         run: |
-          gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest
+          gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false --prerelease=false --latest
         env:
           GH_TOKEN: ${{ github.token }}
