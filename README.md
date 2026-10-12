@@ -5,7 +5,7 @@
   Chat with it and it reads your code, edits files, runs commands, and shows you every change.</p>
 </div>
 
-![Axle running a coding task](axle-desktop/source/apps/marketing/public/updated-screenshot.webp)
+![Axle running a coding task](docs/images/app-screenshot.png)
 
 ## What is Axle?
 
