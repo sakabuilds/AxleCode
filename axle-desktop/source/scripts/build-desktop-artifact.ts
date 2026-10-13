@@ -1734,6 +1734,15 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     const stagedAxleDir = path.join(stageResourcesDir, "axle");
     yield* fs.makeDirectory(stagedAxleDir, { recursive: true });
     yield* fs.copyFile(axleBinary, path.join(stagedAxleDir, "axle"));
+  } else if (options.platform === "linux") {
+    const rustTarget =
+      options.arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu";
+    const targetedBinary = path.resolve(repoRoot, "../..", "target", rustTarget, "release", "axle");
+    const hostBinary = path.resolve(repoRoot, "../..", "target", "release", "axle");
+    const axleBinary = (yield* fs.exists(targetedBinary)) ? targetedBinary : hostBinary;
+    const stagedAxleDir = path.join(stageResourcesDir, "axle");
+    yield* fs.makeDirectory(stagedAxleDir, { recursive: true });
+    yield* fs.copyFile(axleBinary, path.join(stagedAxleDir, "axle"));
   }
 
   yield* assertPlatformBuildResources(
