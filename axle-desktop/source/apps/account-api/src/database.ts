@@ -1,9 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { neon } from "@neondatabase/serverless";
-import { readFileSync } from "node:fs";
+import * as NodeFS from "node:fs";
 
 import type { AccountApiConfig } from "./config.ts";
 import type { AccountPrincipal } from "./auth.ts";
+import { AccountDeviceConflictError, AccountSessionAccessError } from "./errors.ts";
 
 export interface AccountProfile {
   readonly userId: string;
@@ -91,12 +92,15 @@ export function createAccountDatabase(config: AccountApiConfig) {
     // The rebrand migration renames populated pre-rebrand tables before the
     // schema file runs, so `CREATE TABLE IF NOT EXISTS` never creates empty
     // replacements alongside the user's existing data.
-    const rebrandSql = readFileSync(
+    const rebrandSql = NodeFS.readFileSync(
       new URL("../migrations/002_rebrand_axle.sql", import.meta.url),
       "utf8",
     );
     await sql.unsafe(rebrandSql);
-    const schemaSql = readFileSync(new URL("../migrations/001_account.sql", import.meta.url), "utf8");
+    const schemaSql = NodeFS.readFileSync(
+      new URL("../migrations/001_account.sql", import.meta.url),
+      "utf8",
+    );
     await sql.unsafe(schemaSql);
   };
 
@@ -117,7 +121,7 @@ export function createAccountDatabase(config: AccountApiConfig) {
 
   const touchSession = async (principal: AccountPrincipal): Promise<void> => {
     if (!principal.sessionId) return;
-    await sql`
+    const accepted = await sql`
       INSERT INTO axle_account_sessions (
         session_id,
         user_id,
@@ -133,12 +137,14 @@ export function createAccountDatabase(config: AccountApiConfig) {
         now()
       )
       ON CONFLICT (session_id) DO UPDATE SET
-        user_id = excluded.user_id,
         issued_at = COALESCE(excluded.issued_at, axle_account_sessions.issued_at),
         expires_at = COALESCE(excluded.expires_at, axle_account_sessions.expires_at),
-        last_seen_at = now(),
-        revoked_at = NULL
+        last_seen_at = now()
+      WHERE axle_account_sessions.user_id = excluded.user_id
+        AND axle_account_sessions.revoked_at IS NULL
+      RETURNING session_id
     `;
+    if (accepted.length === 0) throw new AccountSessionAccessError();
   };
 
   const getAccount = async (userId: string): Promise<AccountSnapshot> => {
@@ -281,7 +287,7 @@ export function createAccountDatabase(config: AccountApiConfig) {
 
   const upsertDevice = async (userId: string, input: AccountDeviceInput): Promise<void> => {
     await ensureAccount(userId);
-    await sql`
+    const accepted = await sql`
       INSERT INTO axle_account_devices (
         device_id,
         user_id,
@@ -305,16 +311,18 @@ export function createAccountDatabase(config: AccountApiConfig) {
         now()
       )
       ON CONFLICT (device_id) DO UPDATE SET
-        user_id = excluded.user_id,
         label = COALESCE(excluded.label, axle_account_devices.label),
         device_type = excluded.device_type,
         platform = COALESCE(excluded.platform, axle_account_devices.platform),
         os_version = COALESCE(excluded.os_version, axle_account_devices.os_version),
         app_version = COALESCE(excluded.app_version, axle_account_devices.app_version),
         browser = COALESCE(excluded.browser, axle_account_devices.browser),
-        last_seen_at = now(),
-        revoked_at = NULL
+        last_seen_at = now()
+      WHERE axle_account_devices.user_id = excluded.user_id
+        AND axle_account_devices.revoked_at IS NULL
+      RETURNING device_id
     `;
+    if (accepted.length === 0) throw new AccountDeviceConflictError();
   };
 
   const recordUsageEvent = async (userId: string, input: UsageEventInput): Promise<boolean> => {
