@@ -1,13 +1,14 @@
 import type { EnvironmentId, ProviderInteractionMode } from "@axle/contracts";
-import { PlusIcon } from "lucide-react";
-import { memo } from "react";
+import { PaperclipIcon, PlusIcon, PencilRulerIcon, PlugIcon } from "lucide-react";
+import { memo, useRef } from "react";
+import { useNavigate } from "@tanstack/react-router";
 
 import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 
 /**
- * The + button deliberately does not own a separate menu. It asks the
- * composer to open the exact same path picker used by @ without changing the
- * prompt text.
+ * Context, connected apps, and planning share one keyboard-accessible entry point.
+ * File selection delegates to the same picker used by @.
  */
 export const ComposerAddMenu = memo(function ComposerAddMenu(props: {
   environmentId: EnvironmentId | null;
@@ -18,23 +19,48 @@ export const ComposerAddMenu = memo(function ComposerAddMenu(props: {
   onOpenPicker: () => void;
   onPlanMode: () => void;
 }) {
+  const navigate = useNavigate();
+  const openingPicker = useRef(false);
   return (
-    <Button
-      type="button"
-      size="icon-sm"
-      variant="ghost"
-      disabled={props.disabled}
-      aria-label="Add context"
-      data-composer-add-menu-trigger="true"
-      className="shrink-0 rounded-full text-muted-foreground/75 hover:text-foreground [&+[data-slot=separator]]:hidden"
-      onPointerDown={(event) => {
-        // Keep the editor selection/caret stable so the shared picker opens
-        // exactly where the user was already typing.
-        event.preventDefault();
+    <Menu
+      onOpenChange={(open) => {
+        if (open) openingPicker.current = false;
       }}
-      onClick={props.onOpenPicker}
     >
-      <PlusIcon className="size-4" aria-hidden />
-    </Button>
+      <MenuTrigger
+        render={<Button type="button" size="icon-sm" variant="ghost" />}
+        disabled={props.disabled}
+        aria-label="Add context and apps"
+        data-composer-add-menu-trigger="true"
+        className="size-8 shrink-0 rounded-full text-foreground/85 hover:bg-foreground/5 hover:text-foreground"
+      >
+        <PlusIcon className="size-5" strokeWidth={1.75} aria-hidden />
+      </MenuTrigger>
+      <MenuPopup
+        align="start"
+        side="top"
+        className="w-60"
+        finalFocus={() => (openingPicker.current ? false : undefined)}
+      >
+        <MenuItem
+          onClick={() => {
+            openingPicker.current = true;
+            props.onOpenPicker();
+          }}
+        >
+          <PaperclipIcon aria-hidden />
+          Add files or context
+        </MenuItem>
+        <MenuItem onClick={() => void navigate({ to: "/plugins" })}>
+          <PlugIcon aria-hidden />
+          Connect apps
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem disabled={props.interactionMode === "plan"} onClick={props.onPlanMode}>
+          <PencilRulerIcon aria-hidden />
+          {props.interactionMode === "plan" ? "Plan mode enabled" : "Plan before building"}
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
   );
 });
