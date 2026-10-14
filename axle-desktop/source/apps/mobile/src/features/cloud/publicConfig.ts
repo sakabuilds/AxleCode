@@ -20,6 +20,9 @@ export interface CloudPublicConfig {
   readonly relay: {
     readonly url: string | null;
   };
+  readonly accountApi: {
+    readonly url: string | null;
+  };
   readonly observability: {
     readonly tracesUrl: string | null;
     readonly tracesDataset: string | null;
@@ -71,6 +74,9 @@ export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig
     },
     relay: {
       url: normalizeSecureRelayUrl(trimNonEmpty(extra?.relay?.url) ?? ""),
+    },
+    accountApi: {
+      url: normalizeSecureUrl(extra?.accountApi?.url),
     },
     observability: {
       tracesUrl: normalizeSecureUrl(extra?.observability?.tracesUrl),
