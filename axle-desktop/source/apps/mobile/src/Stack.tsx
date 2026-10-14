@@ -19,6 +19,7 @@ import { ArchivedThreadsRouteScreen } from "./features/archive/ArchivedThreadsRo
 import { useAgentNotificationNavigation } from "./features/agent-awareness/notificationNavigation";
 import { AccountSettingsSheetDetentProvider } from "./features/cloud/AccountSettingsSheetDetent";
 import { ConnectOnboardingRouteScreen } from "./features/cloud/ConnectOnboardingRouteScreen";
+import { CloudJobsRouteScreen } from "./features/cloud/CloudJobsRouteScreen";
 import { useConnectOnboardingNavigation } from "./features/cloud/connectOnboardingNavigation";
 import { ThreadFilesTreeScreen, ThreadFileScreen } from "./features/files/ThreadFilesRouteScreen";
 import { AdaptiveWorkspaceLayout } from "./features/layout/AdaptiveWorkspaceLayout";
@@ -69,7 +70,7 @@ const HEADER_SCROLL_EDGE_EFFECTS = nativeHeaderScrollEdgeEffects(Platform.OS, Pl
 // background stay STATIC config while still adapting to appearance changes.
 const SHEET_BACKGROUND_COLOR =
   Platform.OS === "ios"
-    ? DynamicColorIOS({ light: "rgba(242, 242, 247, 0.98)", dark: "rgba(14, 14, 14, 0.98)" })
+    ? DynamicColorIOS({ light: "rgba(255, 255, 255, 0.99)", dark: "rgba(26, 26, 26, 0.99)" })
     : undefined;
 
 type AppScreenOptions = NativeStackNavigationOptions & {
@@ -502,6 +503,22 @@ export const RootStack = createNativeStackNavigator({
         presentation: "formSheet",
         sheetAllowedDetents: [0.6, 0.95],
         sheetGrabberVisible: true,
+      },
+    }),
+    CloudJobs: createNativeStackScreen({
+      screen: CloudJobsRouteScreen,
+      linking: "cloud-jobs",
+      options: {
+        title: "Cloud Jobs",
+        // Android: full page with an in-screen header; iOS: a tall sheet,
+        // matching the Environments route.
+        ...(Platform.OS === "android"
+          ? { presentation: "card" as const, headerShown: false }
+          : {
+              presentation: "formSheet" as const,
+              sheetAllowedDetents: [0.6, 0.95],
+              sheetGrabberVisible: true,
+            }),
       },
     }),
     Connections: createNativeStackScreen({
