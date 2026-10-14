@@ -19,6 +19,9 @@ describe("resolveCloudPublicConfig", () => {
       relay: {
         url: null,
       },
+      accountApi: {
+        url: null,
+      },
       observability: {
         tracesUrl: null,
         tracesDataset: null,
@@ -32,6 +35,7 @@ describe("resolveCloudPublicConfig", () => {
       resolveCloudPublicConfig({
         neonAuth: { url: " https://auth.example.test/ " },
         relay: { url: " https://relay.example.test/// " },
+        accountApi: { url: " https://accounts.example.test/ " },
         observability: {
           tracesUrl: " https://api.axiom.co/v1/traces ",
           tracesDataset: " mobile-traces ",
@@ -44,6 +48,9 @@ describe("resolveCloudPublicConfig", () => {
       },
       relay: {
         url: "https://relay.example.test",
+      },
+      accountApi: {
+        url: "https://accounts.example.test/",
       },
       observability: {
         tracesUrl: "https://api.axiom.co/v1/traces",
@@ -64,6 +71,9 @@ describe("resolveCloudPublicConfig", () => {
         url: "https://auth.example.test/",
       },
       relay: {
+        url: null,
+      },
+      accountApi: {
         url: null,
       },
       observability: {
@@ -113,5 +123,16 @@ describe("resolveCloudPublicConfig", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("rejects an insecure account API URL", () => {
+    const config = resolveCloudPublicConfig({
+      neonAuth: { url: "https://auth.example.test" },
+      relay: { url: "https://relay.example.test" },
+      accountApi: { url: "http://accounts.example.test" },
+    });
+    expect(config.accountApi.url).toBeNull();
+    expect(config.neonAuth.url).toBe("https://auth.example.test/");
+    expect(config.relay.url).toBe("https://relay.example.test");
   });
 });
