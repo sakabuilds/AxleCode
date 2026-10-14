@@ -20,20 +20,20 @@ export function renderVisibleWhitespace(value: string): string {
 }
 
 export function changeTone(change: ReviewRenderableLineRow["change"]): string {
-  if (change === "add") return "bg-emerald-500/10";
-  if (change === "delete") return "bg-rose-500/10";
+  if (change === "add") return "bg-success/8";
+  if (change === "delete") return "bg-danger";
   return "bg-card";
 }
 
 export function changeBarTone(change: ReviewRenderableLineRow["change"]): string {
-  if (change === "add") return "bg-emerald-400";
-  if (change === "delete") return "bg-rose-400";
+  if (change === "add") return "bg-success";
+  if (change === "delete") return "bg-danger-foreground";
   return "bg-border/50";
 }
 
 function diffHighlightColor(change: ReviewRenderableLineRow["change"]): string | undefined {
-  if (change === "add") return "rgba(16, 185, 129, 0.24)";
-  if (change === "delete") return "rgba(244, 63, 94, 0.24)";
+  if (change === "add") return "rgba(50, 132, 91, 0.24)";
+  if (change === "delete") return "rgba(194, 57, 57, 0.24)";
   return undefined;
 }
 
@@ -48,7 +48,7 @@ export function ReviewChangeBar(props: {
         <View>
           {Array.from({ length: Math.ceil(height / 2) }, (_, index) => (
             <View key={index}>
-              <View className="h-px w-[5px] bg-rose-400" />
+              <View className="h-px w-[5px] bg-danger-foreground" />
               <View className="h-px" />
             </View>
           ))}
