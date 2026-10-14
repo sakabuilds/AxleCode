@@ -154,7 +154,7 @@ export function ThreadWorkLog(props: {
                     <Text
                       className={cn(
                         "font-t3-medium text-foreground",
-                        iconIsDestructive && "text-rose-600 dark:text-rose-400",
+                        iconIsDestructive && "text-danger-foreground",
                       )}
                     >
                       {row.summary}
@@ -166,9 +166,7 @@ export function ThreadWorkLog(props: {
 
                   <View className="shrink-0 flex-row items-center gap-px">
                     {props.copiedRowId === row.id ? (
-                      <Text className="pr-1 font-t3-medium text-3xs text-emerald-600 dark:text-emerald-400">
-                        Copied
-                      </Text>
+                      <Text className="pr-1 font-t3-medium text-3xs text-success">Copied</Text>
                     ) : null}
                     <View className="h-4 w-4 items-center justify-center">
                       {canExpand ? (
@@ -205,7 +203,7 @@ export function ThreadWorkLog(props: {
               </Pressable>
 
               {expanded && row.fullDetail ? (
-                <View className="ml-7 border-l border-neutral-300/60 pb-1 pl-3 pt-0.5 dark:border-white/[0.12]">
+                <View className="ml-7 border-l border-border pb-1 pl-3 pt-0.5">
                   <ScrollView
                     nestedScrollEnabled
                     directionalLockEnabled
