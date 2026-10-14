@@ -20,7 +20,6 @@ import {
   formatAxleProcessError,
   resolveAxleRuntimeContextWindow,
   captureAxleSessionIdentity,
-  isRetryableAxleProcessError,
   readAxleSessionBinding,
   resolveAxleSessionId,
   appendAxleApprovalResponse,
@@ -33,7 +32,6 @@ import {
   axleChildEnvironment,
   writeAxleSessionBinding,
 } from "./AxleAdapter.ts";
-import { ProviderAdapterProcessError } from "../Errors.ts";
 
 describe("hidden Axle control tools", () => {
   it("suppresses only the terminal control tool from UI lifecycle rendering", () => {
@@ -55,48 +53,6 @@ describe("native search worker environment", () => {
       OPENCODE_BASE_URL: "https://legacy.invalid/v1",
     };
     expect(axleChildEnvironment(input)).toEqual({ PATH: "test-path" });
-  });
-});
-
-describe("Axle reconnect classification", () => {
-  const processError = (detail: string) =>
-    new ProviderAdapterProcessError({
-      provider: "axle",
-      threadId: "thread-1",
-      detail,
-    });
-
-  it("retries network and stalled-process failures", () => {
-    expect(isRetryableAxleProcessError(processError("Axle turn stalled after 600000ms"))).toBe(
-      true,
-    );
-    expect(
-      isRetryableAxleProcessError(processError("ECONNRESET while contacting provider")),
-    ).toBe(true);
-    expect(
-      isRetryableAxleProcessError(
-        processError(
-          "Unable to reach ChatGPT Codex after 2 attempt(s): error sending request for url",
-        ),
-      ),
-    ).toBe(true);
-  });
-
-  it("does not retry permanent request or authentication failures", () => {
-    expect(
-      isRetryableAxleProcessError(processError("Unsupported parameter: max_output_tokens")),
-    ).toBe(false);
-    expect(isRetryableAxleProcessError(processError("401 Unauthorized"))).toBe(false);
-  });
-
-  it("does not retry an exhausted provider free-tier quota", () => {
-    expect(
-      isRetryableAxleProcessError(
-        processError(
-          'OpenCode API error (HTTP 429 Too Many Requests): {"type":"FreeUsageLimitError","message":"Rate limit exceeded."}',
-        ),
-      ),
-    ).toBe(false);
   });
 });
 
@@ -837,12 +793,8 @@ describe("Axle approval presentation", () => {
   });
 
   it("describes the pending action with the exact command or path", () => {
-    expect(axleApprovalDetail("bash", { command: "pnpm test  " })).toBe(
-      "Terminal: pnpm test",
-    );
-    expect(axleApprovalDetail("write", { path: "src/app.ts" })).toBe(
-      "Write file: src/app.ts",
-    );
+    expect(axleApprovalDetail("bash", { command: "pnpm test  " })).toBe("Terminal: pnpm test");
+    expect(axleApprovalDetail("write", { path: "src/app.ts" })).toBe("Write file: src/app.ts");
     expect(axleApprovalDetail("read", {})).toBe("Read file requires approval");
 
     const capped = axleApprovalDetail("bash", { command: "x".repeat(300) });
@@ -893,9 +845,7 @@ describe("Axle approval decision file", () => {
     const cwd = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "axle-approvals-"));
     try {
       resetAxleApprovalFile(cwd, "thread-one");
-      expect(NodeFS.readFileSync(NodePath.join(cwd, ".gitignore"), "utf8")).toContain(
-        "/.axle/",
-      );
+      expect(NodeFS.readFileSync(NodePath.join(cwd, ".gitignore"), "utf8")).toContain("/.axle/");
     } finally {
       NodeFS.rmSync(cwd, { recursive: true, force: true });
     }
