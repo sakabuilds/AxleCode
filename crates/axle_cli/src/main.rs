@@ -75,6 +75,13 @@ struct Cli {
 
     #[arg(
         long,
+        value_parser = ["approval-required", "auto-accept-edits", "full-access"],
+        help = "Tool approval policy; supervised modes require --approval-file"
+    )]
+    runtime_mode: Option<String>,
+
+    #[arg(
+        long,
         help = "File used to answer tool approval requests; enables approval mode"
     )]
     approval_file: Option<String>,
@@ -406,9 +413,80 @@ async fn run_text_only(
     Ok(())
 }
 
+fn resolve_approval_config(cli: &Cli) -> anyhow::Result<Option<ApprovalConfig>> {
+    // With no explicit mode, preserve the standalone CLI's existing contract:
+    // supplying an approval file enables supervision; omitting it does not.
+    if cli.runtime_mode.as_deref() == Some("full-access") {
+        return Ok(None);
+    }
+    let file = cli
+        .approval_file
+        .as_deref()
+        .filter(|file| !file.trim().is_empty());
+    if cli.runtime_mode.is_some() && file.is_none() {
+        anyhow::bail!(
+            "--runtime-mode {} requires --approval-file",
+            cli.runtime_mode.as_deref().unwrap()
+        );
+    }
+    Ok(file.map(|file| ApprovalConfig {
+        file: PathBuf::from(file),
+        timeout: StdDuration::from_secs(cli.approval_timeout_seconds),
+        auto_accept_edits: cli.runtime_mode.as_deref() == Some("auto-accept-edits"),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_modes_require_a_channel_without_changing_legacy_defaults() {
+        assert!(
+            resolve_approval_config(&Cli::try_parse_from(["axle"]).unwrap())
+                .unwrap()
+                .is_none()
+        );
+        let legacy = Cli::try_parse_from(["axle", "--approval-file", "approval.jsonl"]).unwrap();
+        assert!(
+            !resolve_approval_config(&legacy)
+                .unwrap()
+                .unwrap()
+                .auto_accept_edits
+        );
+        for mode in ["approval-required", "auto-accept-edits"] {
+            let missing = Cli::try_parse_from(["axle", "--runtime-mode", mode]).unwrap();
+            assert!(resolve_approval_config(&missing)
+                .unwrap_err()
+                .to_string()
+                .contains("requires --approval-file"));
+            let configured = Cli::try_parse_from([
+                "axle",
+                "--runtime-mode",
+                mode,
+                "--approval-file",
+                "approval.jsonl",
+            ])
+            .unwrap();
+            assert_eq!(
+                resolve_approval_config(&configured)
+                    .unwrap()
+                    .unwrap()
+                    .auto_accept_edits,
+                mode == "auto-accept-edits"
+            );
+        }
+        let full = Cli::try_parse_from([
+            "axle",
+            "--runtime-mode",
+            "full-access",
+            "--approval-file",
+            "approval.jsonl",
+        ])
+        .unwrap();
+        assert!(resolve_approval_config(&full).unwrap().is_none());
+        assert!(Cli::try_parse_from(["axle", "--runtime-mode", "unknown-mode"]).is_err());
+    }
 
     fn profile(provider: Option<&str>, model: Option<&str>) -> AgentProfile {
         AgentProfile {
@@ -618,6 +696,9 @@ async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
 
     let cli = Cli::parse();
+    // Reject an incomplete permission policy before provider setup, session
+    // creation, or any tool work. Never degrade supervised execution to full access.
+    let approval = resolve_approval_config(&cli)?;
 
     if cli.codex_login {
         println!("{}", serde_json::to_string(&login_codex().await?)?);
@@ -1088,10 +1169,7 @@ async fn main() -> anyhow::Result<()> {
         context_window_tokens,
         memory_context,
         interaction_mode,
-        approval: cli.approval_file.as_ref().map(|file| ApprovalConfig {
-            file: PathBuf::from(file),
-            timeout: StdDuration::from_secs(cli.approval_timeout_seconds),
-        }),
+        approval,
     };
 
     let agent_loop = AgentLoop::new(provider, tool_registry, event_bus, loop_options);
