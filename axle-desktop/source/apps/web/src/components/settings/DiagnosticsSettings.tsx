@@ -94,7 +94,7 @@ function StatBlock({
 }) {
   return (
     <div className="min-w-0 border-border/60 px-4 py-3 sm:px-5">
-      <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/70">
+      <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <span className="min-w-0 truncate">{label}</span>
         {tooltip ? (
           <Tooltip>
@@ -224,7 +224,7 @@ function DiagnosticsTable({
             ))}
           </colgroup>
         ) : null}
-        <thead className="border-b border-border/60 text-[11px] uppercase tracking-[0.08em] text-muted-foreground/70">
+        <thead className="border-b border-border/60 text-xs text-muted-foreground">
           <tr>
             {headers.map((header, index) => (
               <th
@@ -452,7 +452,7 @@ function ProcessDiagnosticsTable({
           <col className="w-[11%]" />
           <col className="w-[6%]" />
         </colgroup>
-        <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-[11px] uppercase tracking-[0.08em] text-muted-foreground/70">
+        <thead className="sticky top-0 z-10 border-b border-border/60 bg-background text-xs text-muted-foreground">
           <tr>
             <th className="px-4 py-2 font-semibold sm:pl-5">Name</th>
             <th className="px-3 py-2 text-right font-semibold">CPU</th>
@@ -681,7 +681,7 @@ function ProcessResourceHistoryTable({
           <col className="w-[16%]" />
           <col className="w-[10%]" />
         </colgroup>
-        <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-[11px] uppercase tracking-[0.08em] text-muted-foreground/70">
+        <thead className="sticky top-0 z-10 border-b border-border/60 bg-background text-xs text-muted-foreground">
           <tr>
             <th className="px-4 py-2 font-semibold sm:pl-5">Process</th>
             <th className="px-3 py-2 text-right font-semibold">CPU Time</th>
@@ -1174,7 +1174,7 @@ export function DiagnosticsSettingsPanel() {
         ) : null}
       </SettingsSection>
 
-      <SettingsSection title="Latest Failures">
+      <SettingsSection title="Latest failures">
         {data && data.latestFailures.length > 0 ? (
           <DiagnosticsTable headers={["Span", "Cause", "Duration", "Ended"]}>
             {data.latestFailures.map((failure) => (
@@ -1199,7 +1199,7 @@ export function DiagnosticsSettingsPanel() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="Most Common Failures">
+      <SettingsSection title="Most common failures">
         {data && data.commonFailures.length > 0 ? (
           <DiagnosticsTable
             headers={["Span", "Count", "Cause", "Last Seen"]}
@@ -1229,7 +1229,7 @@ export function DiagnosticsSettingsPanel() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="Slowest Spans">
+      <SettingsSection title="Slowest spans">
         {data && data.slowestSpans.length > 0 ? (
           <DiagnosticsTable
             headers={["Span", "Duration", "Ended", "Trace"]}
@@ -1258,7 +1258,7 @@ export function DiagnosticsSettingsPanel() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="Span Logs">
+      <SettingsSection title="Span logs">
         {data && data.latestWarningAndErrorLogs.length > 0 ? (
           <ScrollArea
             chainVerticalScroll
@@ -1274,7 +1274,7 @@ export function DiagnosticsSettingsPanel() {
                 <col className="w-[26%]" />
                 <col className="w-[30%]" />
               </colgroup>
-              <thead className="border-b border-border/60 text-[11px] uppercase tracking-[0.08em] text-muted-foreground/70">
+              <thead className="border-b border-border/60 text-xs text-muted-foreground">
                 <tr>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold sm:pl-5">Time</th>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold">Level</th>
@@ -1322,7 +1322,7 @@ export function DiagnosticsSettingsPanel() {
         )}
       </SettingsSection>
 
-      <SettingsSection title="Top Span Names">
+      <SettingsSection title="Top span names">
         {data && data.topSpansByCount.length > 0 ? (
           <DiagnosticsTable
             headers={["Span", "Count", "Failures", "Average", "Max"]}
