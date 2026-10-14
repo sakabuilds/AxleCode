@@ -9,6 +9,7 @@ import {
 import { AccountAuthenticationError, type AccountPrincipal } from "./auth.ts";
 import { AccountSessionAccessError } from "./errors.ts";
 import type { CloudConfig } from "./cloudConfig.ts";
+import type { BillingConfig } from "./billingConfig.ts";
 import { CloudJobError, type CloudJobStore } from "./cloudStore.ts";
 
 const decodeCreate = Schema.decodeUnknownSync(CloudJobCreateInput);
@@ -20,13 +21,14 @@ const decodeUpdate = Schema.decodeUnknownSync(CloudWorkerUpdateInput);
 export function createCloudRequestHandler(options: {
   config: CloudConfig | null;
   store: CloudJobStore | null;
+  billing?: BillingConfig | null;
   authenticate: (request: Request) => Promise<AccountPrincipal>;
   touchSession: (principal: AccountPrincipal) => Promise<void>;
   corsOrigin: string;
 }) {
   const headers = {
     "access-control-allow-origin": options.corsOrigin,
-    "access-control-allow-headers": "authorization, content-type",
+    "access-control-allow-headers": "authorization, content-type, x-axle-admin",
     "access-control-allow-methods": "GET, POST, OPTIONS",
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
@@ -67,10 +69,26 @@ export function createCloudRequestHandler(options: {
         return json(200, await store.update(jobId, environmentId, parse(decodeUpdate, body)));
       }
 
+      if (url.pathname === "/v1/cloud/credits/grant") {
+        if (request.method !== "POST") return json(404, { error: "not_found" });
+        const adminToken = options.billing?.adminToken ?? "";
+        const supplied = request.headers.get("x-axle-admin") ?? "";
+        if (adminToken.length === 0 || !NodeCrypto.timingSafeEqual(
+          NodeCrypto.createHash("sha256").update(adminToken).digest(),
+          NodeCrypto.createHash("sha256").update(supplied).digest(),
+        )) return json(403, { error: "forbidden" });
+        const grant = parseGrant(await readJson(request));
+        return json(200, { userId: grant.userId, entryId: grant.entryId,
+          ...await store.grant(grant.userId, grant) });
+      }
+
       const principal = await options.authenticate(request);
       // Preserve account revocation checks for every protected cloud operation.
       await options.touchSession(principal);
       const baseRoute = url.pathname === "/v1/cloud/jobs";
+      if (url.pathname === "/v1/cloud/billing" && request.method === "GET") {
+        return json(200, await store.billing(principal.userId));
+      }
       if (baseRoute && request.method === "GET") return json(200, await store.list(principal.userId));
       if (baseRoute && request.method === "POST") {
         if (!config.allowedUserIds.includes(principal.userId)) return json(403, { error: "cloud_access_denied" });
@@ -96,6 +114,8 @@ export function createCloudRequestHandler(options: {
       if (error instanceof AccountAuthenticationError || error instanceof AccountSessionAccessError) return json(401, { error: "unauthorized" });
       if (error instanceof CloudJobError) {
         const status = error.code === "not_found" ? 404 :
+          ["insufficient_credits", "credit_account_missing"].includes(error.code) ? 402 :
+          error.code === "cloud_not_entitled" ? 403 :
           ["capacity_exceeded", "event_limit_exceeded"].includes(error.code) ? 429 :
           ["environment_unavailable", "model_unavailable"].includes(error.code) ? 422 :
           error.code.startsWith("invalid_") ? 400 : 409;
@@ -119,6 +139,14 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
     return parsed as Record<string, unknown>;
   } catch { throw new CloudJobError("invalid_request"); }
+}
+function parseGrant(body: Record<string, unknown>): { userId: string; entryId: string; amount: number; note?: string } {
+  const { userId, entryId, amount, note } = body;
+  if (typeof userId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/u.test(userId)) throw new CloudJobError("invalid_user_id");
+  if (typeof entryId !== "string") throw new CloudJobError("invalid_entry_id");
+  if (typeof amount !== "number") throw new CloudJobError("invalid_amount");
+  if (note !== undefined && (typeof note !== "string" || note.length > 512)) throw new CloudJobError("invalid_note");
+  return note === undefined ? { userId, entryId, amount } : { userId, entryId, amount, note };
 }
 function cursor(value: string | null, fallback: number, minimum: number, maximum: number): number {
   if (value === null) return fallback;
