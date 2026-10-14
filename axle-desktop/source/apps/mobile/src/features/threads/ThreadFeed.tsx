@@ -178,12 +178,12 @@ const MARKDOWN_COLORS = {
     codeText: "#262626",
     inlineCodeText: "#5f6368",
     horizontalRule: "rgba(0, 0, 0, 0.08)",
-    userBody: "#ffffff",
-    userCodeBackground: "rgba(255, 255, 255, 0.22)",
-    userCodeText: "#ffffff",
-    userInlineCodeText: "rgba(255, 255, 255, 0.82)",
-    userFenceBackground: "rgba(0, 0, 0, 0.16)",
-    userFenceText: "#ffffff",
+    userBody: "#202020",
+    userCodeBackground: "rgba(0, 0, 0, 0.06)",
+    userCodeText: "#202020",
+    userInlineCodeText: "#4d4d4d",
+    userFenceBackground: "rgba(0, 0, 0, 0.06)",
+    userFenceText: "#202020",
   },
   dark: {
     body: "#e5e5e5",
@@ -195,12 +195,12 @@ const MARKDOWN_COLORS = {
     codeText: "#e5e5e5",
     inlineCodeText: "#b8bcc2",
     horizontalRule: "rgba(255, 255, 255, 0.08)",
-    userBody: "#ffffff",
-    userCodeBackground: "rgba(255, 255, 255, 0.18)",
-    userCodeText: "#ffffff",
-    userInlineCodeText: "rgba(255, 255, 255, 0.82)",
-    userFenceBackground: "rgba(0, 0, 0, 0.28)",
-    userFenceText: "#ffffff",
+    userBody: "#ececec",
+    userCodeBackground: "rgba(255, 255, 255, 0.08)",
+    userCodeText: "#ececec",
+    userInlineCodeText: "#b9b9b9",
+    userFenceBackground: "rgba(255, 255, 255, 0.08)",
+    userFenceText: "#ececec",
   },
 } as const;
 
@@ -401,11 +401,11 @@ function MarkdownCodeBlock(props: {
 function useReviewCommentColors(): ReviewCommentColors {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === "dark";
-  const background = isDark ? "#151515" : "#ffffff";
-  const border = isDark ? "#2a2a2a" : "#d7d7d7";
-  const mutedBackground = isDark ? "#242424" : "#f2f2f2";
-  const text = isDark ? "#f3f3f3" : "#111111";
-  const mutedText = isDark ? "#8f8f8f" : "#666666";
+  const background = isDark ? "#1f1f1f" : "#ffffff";
+  const border = isDark ? "#2c2c2c" : "#e6e6e6";
+  const mutedBackground = isDark ? "#282828" : "#f5f5f5";
+  const text = isDark ? "#ececec" : "#202020";
+  const mutedText = isDark ? "#969696" : "#686868";
   const codeBackground = isDark ? "#0f0f0f" : "#ffffff";
 
   return useMemo(
@@ -732,8 +732,8 @@ function useMarkdownStyles(onLinkPress: (href: string) => void): MarkdownStyleSe
           codeColor: markdownUserCodeText,
           codeBackgroundColor: markdownUserCodeBg,
           codeBlockBackgroundColor: markdownUserFenceBg,
-          fileTextColor: "#ffffff",
-          skillTextColor: "#f0abfc",
+          fileTextColor: markdownUserBodyColor,
+          skillTextColor: inlineSkillForeground,
           quoteMarkerColor: markdownUserBodyColor,
           dividerColor: markdownUserBodyColor,
           fontSize: nativeMarkdownTypography.fontSize,
@@ -815,6 +815,7 @@ function renderFeedEntry(
 ) {
   const entry = info.item;
   const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
+  const userBubbleBorderColor = useThemeColor("--color-user-bubble-border");
 
   if (entry.type === "turn-fold") {
     return (
@@ -823,7 +824,7 @@ function renderFeedEntry(
         accessibilityState={{ expanded: entry.expanded }}
         onPress={() => props.onToggleTurnFold(entry.turnId)}
         hitSlop={4}
-        className="mb-3 min-h-11 flex-row items-center gap-2 border-b border-neutral-200/80 px-2 dark:border-white/[0.08]"
+        className="mb-3 min-h-11 flex-row items-center gap-2 border-b border-border px-2"
       >
         <Text className="font-t3-medium text-sm tabular-nums text-foreground-muted">
           {entry.label}
@@ -875,9 +876,10 @@ function renderFeedEntry(
           {...(enterAnimated ? { entering: FadeInUp.duration(220) } : {})}
         >
           <View
-            className="min-w-0 gap-2 rounded-[20px] px-3.5 py-2.5"
+            className="min-w-0 gap-2 rounded-2xl border px-3.5 py-2.5"
             style={{
               backgroundColor: userBubbleColor,
+              borderColor: userBubbleBorderColor,
               maxWidth: props.userBubbleMaxWidth,
               ...(hasReviewCommentContext ? { width: props.reviewCommentBubbleWidth } : null),
             }}
@@ -897,14 +899,14 @@ function renderFeedEntry(
                   key={attachment.id}
                   environmentId={props.environmentId}
                   attachmentId={attachment.id}
-                  className="aspect-[1.3] w-full rounded-[14px] bg-white/15"
+                  className="aspect-[1.3] w-full rounded-xl bg-subtle"
                   onPressImage={props.onPressImage}
                 />
               );
             })}
           </View>
           <View className="mt-1 flex-row items-center justify-end gap-1 pr-0.5">
-            <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
+            <Text className="font-t3-medium text-xs tabular-nums text-foreground-muted">
               {timestampLabel}
             </Text>
             {message.text.trim().length > 0 ? (
@@ -958,7 +960,7 @@ function renderFeedEntry(
               key={attachment.id}
               environmentId={props.environmentId}
               attachmentId={attachment.id}
-              className="mt-1.5 aspect-[1.3] w-full rounded-[18px] bg-neutral-200 dark:bg-neutral-800"
+              className="mt-1.5 aspect-[1.3] w-full rounded-2xl bg-subtle"
               onPressImage={props.onPressImage}
             />
           );
@@ -972,7 +974,7 @@ function renderFeedEntry(
               buttonSize={28}
               iconSize={13}
             />
-            <Text className="font-t3-medium text-xs tabular-nums text-neutral-600 dark:text-neutral-400">
+            <Text className="font-t3-medium text-xs tabular-nums text-foreground-muted">
               {timestampLabel}
             </Text>
           </View>
@@ -1116,7 +1118,7 @@ const ReviewCommentCard = memo(function ReviewCommentCard(props: {
 
   return (
     <View
-      className="w-full overflow-hidden rounded-[16px] border border-continuous"
+      className="w-full overflow-hidden rounded-xl border border-continuous"
       style={{
         backgroundColor: props.colors.background,
         borderColor: props.colors.border,
@@ -1127,7 +1129,7 @@ const ReviewCommentCard = memo(function ReviewCommentCard(props: {
         style={{ borderColor: props.colors.border }}
       >
         <View
-          className="size-6 items-center justify-center rounded-[7px] border-continuous"
+          className="size-6 items-center justify-center rounded-md border-continuous"
           style={{ backgroundColor: props.colors.mutedBackground }}
         >
           <SymbolView
