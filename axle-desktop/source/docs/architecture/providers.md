@@ -7,13 +7,13 @@ The web app communicates with the server via WebSocket using a simple JSON-RPC-s
 
 Push channels: `server.welcome`, `server.configUpdated`, `terminal.event`, `orchestration.domainEvent`. Payloads are schema-validated at the transport boundary (`wsTransport.ts`). Decode failures produce structured `WsDecodeDiagnostic` with `code`, `reason`, and path info.
 
-Methods mirror the `NativeApi` interface defined in `@t3tools/contracts`:
+Methods mirror the `NativeApi` interface defined in `@axle/contracts`:
 
 - `providers.startSession`, `providers.sendTurn`, `providers.interruptTurn`
 - `providers.respondToRequest`, `providers.stopSession`
 - `shell.openInEditor`, `server.getConfig`
 
-Codex is the only implemented provider. `claudeCode` is reserved in contracts/UI.
+The registered built-in provider is the aggregated `AxleDriver`. It routes through `AxleAdapter` to the Rust CLI and its provider transports. Standalone Codex and Claude adapters exist for compatibility but are not registered in `builtInDrivers.ts`. Catalog presence alone does not prove that credentials, tool support, or a provider endpoint are operational.
 
 ## Client transport
 
