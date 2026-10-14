@@ -214,7 +214,7 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
   }
 
   return (
-    <View className="absolute inset-x-3 bottom-28 top-28 overflow-hidden rounded-[8px] border border-white/10 bg-neutral-950 shadow-2xl">
+    <View className="absolute inset-x-3 bottom-28 top-28 overflow-hidden rounded-md border border-white/10 bg-neutral-950 shadow-2xl">
       <View className="flex-row items-center justify-between border-b border-white/10 px-3 py-2">
         <View className="min-w-0 flex-1">
           <Text className="font-t3-bold text-sm text-neutral-100" numberOfLines={1}>
@@ -231,7 +231,7 @@ export const ThreadTerminalPanel = memo(function ThreadTerminalPanel(
             </Text>
           ) : null}
           <Pressable
-            className="h-8 w-8 items-center justify-center rounded-[8px] bg-white/10"
+            className="h-8 w-8 items-center justify-center rounded-md bg-white/10"
             onPress={props.onClose}
           >
             <SymbolView name="xmark" size={13} tintColor="#e5e5e5" type="monochrome" />
