@@ -10,36 +10,22 @@ import Animated, {
 } from "react-native-reanimated";
 
 import type { RemoteClientConnectionState } from "../../lib/connection";
+import { useThemeColor } from "../../lib/useThemeColor";
 
 export type ConnectionStatusDotState = RemoteClientConnectionState;
 
-function statusDotTone(state: ConnectionStatusDotState): {
-  readonly dotColor: string;
-  readonly haloColor: string;
-} {
+function statusDotToken(state: ConnectionStatusDotState): `--color-${string}` {
   switch (state) {
-    case "available":
-      return {
-        dotColor: "#9ca3af",
-        haloColor: "rgba(156,163,175,0.42)",
-      };
     case "connected":
-      return {
-        dotColor: "#34d399",
-        haloColor: "rgba(52,211,153,0.48)",
-      };
+      return "--color-success";
     case "connecting":
     case "reconnecting":
-      return {
-        dotColor: "#f59e0b",
-        haloColor: "rgba(245,158,11,0.5)",
-      };
+      return "--color-warning";
+    case "available":
+      return "--color-foreground-tertiary";
     case "offline":
     case "error":
-      return {
-        dotColor: "#ef4444",
-        haloColor: "rgba(239,68,68,0.48)",
-      };
+      return "--color-danger-foreground";
   }
 }
 
@@ -75,7 +61,7 @@ export function ConnectionStatusDot(props: {
   readonly size?: number;
 }) {
   const pulseProgress = usePulseAnimation(props.pulse);
-  const tone = statusDotTone(props.state);
+  const dotColor = String(useThemeColor(statusDotToken(props.state)));
   const dotSize = props.size ?? 10;
   const haloSize = dotSize + 4;
   const containerSize = haloSize + 4;
@@ -102,7 +88,7 @@ export function ConnectionStatusDot(props: {
             width: haloSize,
             height: haloSize,
             borderRadius: haloSize / 2,
-            backgroundColor: tone.haloColor,
+            backgroundColor: dotColor,
           },
         ]}
       />
@@ -111,7 +97,7 @@ export function ConnectionStatusDot(props: {
           width: dotSize,
           height: dotSize,
           borderRadius: dotSize / 2,
-          backgroundColor: tone.dotColor,
+          backgroundColor: dotColor,
         }}
       />
     </View>
