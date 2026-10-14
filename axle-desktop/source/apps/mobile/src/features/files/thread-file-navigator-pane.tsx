@@ -149,7 +149,7 @@ export function ThreadFileNavigatorPane(props: {
             accessibilityRole="button"
             accessibilityLabel="Refresh files"
             hitSlop={8}
-            className="h-8 w-8 items-center justify-center rounded-full active:bg-subtle"
+            className="h-8 w-8 items-center justify-center rounded-lg active:bg-subtle"
             onPress={entriesQuery.refresh}
           >
             <SymbolView name="arrow.clockwise" size={14} tintColor={iconColor} type="monochrome" />
