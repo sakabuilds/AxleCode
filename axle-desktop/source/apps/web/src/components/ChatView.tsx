@@ -137,10 +137,12 @@ import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { RightPanelTabs } from "./RightPanelTabs";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
+import { ComposerProjectPicker } from "./chat/ComposerProjectPicker";
+import { ComposerPluginDock } from "./plugins/ComposerPluginDock";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import PlanSidebar from "./PlanSidebar";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
-import { ChevronDownIcon, WifiOffIcon } from "lucide-react";
+import { ChevronDownIcon, MonitorIcon, WifiOffIcon } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -5528,7 +5530,7 @@ function ChatViewContent(props: ChatViewProps) {
         <header
           data-chat-header
           className={cn(
-            "border-b border-border transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
+            "border-b border-transparent transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
             isElectron
               ? cn(
                   "workspace-topbar drag-region relative px-3 sm:px-5",
@@ -5621,6 +5623,29 @@ function ChatViewContent(props: ChatViewProps) {
                 hideEmptyPlaceholder={isDraftHeroState}
               />
 
+              {isDraftHeroState ? (
+                <div
+                  data-chat-draft-hero="true"
+                  className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-center px-3 pb-4 [@media(max-height:540px)]:hidden"
+                  style={{ bottom: composerOverlayHeight }}
+                >
+                  <div
+                    className="pointer-events-auto w-full"
+                    style={
+                      forceExpandedMobileComposer
+                        ? { viewTransitionName: MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME }
+                        : undefined
+                    }
+                  >
+                    <DraftHeroHeadline
+                      key={activeThread.id}
+                      activeProjectRef={activeProjectRef}
+                      activeProjectTitle={activeProject?.title ?? null}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && (
                 <div
@@ -5641,15 +5666,11 @@ function ChatViewContent(props: ChatViewProps) {
               )}
             </div>
 
-            {/* Input bar — centered hero while a draft has no messages, docked at the bottom otherwise */}
+            {/* The composer stays anchored as a draft becomes a conversation. */}
             <div
               ref={setComposerOverlayElement}
               data-chat-composer-overlay="true"
-              className={
-                isDraftHeroState
-                  ? "pointer-events-none absolute inset-0 z-20 flex items-center"
-                  : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
-              }
+              className="pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-2 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:pb-[calc(env(safe-area-inset-bottom)+1.5rem)]"
             >
               {!isDraftHeroState ? (
                 <div
@@ -5657,7 +5678,7 @@ function ChatViewContent(props: ChatViewProps) {
                   aria-hidden="true"
                   className="chat-composer-horizontal-inset pointer-events-none absolute inset-x-0 top-1.5 bottom-0 z-0 sm:top-2"
                 >
-                  <div className="relative mx-auto h-full w-full max-w-3xl overflow-clip rounded-t-xl">
+                  <div className="relative mx-auto h-full w-full max-w-[56rem] overflow-clip rounded-t-3xl">
                     <div className="chat-composer-shared-blur absolute -inset-8" />
                   </div>
                 </div>
@@ -5667,28 +5688,10 @@ function ChatViewContent(props: ChatViewProps) {
                 className="chat-composer-horizontal-inset w-full"
               >
                 <div className="pointer-events-auto relative z-10 isolate">
-                  {isDraftHeroState ? (
-                    <div className="absolute inset-x-0 bottom-full z-0">
-                      <div
-                        className="pb-5"
-                        style={
-                          forceExpandedMobileComposer
-                            ? {
-                                viewTransitionName: MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
-                              }
-                            : undefined
-                        }
-                      >
-                        <DraftHeroHeadline
-                          activeProjectRef={activeProjectRef}
-                          activeProjectTitle={activeProject?.title ?? null}
-                        />
-                      </div>
-                      <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
-                    </div>
-                  ) : (
-                    <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
-                  )}
+                  <ComposerBannerStack
+                    className="relative z-0 mx-auto max-w-[56rem]"
+                    items={composerBannerItems}
+                  />
                   <div
                     className="relative"
                     style={
@@ -5699,8 +5702,59 @@ function ChatViewContent(props: ChatViewProps) {
                   >
                     <div
                       ref={attachDraftHeroComposerAnchorRef}
-                      className="relative z-10 mx-auto w-full max-w-3xl"
+                      className="relative z-10 mx-auto w-full max-w-[56rem]"
                     >
+                      {workspaceContextEnabled && isGitRepo ? (
+                        <div className="mx-3" data-chat-composer-context-bar="true">
+                          <BranchToolbar
+                            environmentId={activeThread.environmentId}
+                            threadId={activeThread.id}
+                            {...(routeKind === "draft" && draftId ? { draftId } : {})}
+                            onEnvModeChange={onEnvModeChange}
+                            startFromOrigin={startFromOrigin}
+                            onStartFromOriginChange={onStartFromOriginChange}
+                            {...(canOverrideServerThreadEnvMode
+                              ? { effectiveEnvModeOverride: envMode }
+                              : {})}
+                            {...(canOverrideServerThreadEnvMode
+                              ? {
+                                  activeThreadBranchOverride: activeThreadBranch,
+                                  onActiveThreadBranchOverrideChange: setPendingServerThreadBranch,
+                                }
+                              : {})}
+                            envLocked={envLocked}
+                            onPluginSelect={addPluginToComposer}
+                            onComposerFocusRequest={scheduleComposerFocus}
+                            {...(canCheckoutPullRequestIntoThread
+                              ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+                              : {})}
+                            {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
+                            availableEnvironments={logicalProjectEnvironments}
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          data-chat-composer-context-bar="true"
+                          className="mx-3 flex min-h-11 items-center gap-3 rounded-t-2xl bg-[var(--composer-context-background)] px-3 pb-1 text-xs font-medium text-foreground/80"
+                        >
+                          <ComposerProjectPicker
+                            activeProjectRef={activeProject ? activeProjectRef : null}
+                            activeProjectTitle={activeProject?.title ?? null}
+                            draftId={routeKind === "draft" ? (draftId ?? null) : null}
+                          />
+                          <span className="inline-flex min-w-0 items-center gap-2 text-muted-foreground">
+                            <MonitorIcon className="size-3.5" aria-hidden />
+                            <span className="truncate">
+                              {activeThread.environmentId === primaryEnvironmentId
+                                ? "Local"
+                                : (activeEnvironment?.label ?? "No environment")}
+                            </span>
+                          </span>
+                          <div className="ml-auto">
+                            <ComposerPluginDock onPluginSelect={addPluginToComposer} />
+                          </div>
+                        </div>
+                      )}
                       <ChatComposer
                         composerRef={composerRef}
                         composerDraftTarget={composerDraftTarget}
@@ -5790,52 +5844,6 @@ function ChatViewContent(props: ChatViewProps) {
                         setThreadError={setThreadError}
                         onExpandImage={onExpandTimelineImage}
                       />
-                    </div>
-                    <div
-                      className={cn(
-                        "min-h-0",
-                        isDraftHeroState ? "absolute inset-x-0 top-full" : null,
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "chat-composer-lower-chrome relative z-10",
-                          isGitRepo
-                            ? "pb-[calc(env(safe-area-inset-bottom)+0.25rem)]"
-                            : "pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]",
-                        )}
-                      >
-                        {workspaceContextEnabled && isGitRepo && (
-                          <div className="pointer-events-auto">
-                            <BranchToolbar
-                              environmentId={activeThread.environmentId}
-                              threadId={activeThread.id}
-                              {...(routeKind === "draft" && draftId ? { draftId } : {})}
-                              onEnvModeChange={onEnvModeChange}
-                              startFromOrigin={startFromOrigin}
-                              onStartFromOriginChange={onStartFromOriginChange}
-                              {...(canOverrideServerThreadEnvMode
-                                ? { effectiveEnvModeOverride: envMode }
-                                : {})}
-                              {...(canOverrideServerThreadEnvMode
-                                ? {
-                                    activeThreadBranchOverride: activeThreadBranch,
-                                    onActiveThreadBranchOverrideChange:
-                                      setPendingServerThreadBranch,
-                                  }
-                                : {})}
-                              envLocked={envLocked}
-                              onPluginSelect={addPluginToComposer}
-                              onComposerFocusRequest={scheduleComposerFocus}
-                              {...(canCheckoutPullRequestIntoThread
-                                ? { onCheckoutPullRequestRequest: openPullRequestDialog }
-                                : {})}
-                              {...(hasMultipleEnvironments ? { onEnvironmentChange } : {})}
-                              availableEnvironments={logicalProjectEnvironments}
-                            />
-                          </div>
-                        )}
-                      </div>
                     </div>
                   </div>
                 </div>
