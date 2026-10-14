@@ -7,6 +7,7 @@ import * as NodeURL from "node:url";
 import { createAccountAuthenticator } from "./auth.ts";
 import { readAccountApiConfig } from "./config.ts";
 import { createAccountDatabase } from "./database.ts";
+import { readBillingConfig } from "./billingConfig.ts";
 import { readCloudConfig } from "./cloudConfig.ts";
 import { createCloudRequestHandler } from "./cloudHandler.ts";
 import { createCloudDatabase, createCloudJobStore } from "./cloudStore.ts";
@@ -19,10 +20,12 @@ const config = readAccountApiConfig();
 const database = createAccountDatabase(config);
 const authenticate = createAccountAuthenticator(config);
 const cloudConfig = readCloudConfig(NodeProcess.env);
+const billingConfig = readBillingConfig(NodeProcess.env);
 const cloudDatabase = cloudConfig ? createCloudDatabase(config.databaseUrl) : null;
 const handleCloudRequest = createCloudRequestHandler({
   config: cloudConfig,
-  store: cloudConfig && cloudDatabase ? createCloudJobStore(cloudDatabase.query, cloudConfig) : null,
+  billing: billingConfig,
+  store: cloudConfig && cloudDatabase ? createCloudJobStore(cloudDatabase.query, cloudConfig, billingConfig) : null,
   authenticate,
   touchSession: database.touchSession,
   corsOrigin: config.corsOrigin,
