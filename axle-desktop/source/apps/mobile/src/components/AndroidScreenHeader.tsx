@@ -31,7 +31,7 @@ export function AndroidHeaderIconButton(props: {
       hitSlop={8}
       onPress={props.onPress}
       className={cn(
-        "size-11 items-center justify-center rounded-full bg-subtle",
+        "size-11 items-center justify-center rounded-xl bg-subtle",
         props.disabled && "opacity-55",
       )}
     >
