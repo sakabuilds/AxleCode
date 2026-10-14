@@ -8,6 +8,8 @@ import type {
   CloudWorkerLeaseInput, CloudWorkerUpdateInput,
 } from "@axle/contracts";
 import type { CloudConfig, CloudEnvironment } from "./cloudConfig.ts";
+import type { BillingConfig, CloudJobEntitlement } from "./billingConfig.ts";
+import { resolveCloudJobEntitlement } from "./billingConfig.ts";
 
 export class CloudJobError extends Error {
   readonly code: string;
@@ -20,15 +22,34 @@ export class CloudJobError extends Error {
 
 export type CloudQuery = (operation: string, args: Record<string, unknown>) => Promise<unknown>;
 
+export interface CreditAccountView {
+  readonly planId: string;
+  readonly balance: number;
+  readonly updatedAt: string;
+}
+export interface CreditLedgerEntryView {
+  readonly entryId: number;
+  readonly kind: "monthly_grant" | "reservation" | "settlement" | "adjustment";
+  readonly amount: number;
+  readonly jobId: string | null;
+  readonly note: unknown;
+  readonly createdAt: string;
+}
+export interface CreditBillingView {
+  readonly account: CreditAccountView;
+  readonly entries: ReadonlyArray<CreditLedgerEntryView>;
+}
+
 export function createCloudDatabase(databaseUrl: string) {
   const sql = neon(databaseUrl);
   return {
     migrate: async () => {
       await sql.unsafe(NodeFS.readFileSync(new URL("../migrations/003_cloud_jobs.sql", import.meta.url), "utf8"));
+      await sql.unsafe(NodeFS.readFileSync(new URL("../migrations/004_credits.sql", import.meta.url), "utf8"));
     },
     query: async (operation: string, args: Record<string, unknown>): Promise<unknown> => {
       try {
-        const rows = await sql`SELECT axle_cloud_command(${operation}, ${JSON.stringify(args)}::JSONB) AS result`;
+        const rows = await sql`SELECT axle_cloud_command_atomic(${operation}, ${JSON.stringify(args)}::JSONB) AS result`;
         return rows[0]?.result;
       } catch (error) {
         if (error instanceof Error && /^AXLE_CLOUD:[a-z_]+$/u.test(error.message)) {
@@ -53,7 +74,10 @@ function canonical(value: unknown): unknown {
   return value;
 }
 
-export function createCloudJobStore(query: CloudQuery, config: CloudConfig) {
+export function createCloudJobStore(query: CloudQuery, config: CloudConfig,
+  billing: BillingConfig | null = null) {
+  const entitlementFor = (userId: string): CloudJobEntitlement | null =>
+    billing === null ? null : resolveCloudJobEntitlement(billing, userId);
   const environment = (id: string): CloudEnvironment => {
     const value = config.environments.find((item) => item.environmentId === id);
     if (!value) throw new CloudJobError("environment_unavailable");
@@ -74,8 +98,16 @@ export function createCloudJobStore(query: CloudQuery, config: CloudConfig) {
       if (!selected.providerModels.some((item) => item.providerInstanceId === input.providerInstanceId && item.model === input.model)) {
         throw new CloudJobError("model_unavailable");
       }
+      // Plan entitlement and the spend gate are resolved server-side; the client
+      // never supplies its plan, balance, or limits.
+      const entitlement = entitlementFor(userId);
+      if (entitlement !== null && !entitlement.cloudJobsEnabled) throw new CloudJobError("cloud_not_entitled");
       return await query("create", { userId, jobId: NodeCrypto.randomUUID(), input,
-        inputHash: cloudInputHash(input), limits: selected.limits, maxActiveJobsPerUser: config.maxActiveJobsPerUser,
+        inputHash: cloudInputHash(input), limits: selected.limits,
+        maxActiveJobsPerUser: entitlement === null ? config.maxActiveJobsPerUser
+          : Math.min(config.maxActiveJobsPerUser, entitlement.maxConcurrentJobs),
+        planId: entitlement?.planId ?? "operator", monthlyCredits: entitlement?.monthlyCredits ?? 0,
+        creditsPerMinute: billing?.creditsPerMinute ?? 0,
       }) as { job: CloudJob; created: boolean };
     },
     async list(userId: string): Promise<{ jobs: ReadonlyArray<CloudJob> }> {
@@ -92,6 +124,20 @@ export function createCloudJobStore(query: CloudQuery, config: CloudConfig) {
     },
     async respond(userId: string, jobId: string, input: CloudJobResponseInput): Promise<CloudJob> {
       return await query("respond", { userId, jobId, ...input, commandId: `user-${input.commandId}`, inputHash: cloudInputHash(input) }) as CloudJob;
+    },
+    async billing(userId: string): Promise<CreditBillingView> {
+      const entitlement = entitlementFor(userId);
+      return await query("billing", { userId, planId: entitlement?.planId ?? "operator",
+        monthlyCredits: entitlement?.monthlyCredits ?? 0 }) as CreditBillingView;
+    },
+    /** Operator grant; the entry id makes retries idempotent. */
+    async grant(userId: string, input: { entryId: string; amount: number; note?: unknown }): Promise<{ planId: string; balance: number }> {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/u.test(input.entryId)) throw new CloudJobError("invalid_entry_id");
+      if (!Number.isSafeInteger(input.amount) || input.amount <= 0) throw new CloudJobError("invalid_amount");
+      const entitlement = entitlementFor(userId);
+      return await query("grant", { userId, entryId: input.entryId, amount: input.amount,
+        note: input.note ?? null, planId: entitlement?.planId ?? "operator",
+        monthlyCredits: entitlement?.monthlyCredits ?? 0 }) as { planId: string; balance: number };
     },
     async claim(workerId: string, environmentId: string): Promise<CloudJobLease | null> {
       const selected = environment(environmentId);
