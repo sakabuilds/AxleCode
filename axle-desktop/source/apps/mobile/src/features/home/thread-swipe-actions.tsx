@@ -451,7 +451,7 @@ export function ThreadSwipeActions(props: {
     >
       <SwipeActionButton
         accessibilityLabel={props.primaryAction.accessibilityLabel}
-        backgroundColor="#007aff"
+        backgroundColor="#8f8f8f"
         entryRange={[ACTION_ITEM_WIDTH * 0.55, THREAD_SWIPE_ACTIONS_WIDTH * 0.85]}
         fullSwipeThreshold={props.fullSwipeThreshold}
         icon={props.primaryAction.icon}
@@ -462,7 +462,7 @@ export function ThreadSwipeActions(props: {
       />
       <SwipeActionButton
         accessibilityLabel={`Delete ${props.threadTitle}`}
-        backgroundColor="#ff2d55"
+        backgroundColor="#c23939"
         entryRange={[8, ACTION_ITEM_WIDTH * 0.72]}
         fullSwipeThreshold={props.fullSwipeThreshold}
         icon="trash"
