@@ -24,7 +24,7 @@ function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
     <Button
       size="xs"
       variant="outline"
-      className="no-drag h-7 gap-1.5 text-xs"
+      className="no-drag h-8 gap-1.5 rounded-lg text-xs"
       disabled={changedSettingLabels.length === 0}
       onClick={() => void restoreDefaults()}
     >
@@ -77,14 +77,14 @@ function SettingsContentLayout() {
         {!isElectron && (
           <header
             className={cn(
-              "border-b border-border px-3 py-2 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-5",
+              "border-b border-border/60 px-4 py-3 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none sm:px-6",
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
             <div className="flex min-h-8 items-center gap-2">
-              <span className="text-xs text-muted-foreground">Settings</span>
+              <span className="text-[13px] text-muted-foreground">Settings</span>
               <ChevronRightIcon className="size-3 text-muted-foreground/60" aria-hidden />
-              <span className="text-xs font-medium text-foreground">{currentSection}</span>
+              <span className="text-[13px] font-medium text-foreground">{currentSection}</span>
               {showRestoreDefaults ? (
                 <div className="ms-auto flex items-center gap-2">
                   <RestoreDefaultsButton onRestored={handleRestored} />
@@ -97,13 +97,13 @@ function SettingsContentLayout() {
         {isElectron && (
           <div
             className={cn(
-              "drag-region flex h-[52px] shrink-0 items-center border-b border-border px-5 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
+              "drag-region flex h-[56px] shrink-0 items-center border-b border-border/60 px-6 transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
-            <span className="text-xs text-muted-foreground">Settings</span>
+            <span className="text-[13px] text-muted-foreground">Settings</span>
             <ChevronRightIcon className="mx-2 size-3 text-muted-foreground/60" aria-hidden />
-            <span className="text-xs font-medium text-foreground">{currentSection}</span>
+            <span className="text-[13px] font-medium text-foreground">{currentSection}</span>
             {showRestoreDefaults ? (
               <div className="ms-auto flex items-center gap-2">
                 <RestoreDefaultsButton onRestored={handleRestored} />
