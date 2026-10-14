@@ -1,12 +1,13 @@
 import type { ScopedProjectRef } from "@axle/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@axle/client-runtime/environment";
 import { useLocation } from "@tanstack/react-router";
-import { ChevronDownIcon, FolderPlusIcon, TerminalIcon } from "lucide-react";
+import { ChevronDownIcon, FolderPlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useOpenAddProjectCommandPalette } from "~/commandPaletteContext";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useProjects, useThreadShells } from "~/state/entities";
+import { AxleLogo } from "../AxleLogo";
 import { sortScopedProjectsForSidebar } from "../Sidebar.logic";
 import { resolveDraftGreeting } from "./draftGreeting";
 import {
@@ -120,7 +121,7 @@ export function DraftHeroHeadline({
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col items-center px-4 text-center">
       <div aria-hidden="true" className="mb-7 text-muted-foreground/45 sm:mb-8">
-        <TerminalIcon className="size-11 sm:size-12" strokeWidth={1.25} />
+        <AxleLogo aria-hidden="true" className="size-11 sm:size-12" />
       </div>
       <h1 className="flex max-w-full flex-wrap items-baseline justify-center gap-x-2 text-[25px] font-semibold leading-snug tracking-[-0.035em] text-foreground sm:gap-x-2.5 sm:text-[32px]">
         <span>{greeting.text}</span>
