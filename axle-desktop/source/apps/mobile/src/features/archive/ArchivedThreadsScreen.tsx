@@ -1,7 +1,4 @@
-import type {
-  EnvironmentProject,
-  EnvironmentThreadShell,
-} from "@axle/client-runtime/state/shell";
+import type { EnvironmentProject, EnvironmentThreadShell } from "@axle/client-runtime/state/shell";
 import { LegendList } from "@legendapp/list/react-native";
 import type { EnvironmentId } from "@axle/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
@@ -179,7 +176,7 @@ function ArchivedThreadsHeader(props: {
               <Pressable
                 accessibilityLabel="Filter and sort archived threads"
                 accessibilityRole="button"
-                className="size-11 items-center justify-center rounded-full bg-subtle"
+                className="size-11 items-center justify-center rounded-xl bg-subtle"
               >
                 <SymbolView
                   name={
@@ -433,7 +430,7 @@ function ArchivedThreadRow(props: {
             borderBottomWidth: props.isLast ? 0 : 1,
           }}
         >
-          <View className="h-[34px] w-[34px] items-center justify-center rounded-[11px] bg-subtle">
+          <View className="h-[34px] w-[34px] items-center justify-center rounded-lg bg-subtle">
             <SymbolView name="archivebox.fill" size={15} tintColor={iconColor} type="monochrome" />
           </View>
 
@@ -474,7 +471,7 @@ function ArchivedThreadRow(props: {
 
 function ArchiveError(props: { readonly message: string; readonly onRetry: () => void }) {
   return (
-    <View className="rounded-[20px] border border-danger-border bg-danger p-4">
+    <View className="rounded-xl border border-danger-border bg-danger p-4">
       <Text className="text-base font-t3-bold text-danger-foreground">
         Could not load every archive
       </Text>
