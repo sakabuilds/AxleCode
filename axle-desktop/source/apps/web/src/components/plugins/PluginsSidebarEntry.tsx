@@ -19,7 +19,7 @@ export function PluginsSidebarEntry() {
       <SidebarMenuButton
         size="sm"
         isActive={pathname === "/plugins"}
-        className="h-9 gap-2 px-2.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="h-9 gap-2 px-2.5 rounded-2xl text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         data-testid="sidebar-plugins-trigger"
         aria-label="Open plugins"
         onClick={handleClick}
