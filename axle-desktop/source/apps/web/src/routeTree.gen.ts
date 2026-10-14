@@ -14,6 +14,7 @@ import { Route as SchedulesRouteImport } from './routes/schedules'
 import { Route as PullRequestsRouteImport } from './routes/pull-requests'
 import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as CloudJobsRouteImport } from './routes/cloud-jobs'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
@@ -52,6 +53,11 @@ const PluginsRoute = PluginsRouteImport.update({
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CloudJobsRoute = CloudJobsRouteImport.update({
+  id: '/cloud-jobs',
+  path: '/cloud-jobs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoute = ChatRouteImport.update({
@@ -127,6 +133,7 @@ const ChatEnvironmentIdThreadIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
+  '/cloud-jobs': typeof CloudJobsRoute
   '/onboarding': typeof OnboardingRoute
   '/plugins': typeof PluginsRoute
   '/pull-requests': typeof PullRequestsRoute
@@ -146,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
 }
 export interface FileRoutesByTo {
+  '/cloud-jobs': typeof CloudJobsRoute
   '/onboarding': typeof OnboardingRoute
   '/plugins': typeof PluginsRoute
   '/pull-requests': typeof PullRequestsRoute
@@ -168,6 +176,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
+  '/cloud-jobs': typeof CloudJobsRoute
   '/onboarding': typeof OnboardingRoute
   '/plugins': typeof PluginsRoute
   '/pull-requests': typeof PullRequestsRoute
@@ -191,6 +200,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/cloud-jobs'
     | '/onboarding'
     | '/plugins'
     | '/pull-requests'
@@ -210,6 +220,7 @@ export interface FileRouteTypes {
     | '/draft/$draftId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/cloud-jobs'
     | '/onboarding'
     | '/plugins'
     | '/pull-requests'
@@ -231,6 +242,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_chat'
+    | '/cloud-jobs'
     | '/onboarding'
     | '/plugins'
     | '/pull-requests'
@@ -253,6 +265,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
+  CloudJobsRoute: typeof CloudJobsRoute
   OnboardingRoute: typeof OnboardingRoute
   PluginsRoute: typeof PluginsRoute
   PullRequestsRoute: typeof PullRequestsRoute
@@ -295,6 +308,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cloud-jobs': {
+      id: '/cloud-jobs'
+      path: '/cloud-jobs'
+      fullPath: '/cloud-jobs'
+      preLoaderRoute: typeof CloudJobsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_chat': {
@@ -444,6 +464,7 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
+  CloudJobsRoute: CloudJobsRoute,
   OnboardingRoute: OnboardingRoute,
   PluginsRoute: PluginsRoute,
   PullRequestsRoute: PullRequestsRoute,
