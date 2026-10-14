@@ -31,7 +31,7 @@ export function GlassSurface({
   const glassTint = useThemeColor("--color-glass-tint");
   const supportsGlass = Platform.OS === "ios" && isGlassEffectAPIAvailable();
   const surfaceStyle: ViewStyle = {
-    borderRadius: 32,
+    borderRadius: 22,
     overflow: "hidden",
     borderWidth: chrome === "none" ? 0 : 1,
     borderColor: chrome === "none" ? "transparent" : borderColor,
