@@ -5660,7 +5660,6 @@ function ChatViewContent(props: ChatViewProps) {
                     className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:border-border hover:text-foreground hover:cursor-pointer"
                   >
                     <ChevronDownIcon className="size-3.5" />
-                    Scroll to end
                   </button>
                 </div>
               )}
@@ -5678,7 +5677,7 @@ function ChatViewContent(props: ChatViewProps) {
                   aria-hidden="true"
                   className="chat-composer-horizontal-inset pointer-events-none absolute inset-x-0 top-1.5 bottom-0 z-0 sm:top-2"
                 >
-                  <div className="relative mx-auto h-full w-full max-w-[56rem] overflow-clip rounded-t-3xl">
+                  <div className="relative mx-auto h-[120%] w-full max-w-[56rem] overflow-clip rounded-t-3xl">
                     <div className="chat-composer-shared-blur absolute -inset-8" />
                   </div>
                 </div>
