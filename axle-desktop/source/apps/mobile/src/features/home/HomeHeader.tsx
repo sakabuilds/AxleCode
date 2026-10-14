@@ -178,7 +178,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               <RNText className="-ml-0.5 text-[21px] font-t3-medium tracking-[-0.5px] text-foreground">
                 Axle
               </RNText>
-              <View className="rounded-full bg-subtle px-2 py-0.75">
+              <View className="rounded-md bg-subtle px-2 py-0.75">
                 <RNText className="text-[11px] font-t3-bold tracking-[1.1px] text-foreground-muted uppercase">
                   Alpha
                 </RNText>
@@ -193,7 +193,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               <Pressable
                 accessibilityLabel="Filter and sort threads"
                 accessibilityRole="button"
-                className="size-11 items-center justify-center rounded-full bg-subtle"
+                className="size-11 items-center justify-center rounded-xl bg-subtle"
               >
                 <SymbolView
                   name={
@@ -214,7 +214,7 @@ function AndroidHomeHeader(props: HomeHeaderProps) {
               accessibilityLabel="Open settings"
               accessibilityRole="button"
               onPress={props.onOpenSettings}
-              className="size-11 items-center justify-center rounded-full bg-subtle"
+              className="size-11 items-center justify-center rounded-xl bg-subtle"
             >
               <SymbolView name="gearshape" size={18} tintColor={iconColor} type="monochrome" />
             </Pressable>
