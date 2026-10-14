@@ -1,4 +1,4 @@
-import { FolderGit2Icon, FolderGitIcon, FolderIcon } from "lucide-react";
+import { FolderGit2Icon, FolderGitIcon, FolderIcon, MonitorIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import {
@@ -18,6 +18,7 @@ import {
 } from "./ui/select";
 
 interface BranchToolbarEnvModeSelectorProps {
+  localLabel?: string | undefined;
   envLocked: boolean;
   effectiveEnvMode: EnvMode;
   activeWorktreePath: string | null;
@@ -25,6 +26,7 @@ interface BranchToolbarEnvModeSelectorProps {
 }
 
 export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSelector({
+  localLabel,
   envLocked,
   effectiveEnvMode,
   activeWorktreePath,
@@ -48,8 +50,8 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           </>
         ) : (
           <>
-            <FolderIcon className="size-3" />
-            {resolveLockedWorkspaceLabel(activeWorktreePath)}
+            {localLabel ? <MonitorIcon className="size-3.5" /> : <FolderIcon className="size-3" />}
+            {localLabel ?? resolveLockedWorkspaceLabel(activeWorktreePath)}
           </>
         )}
       </span>
@@ -68,10 +70,14 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           <FolderGit2Icon className="size-3" />
         ) : activeWorktreePath ? (
           <FolderGitIcon className="size-3" />
+        ) : localLabel ? (
+          <MonitorIcon className="size-3.5" />
         ) : (
           <FolderIcon className="size-3" />
         )}
-        <SelectValue />
+        <SelectValue>
+          {effectiveEnvMode === "local" && !activeWorktreePath ? localLabel : undefined}
+        </SelectValue>
       </SelectTrigger>
       <SelectPopup>
         <SelectGroup>
