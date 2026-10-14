@@ -139,10 +139,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --animate-status-pulse: status-pulse 2s infinite;
   --animate-status-ping: status-ping 2s infinite;
   --font-sans:
-    "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-    sans-serif;
-  --font-heading:
-    "Libre Baskerville Variable", "Libre Baskerville", Georgia, "Times New Roman", serif;
+    "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-heading: var(--font-sans);
   --font-mono:
     "SF Mono", "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", Menlo, monospace;
   --color-warning-foreground: var(--warning-foreground);
@@ -316,8 +314,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 
   .chat-composer-glass {
-    background: var(--card);
-    box-shadow: 0 2px 8px rgb(0 0 0 / 4%);
+    background: var(--composer-background);
+    box-shadow: var(--composer-shadow);
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .chat-composer-glass:focus-within {
+    border-color: var(--composer-focus-border);
   }
 
   .chat-composer-lower-chrome {
@@ -343,7 +348,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .chat-composer-glass {
-      background: var(--card);
+      background: var(--composer-background);
     }
 
     .chat-composer-lower-chrome {
@@ -389,6 +394,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 :root {
   color-scheme: light;
   --radius: 0.625rem;
+  --ease-premium: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --highlight-top: inset 0 1px 0 rgb(255 255 255 / 3%);
+  --composer-background: #f3f3f3;
+  --composer-context-background: #f7f7f7;
+  --composer-focus-border: #b8b8b8;
+  --composer-shadow: 0 4px 24px rgb(0 0 0 / 4%);
+  --floating-shadow: 0 12px 40px rgb(0 0 0 / 12%);
   --background: #ffffff;
   --app-chrome-background: #f7f7f7;
   --foreground: #202020;
@@ -404,17 +416,17 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --muted-foreground: #686868;
   --accent: --alpha(var(--color-black) / 4%);
   --accent-foreground: var(--color-neutral-800);
-  --destructive: #333333;
+  --destructive: #c23939;
   --border: #e6e6e6;
   --input: #d4d4d4;
   --ring: var(--foreground);
-  --destructive-foreground: #333333;
-  --info: var(--color-neutral-500);
-  --info-foreground: var(--color-neutral-700);
-  --success: #666666;
-  --success-foreground: #404040;
-  --warning: #666666;
-  --warning-foreground: #404040;
+  --destructive-foreground: #b42323;
+  --info: #477cb8;
+  --info-foreground: #245d9c;
+  --success: #32845b;
+  --success-foreground: #237148;
+  --warning: #b27620;
+  --warning-foreground: #8b5b12;
   --sidebar: #f7f7f7;
   --sidebar-foreground: var(--foreground);
   --sidebar-accent: --alpha(var(--color-black) / 4%);
@@ -424,38 +436,43 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
 
   @variant dark {
     color-scheme: dark;
-    --background: #171717;
-    --app-chrome-background: #111111;
-    --foreground: #eeeeee;
-    --card: #1e1e1e;
+    --background: #1a1a1a;
+    --app-chrome-background: #141414;
+    --foreground: #ececec;
+    --card: #222222;
+    --composer-background: #303030;
+    --composer-context-background: #242424;
+    --composer-focus-border: #555555;
+    --composer-shadow: 0 6px 28px rgb(0 0 0 / 10%);
+    --floating-shadow: 0 14px 44px rgb(0 0 0 / 32%);
     --card-foreground: var(--foreground);
-    --popover: #232323;
+    --popover: #282828;
     --popover-foreground: var(--foreground);
-    --primary: var(--color-white);
-    --primary-foreground: var(--color-black);
+    --primary: #ececec;
+    --primary-foreground: #1a1a1a;
     --secondary: --alpha(var(--color-white) / 4%);
     --secondary-foreground: var(--color-neutral-100);
     --muted: --alpha(var(--color-white) / 4%);
-    --muted-foreground: #a3a3a3;
-    --accent: --alpha(var(--color-white) / 4%);
+    --muted-foreground: #969696;
+    --accent: --alpha(var(--color-white) / 6%);
     --accent-foreground: var(--color-neutral-100);
-    --destructive: #dddddd;
-    --border: #303030;
-    --input: #414141;
-    --ring: var(--color-white);
-    --destructive-foreground: #dddddd;
-    --info: var(--color-neutral-500);
-    --info-foreground: var(--color-neutral-300);
-    --success: #b3b3b3;
-    --success-foreground: #d4d4d4;
-    --warning: #b3b3b3;
-    --warning-foreground: #d4d4d4;
-    --sidebar: #1a1a1a;
+    --destructive: #ed7777;
+    --border: #2c2c2c;
+    --input: #3d3d3d;
+    --ring: #b5b5b5;
+    --destructive-foreground: #f08a8a;
+    --info: #7c9ec9;
+    --info-foreground: #9bb8dc;
+    --success: #72ad87;
+    --success-foreground: #8fc7a3;
+    --warning: #d6a05c;
+    --warning-foreground: #e3b476;
+    --sidebar: #191919;
     --sidebar-foreground: var(--foreground);
-    --sidebar-accent: --alpha(var(--color-white) / 6%);
+    --sidebar-accent: #2b2b2b;
     --sidebar-accent-foreground: var(--color-neutral-100);
-    --sidebar-border: #303030;
-    --sidebar-ring: var(--color-white);
+    --sidebar-border: #292929;
+    --sidebar-ring: #b5b5b5;
   }
 }
 
@@ -1049,11 +1066,7 @@ label:has(> select#reasoning-effort) select {
   }
 }
 
-/* Preserve the content and semantics of code, provider marks and diffs while
-   keeping the workspace's strictly neutral visual language. */
-.chat-markdown-shiki,
-.diff-render-surface,
-.diff-render-file,
+/* Brand marks stay quiet; syntax and diff colors retain their meaning. */
 [data-provider-icon] {
   filter: grayscale(1);
 }
