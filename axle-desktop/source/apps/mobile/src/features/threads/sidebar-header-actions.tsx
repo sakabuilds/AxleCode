@@ -5,7 +5,7 @@ import { useThemeColor } from "../../lib/useThemeColor";
 
 export interface SidebarHeaderActionsProps {
   readonly onOpenSettings: () => void;
-  /** Rendered inside a shared capsule group — buttons drop their own chrome. */
+  /** Rendered inside a shared rounded group — buttons drop their own chrome. */
   readonly grouped?: boolean;
 }
 
@@ -24,7 +24,7 @@ function FallbackHeaderButton(props: {
 
   return (
     <Pressable
-      className="h-11 w-[50px] items-center justify-center rounded-[22px]"
+      className="h-11 w-[50px] items-center justify-center rounded-xl"
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
       hitSlop={4}
