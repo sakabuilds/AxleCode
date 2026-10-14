@@ -229,7 +229,7 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
         className={
           isInspector
             ? "overflow-hidden rounded-2xl border border-border bg-card px-3 py-1"
-            : "overflow-hidden rounded-[22px] border border-border bg-card px-4 py-1"
+            : "overflow-hidden rounded-2xl border border-border bg-card px-4 py-1"
         }
       >
         {sheetMenuItems.map(({ item, disabledReason }, index) => (
@@ -376,8 +376,8 @@ export function GitOverviewSheet(props: GitOverviewSheetProps) {
           <Pressable
             className={
               busy
-                ? "absolute right-3 top-4 z-[1] h-9 w-9 items-center justify-center rounded-full bg-subtle opacity-[0.45]"
-                : "absolute right-3 top-4 z-[1] h-9 w-9 items-center justify-center rounded-full bg-subtle"
+                ? "absolute right-3 top-4 z-[1] h-9 w-9 items-center justify-center rounded-lg bg-subtle opacity-[0.45]"
+                : "absolute right-3 top-4 z-[1] h-9 w-9 items-center justify-center rounded-lg bg-subtle"
             }
             disabled={busy}
             onPress={() => void gitActions.refreshSelectedThreadGitStatus()}
