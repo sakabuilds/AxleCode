@@ -100,7 +100,7 @@ export function EnvironmentConnectionNotice(props: {
         {props.connection.phase !== "offline" ? (
           <Pressable
             accessibilityRole="button"
-            className="mt-1 rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
+            className="mt-1 rounded-lg bg-subtle px-4 py-2.5 active:opacity-80"
             onPress={props.onRetry}
           >
             <Text className="text-sm font-t3-bold text-foreground">Retry now</Text>
