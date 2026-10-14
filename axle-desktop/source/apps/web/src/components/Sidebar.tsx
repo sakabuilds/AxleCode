@@ -31,6 +31,7 @@ import {
 } from "./ThreadStatusIndicators";
 import { AxleLogo } from "./AxleLogo";
 import { PluginsSidebarEntry } from "./plugins/PluginsSidebarEntry";
+import { CloudJobsSidebarEntry } from "./cloud/CloudJobsSidebarEntry";
 import { PullRequestsSidebarEntry } from "./pullRequests/PullRequestsSidebarEntry";
 import { useAtomValue } from "@effect/atom-react";
 import { autoAnimate } from "@formkit/auto-animate";
@@ -2957,7 +2958,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
         <SidebarMenuItem>
           <SidebarMenuButton
             size="sm"
-            className="h-9 gap-2.5 px-2.5 text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="h-9 gap-2.5 px-2.5 rounded-2xl text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={handleSettingsClick}
           >
             <SettingsIcon className="size-4" />
@@ -3568,7 +3569,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           <SidebarMenuItem>
             <SidebarMenuButton
               size="sm"
-              className="h-9 gap-2.5 px-2.5 font-medium text-foreground hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="h-9 gap-2.5 px-2.5 rounded-2xl font-medium text-foreground hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               data-testid="sidebar-new-chat-trigger"
               aria-label="Create new chat"
               onClick={handleNewChat}
@@ -3587,7 +3588,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               render={
                 <SidebarMenuButton
                   size="sm"
-                  className="h-9 gap-2.5 px-2.5 text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className="h-9 gap-2.5 px-2.5 rounded-2xl text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   data-testid="command-palette-trigger"
                   aria-label="Search commands, projects, and threads"
                 />
@@ -3603,12 +3604,13 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
             </CommandDialogTrigger>
           </SidebarMenuItem>
           <PullRequestsSidebarEntry />
+          <CloudJobsSidebarEntry />
           <PluginsSidebarEntry />
           <SidebarMenuItem>
             <SidebarMenuButton
               size="sm"
               isActive={pathname === "/schedules"}
-              className="h-9 gap-2.5 px-2.5 text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="h-9 gap-2.5 px-2.5 rounded-2xl text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               data-testid="sidebar-schedules-trigger"
               aria-label="Open scheduled tasks"
               onClick={handleSchedulesClick}
