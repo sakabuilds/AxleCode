@@ -1,4 +1,5 @@
 import type { CloudJobCreateInput } from "@axle/contracts";
+import type { BillingConfig } from "./billingConfig.ts";
 import type { CloudConfig } from "./cloudConfig.ts";
 
 export const cloudConfigFixture: CloudConfig = {
@@ -10,6 +11,14 @@ export const cloudConfigFixture: CloudConfig = {
   }],
   workers: [{ workerId: "worker-test", token: "test-only-worker-credential-123456789", environmentIds: ["linux-test"] }],
   allowedUserIds: ["user-a"], maxActiveJobsPerUser: 2, leaseSeconds: 60,
+};
+export const billingConfigFixture: BillingConfig = {
+  plans: [
+    { planId: "free", cloudJobsEnabled: false, monthlyCredits: 0, maxConcurrentJobs: 1 },
+    { planId: "pro", cloudJobsEnabled: true, monthlyCredits: 120, maxConcurrentJobs: 4 },
+  ],
+  defaultPlanId: "free", userPlans: { "user-a": "pro" }, creditsPerMinute: 3,
+  adminToken: "test-only-admin-credential-1234567890123456",
 };
 export const cloudInputFixture = {
   commandId: "create-1", environmentId: "linux-test", repositoryUrl: "https://github.com/example/project.git",
