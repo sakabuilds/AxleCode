@@ -1,12 +1,14 @@
 import type { ScopedProjectRef } from "@axle/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@axle/client-runtime/environment";
-import { ChevronDownIcon, FolderIcon, FolderPlusIcon } from "lucide-react";
-import { useMemo } from "react";
+import { useLocation } from "@tanstack/react-router";
+import { ChevronDownIcon, FolderPlusIcon, TerminalIcon } from "lucide-react";
+import { useMemo, useState } from "react";
 
 import { useOpenAddProjectCommandPalette } from "~/commandPaletteContext";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { sortScopedProjectsForSidebar } from "../Sidebar.logic";
+import { resolveDraftGreeting } from "./draftGreeting";
 import {
   Menu,
   MenuItem,
@@ -30,6 +32,8 @@ export function DraftHeroHeadline({
   const threads = useThreadShells();
   const handleNewThread = useNewThreadHandler();
   const openAddProject = useOpenAddProjectCommandPalette();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const [openedAt] = useState(() => new Date());
 
   const orderedProjects = useMemo(
     () => sortScopedProjectsForSidebar(projects, threads, "updated_at"),
@@ -52,16 +56,26 @@ export function DraftHeroHeadline({
   const hasResolvedProject = activeProjectTitle !== null;
   const canChooseProject = orderedProjects.length > 0;
   const shouldShowProjectMenu = canChooseProject;
+  const greeting = resolveDraftGreeting({
+    now: openedAt,
+    seed: pathname,
+    projectCount: projects.length,
+    activeProjectRef: hasResolvedProject ? activeProjectRef : null,
+    threads,
+  });
+  const hasInlineProject = hasResolvedProject && greeting.projectSuffix !== undefined;
 
   const projectSelector = shouldShowProjectMenu ? (
     <Menu>
       <MenuTrigger
         aria-label={hasResolvedProject ? "Change project" : "Choose a project"}
-        className="inline-flex max-w-full cursor-pointer items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="inline-flex max-w-full cursor-pointer items-baseline gap-1.5 rounded-md text-inherit underline decoration-muted-foreground/50 decoration-dotted underline-offset-8 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <FolderIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate">{activeProjectTitle ?? "Choose a project"}</span>
-        <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+        <ChevronDownIcon
+          aria-hidden="true"
+          className="size-4 shrink-0 self-center text-muted-foreground"
+        />
       </MenuTrigger>
       <MenuPopup align="start" className="max-h-80 w-64 overflow-y-auto">
         <MenuRadioGroup
@@ -96,7 +110,7 @@ export function DraftHeroHeadline({
     <button
       type="button"
       onClick={openAddProject}
-      className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <FolderPlusIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
       {activeProjectTitle ?? "Add a project"}
@@ -104,22 +118,24 @@ export function DraftHeroHeadline({
   );
 
   return (
-    <div className="mx-auto w-full max-w-3xl text-left">
-      <div className="mb-4 flex items-center gap-3">
-        <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-          Workspace
-        </span>
-        <span className="h-px flex-1 bg-border" aria-hidden="true" />
+    <div className="mx-auto flex w-full max-w-4xl flex-col items-center px-4 text-center">
+      <div aria-hidden="true" className="mb-7 text-muted-foreground/45 sm:mb-8">
+        <TerminalIcon className="size-11 sm:size-12" strokeWidth={1.25} />
       </div>
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-        What are we building?
+      <h1 className="flex max-w-full flex-wrap items-baseline justify-center gap-x-2 text-[25px] font-semibold leading-snug tracking-[-0.035em] text-foreground sm:gap-x-2.5 sm:text-[32px]">
+        <span>{greeting.text}</span>
+        {hasInlineProject ? (
+          <span className="inline-flex min-w-0 items-baseline">
+            {projectSelector}
+            <span>{greeting.projectSuffix}</span>
+          </span>
+        ) : null}
       </h1>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        {hasResolvedProject
-          ? "Describe a change, investigate an issue, or plan your next step."
-          : "Bring a codebase, choose your model, and get to work."}
-      </p>
-      <div className="mt-5 flex min-w-0 items-center gap-3">{projectSelector}</div>
+      {!hasInlineProject ? (
+        <div className="mt-5 flex min-w-0 items-center justify-center text-sm font-medium text-muted-foreground">
+          {projectSelector}
+        </div>
+      ) : null}
     </div>
   );
 }
