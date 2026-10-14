@@ -114,7 +114,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
             showHeader={false}
           />
         ) : (
-          <View collapsable={false} className="rounded-[24px] bg-card p-5">
+          <View collapsable={false} className="rounded-2xl bg-card p-5">
             <Text className="text-sm leading-normal text-foreground-muted">
               Sign in to your Axle account to set up Axle Cloud.
             </Text>
@@ -126,7 +126,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
             accessibilityRole="button"
             hitSlop={8}
             onPress={handleDontShowAgain}
-            className="items-center py-1 active:opacity-70"
+            className="items-center py-1 active:opacity-80"
           >
             <Text className="text-xs text-foreground-muted">{"Don't show this again"}</Text>
           </Pressable>
