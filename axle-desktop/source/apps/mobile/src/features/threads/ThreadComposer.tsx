@@ -236,12 +236,12 @@ const ComposerConnectionStatusPill = memo(function ComposerConnectionStatusPill(
       <Pressable
         accessibilityRole="button"
         onPress={props.onPress}
-        className="max-w-full flex-row items-center gap-2 rounded-full bg-white/90 px-3 py-2 shadow-sm active:opacity-70 dark:bg-neutral-900/90"
+        className="max-w-full flex-row items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-sm active:opacity-80"
       >
         {isReconnecting ? (
-          <ActivityIndicator size="small" color="#8e8e93" />
+          <ActivityIndicator size="small" color="#969696" />
         ) : (
-          <View className="h-2 w-2 rounded-full bg-red-500" />
+          <View className="h-2 w-2 rounded-full bg-danger-foreground" />
         )}
         <Text
           className="max-w-[260px] text-sm font-t3-bold leading-snug text-foreground"
@@ -733,13 +733,13 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           style={
             isExpanded
               ? {
-                  borderRadius: 20,
+                  borderRadius: 18,
                   overflow: "hidden" as const,
                   paddingHorizontal: 14,
                   paddingVertical: 12,
                 }
               : {
-                  borderRadius: 999,
+                  borderRadius: 18,
                   overflow: "hidden" as const,
                   flexDirection: "row" as const,
                   alignItems: "center" as const,
