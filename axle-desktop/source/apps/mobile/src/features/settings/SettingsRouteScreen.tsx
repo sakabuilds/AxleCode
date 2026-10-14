@@ -463,6 +463,7 @@ function ConfiguredSettingsRouteScreen() {
             value={`${environmentCount}`}
             target="SettingsEnvironments"
           />
+          <SettingsRow icon="cloud" label="Cloud Jobs" fullScreenTarget="CloudJobs" />
           <SettingsSwitchRow
             icon="bell.badge"
             label="Device Notifications"
