@@ -20,6 +20,7 @@ import {
   type ProviderInteractionMode,
   type ProviderRuntimeEvent,
   type ProviderSession,
+  type RuntimeMode,
   type ProviderWorkspaceContext,
 } from "@axle/contracts";
 import * as Duration from "effect/Duration";
@@ -28,7 +29,6 @@ import * as Fiber from "effect/Fiber";
 import * as PubSub from "effect/PubSub";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
-import * as Schema from "effect/Schema";
 import { getModelSelectionStringOptionValue } from "@axle/shared/model";
 import { errorTag } from "@axle/shared/observability";
 import {
@@ -139,55 +139,6 @@ export interface AxleAssistantSegmentCallbacks {
 // total-turn timeout: slow networks and long tool calls are allowed to make
 // progress without being killed merely because the turn is old.
 export const AXLE_TURN_IDLE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(10));
-export const AXLE_RECONNECT_RETRY_COUNT = 5;
-const AXLE_RECONNECT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
-const isAxleProcessError = Schema.is(ProviderAdapterProcessError);
-
-const RETRYABLE_AXLE_ERROR_MARKERS = [
-  "stalled",
-  "timed out",
-  "timeout",
-  "econnreset",
-  "econnrefused",
-  "etimedout",
-  "unable to reach",
-  "error sending request",
-  "fetch failed",
-  "network",
-  "socket",
-  "connection",
-  "temporarily unavailable",
-  "rate limit",
-  "status 429",
-  "status 502",
-  "status 503",
-  "status 504",
-] as const;
-
-const NON_RETRYABLE_AXLE_ERROR_MARKERS = [
-  "unsupported parameter",
-  "invalid value",
-  "invalid api key",
-  "unauthorized",
-  "forbidden",
-  "freeusagelimit",
-  "free usage limit",
-  "context_length_exceeded",
-  "context window",
-] as const;
-
-export function isRetryableAxleProcessError(error: unknown): boolean {
-  if (!isAxleProcessError(error)) {
-    return false;
-  }
-
-  const detail = error.detail.toLowerCase();
-  if (NON_RETRYABLE_AXLE_ERROR_MARKERS.some((marker) => detail.includes(marker))) {
-    return false;
-  }
-  return RETRYABLE_AXLE_ERROR_MARKERS.some((marker) => detail.includes(marker));
-}
-
 function sanitizeAxleLogDetail(value: string): string {
   return value
     .replace(
@@ -204,6 +155,9 @@ export function formatAxleProcessError(
   const detail = cause instanceof Error ? cause.message : String(cause);
   if (/freeusagelimit|free usage limit/iu.test(detail)) {
     return "The selected provider model has reached its free usage limit. Select another model or try again later.";
+  }
+  if (/unexpected argument[\s\S]*--runtime-mode/iu.test(detail)) {
+    return "The configured Axle runtime is outdated and cannot enforce the selected permission mode. Rebuild or update the Axle binary, then retry.";
   }
   if (
     workspaceContext === "none" &&
@@ -666,7 +620,9 @@ export function axleApprovalDetail(toolName: string, argumentsValue: unknown): s
       : typeof rawInput.path === "string" && rawInput.path.trim().length > 0
         ? rawInput.path.trim()
         : undefined;
-  const detail = subject ? `${presentation.title}: ${subject}` : `${presentation.title} requires approval`;
+  const detail = subject
+    ? `${presentation.title}: ${subject}`
+    : `${presentation.title} requires approval`;
   return detail.length > AXLE_APPROVAL_DETAIL_MAX_CHARS
     ? `${detail.slice(0, AXLE_APPROVAL_DETAIL_MAX_CHARS - 1)}…`
     : detail;
@@ -813,10 +769,7 @@ function ensureAxleGitignored(cwd: string): void {
   const hasEntry = content.split("\n").some((line) => {
     const trimmed = line.trim();
     return (
-      trimmed === axleEntry ||
-      trimmed === "/.axle" ||
-      trimmed === ".axle/" ||
-      trimmed === ".axle"
+      trimmed === axleEntry || trimmed === "/.axle" || trimmed === ".axle/" || trimmed === ".axle"
     );
   });
 
@@ -955,6 +908,7 @@ export function makeAxleProcessArgs(input: {
   readonly reasoningEffort?: string | undefined;
   readonly contextWindow?: string | undefined;
   readonly interactionMode?: ProviderInteractionMode | undefined;
+  readonly runtimeMode?: RuntimeMode | undefined;
   readonly sessionId?: string | undefined;
   readonly workspaceContext?: ProviderWorkspaceContext | undefined;
   readonly customInstructions?: string | undefined;
@@ -996,6 +950,11 @@ export function makeAxleProcessArgs(input: {
     // Axle's CLI names that same mode "build".
     args.push("--interaction-mode", input.interactionMode === "plan" ? "plan" : "build");
   }
+  if (input.runtimeMode) {
+    // An explicit policy flag makes an incompatible runtime fail before work
+    // begins instead of silently changing the requested permission boundary.
+    args.push("--runtime-mode", input.runtimeMode);
+  }
   for (const image of input.images ?? []) {
     args.push("--image-path", image.path, "--image-mime-type", image.mimeType);
   }
@@ -1022,6 +981,7 @@ function runAxle(input: {
   readonly reasoningEffort?: string | undefined;
   readonly contextWindow?: string | undefined;
   readonly interactionMode?: ProviderInteractionMode | undefined;
+  readonly runtimeMode?: RuntimeMode | undefined;
   readonly environment: NodeJS.ProcessEnv;
   readonly activeChildren?: Map<string, AxleChildProcess> | undefined;
   readonly childKey?: string | undefined;
@@ -1340,7 +1300,9 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
         const activeMcp = workspaceContext === "none" ? undefined : mcpSession;
         const effectiveInstructions = [
           customInstructions.trim(),
-          ...(activeMcp ? [AXLE_BROWSER_INSTRUCTIONS, T3_CODE_PULL_REQUEST_REVIEW_INSTRUCTIONS] : []),
+          ...(activeMcp
+            ? [AXLE_BROWSER_INSTRUCTIONS, T3_CODE_PULL_REQUEST_REVIEW_INSTRUCTIONS]
+            : []),
         ]
           .filter((instructions) => instructions.length > 0)
           .join("\n\n");
@@ -1364,60 +1326,7 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
             );
           }
         };
-        const reconnectItemId = RuntimeItemId.make(`axle-reconnect:${String(turnId)}`);
-        let reconnectStarted = false;
-        let successfulRetryCount = 0;
-        let attemptProducedOutput = false;
-        const reconnectData = (retryCount: number, error?: unknown) => ({
-          provider: "axle",
-          retryCount,
-          maxRetries: AXLE_RECONNECT_RETRY_COUNT,
-          ...(error
-            ? {
-                errorTag: errorTag(error),
-                reason: sanitizeAxleLogDetail(
-                  error instanceof Error ? error.message : String(error),
-                ),
-              }
-            : {}),
-        });
-        const publishReconnectStarted = (error: unknown) =>
-          publish({
-            type: "item.started",
-            ...stamp(threadId, turnId),
-            itemId: reconnectItemId,
-            payload: {
-              itemType: "dynamic_tool_call",
-              status: "inProgress",
-              title: `Reconnecting with ${AXLE_RECONNECT_RETRY_COUNT} retries`,
-              data: reconnectData(0, error),
-            },
-          });
-        const publishReconnectUpdated = (retryCount: number, error: unknown) =>
-          publish({
-            type: "item.updated",
-            ...stamp(threadId, turnId),
-            itemId: reconnectItemId,
-            payload: {
-              itemType: "dynamic_tool_call",
-              status: "inProgress",
-              title: `Reconnecting (${retryCount}/${AXLE_RECONNECT_RETRY_COUNT})`,
-              data: reconnectData(retryCount, error),
-            },
-          });
-        const publishReconnectCompleted = (success: boolean, retryCount: number, error?: unknown) =>
-          publish({
-            type: "item.completed",
-            ...stamp(threadId, turnId),
-            itemId: reconnectItemId,
-            payload: {
-              itemType: "dynamic_tool_call",
-              status: success ? "completed" : "failed",
-              title: success ? "Reconnected" : "Reconnect failed",
-              data: reconnectData(retryCount, error),
-            },
-          });
-        const runAttempt = (attempt: number) =>
+        const runOnce = () =>
           Effect.gen(function* () {
             if (isTurnCancelled()) {
               return yield* new ProviderAdapterProcessError({
@@ -1426,10 +1335,9 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
                 detail: "Axle turn interrupted.",
               });
             }
-            attemptProducedOutput = false;
             yield* logAdapterEvent(threadId, "process.start", {
-              attempt: attempt + 1,
-              maxAttempts: AXLE_RECONNECT_RETRY_COUNT + 1,
+              attempt: 1,
+              maxAttempts: 1,
               model,
               ...(workspaceContext === "none" ? {} : { cwd }),
               workspaceContext,
@@ -1445,6 +1353,7 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
               reasoningEffort,
               contextWindow,
               interactionMode,
+              runtimeMode: state.session.runtimeMode,
               approvalFile,
               workspaceContext,
               environment: axleChildEnvironment(
@@ -1472,7 +1381,6 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
               callbacks: {
                 onDelta: (delta) => {
                   if (isTurnCancelled()) return;
-                  attemptProducedOutput = true;
                   assistantSegments.pushDelta(delta);
                 },
                 onSessionId: captureSessionIdentity,
@@ -1506,7 +1414,6 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
                 onToolStarted: (event) => {
                   if (isTurnCancelled()) return;
                   if (isHiddenAxleControlTool(event.toolName)) return;
-                  attemptProducedOutput = true;
                   assistantSegments.closeBeforeTool();
                   const toolItemId = RuntimeItemId.make(event.toolCallId);
                   const presentation = axleToolPresentation(event.toolName, event.arguments);
@@ -1620,73 +1527,30 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
               captureSessionIdentity(result.sessionId);
             }
             yield* logAdapterEvent(threadId, "process.succeeded", {
-              attempt: attempt + 1,
+              attempt: 1,
               responseChars: result.response.length,
               sessionIdPresent: result.sessionId !== undefined,
             });
-            successfulRetryCount = attempt;
             return result;
           });
-        const runWithReconnect = (
-          retryIndex: number,
-        ): Effect.Effect<AxleProcessResult, ProviderAdapterProcessError> =>
-          runAttempt(retryIndex).pipe(
-            Effect.catch((error) => {
-              // Replaying a prompt after visible text or a tool call was
-              // emitted can duplicate work. Only reconnect automatically when
-              // the failed process produced no provider output yet.
-              const retryable = !attemptProducedOutput && isRetryableAxleProcessError(error);
-              const detail = isAxleProcessError(error) ? error.detail : String(error);
-              return Effect.gen(function* () {
-                if (isTurnCancelled()) return yield* error;
-                yield* logAdapterEvent(threadId, "process.failed", {
-                  attempt: retryIndex + 1,
-                  retryable,
-                  errorTag: errorTag(error),
-                  detail: sanitizeAxleLogDetail(detail),
-                });
-                if (!retryable || retryIndex >= AXLE_RECONNECT_RETRY_COUNT) {
-                  if (reconnectStarted) {
-                    yield* logAdapterEvent(threadId, "reconnect.exhausted", {
-                      retryCount: retryIndex,
-                      errorTag: errorTag(error),
-                    });
-                    yield* publishReconnectCompleted(false, retryIndex, error);
-                  }
-                  return yield* error;
-                }
-                if (!reconnectStarted) {
-                  reconnectStarted = true;
-                  yield* logAdapterEvent(threadId, "reconnect.started", {
-                    maxRetries: AXLE_RECONNECT_RETRY_COUNT,
-                    errorTag: errorTag(error),
-                  });
-                  yield* publishReconnectStarted(error);
-                }
-                const nextRetry = retryIndex + 1;
-                yield* logAdapterEvent(threadId, "reconnect.attempt", {
-                  retryCount: nextRetry,
-                  maxRetries: AXLE_RECONNECT_RETRY_COUNT,
-                });
-                yield* publishReconnectUpdated(nextRetry, error);
-                yield* Effect.sleep(
-                  Duration.millis(AXLE_RECONNECT_BACKOFF_MS[retryIndex] ?? 16_000),
-                );
-                return yield* runWithReconnect(nextRetry);
-              });
+        // A process can persist the user prompt or execute work before its
+        // first visible output. Replaying it is not idempotent, even after a
+        // transport error. Provider-level retries remain inside the Rust
+        // runtime, where they do not append the prompt again.
+        const result = yield* runOnce().pipe(
+          Effect.tapError((error) =>
+            logAdapterEvent(threadId, "process.failed", {
+              attempt: 1,
+              replaySuppressed: true,
+              errorTag: errorTag(error),
+              detail: sanitizeAxleLogDetail(error.detail),
             }),
-          );
-        const result = yield* runWithReconnect(0);
+          ),
+        );
         // `interruptTurn` owns the terminal interrupted event. If the child
         // also reports a process failure while it is being killed, do not
         // publish a second failed completion for the already-settled turn.
         if (isTurnCancelled()) return;
-        if (reconnectStarted) {
-          yield* logAdapterEvent(threadId, "reconnect.succeeded", {
-            retryCount: successfulRetryCount,
-          });
-          yield* publishReconnectCompleted(true, successfulRetryCount);
-        }
         assistantSegments.finish(result.response);
 
         state.snapshot = {
