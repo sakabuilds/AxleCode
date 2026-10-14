@@ -75,10 +75,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   return (
     <>
       <SidebarContent className="overflow-x-hidden">
-        <SidebarGroup className="px-3 py-4">
-          <p className="px-2.5 pb-3 text-[11px] font-medium tracking-widest text-muted-foreground uppercase">
-            Settings
-          </p>
+        <SidebarGroup className="px-3 py-5">
+          <p className="px-3 pb-4 text-xs font-medium text-muted-foreground">Settings</p>
           <SidebarMenu className="gap-1" aria-label="Settings sections">
             {SETTINGS_NAV_ITEMS.map((item) => {
               const Icon = item.icon;
@@ -91,8 +89,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     aria-current={isActive ? "page" : undefined}
                     className={
                       isActive
-                        ? "h-9 gap-3 rounded-lg bg-sidebar-accent px-2.5 text-left text-[13px] font-medium text-foreground"
-                        : "h-9 gap-3 rounded-lg px-2.5 text-left text-[13px] text-muted-foreground transition-colors hover:text-foreground"
+                        ? "h-10 gap-3 rounded-xl bg-sidebar-accent px-3 text-left text-sm font-medium text-foreground"
+                        : "h-10 gap-3 rounded-xl px-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
                     }
                     onClick={() => handleSectionClick(item.to)}
                   >
@@ -104,12 +102,6 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       }
                     />
                     <span className="truncate">{item.label}</span>
-                    {isActive ? (
-                      <span
-                        className="ml-auto size-1 shrink-0 rounded-full bg-foreground"
-                        aria-hidden
-                      />
-                    ) : null}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               );
@@ -125,14 +117,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             <SidebarMenuItem>
               <SidebarMenuButton
                 size="sm"
-                className="h-9 gap-3 px-2.5 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="h-10 gap-3 rounded-xl px-3 text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={handleBackClick}
               >
                 <ArrowLeftIcon className="size-4" />
                 <span>Back to workspace</span>
-                <kbd className="ml-auto rounded border border-border px-1 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
-                  Esc
-                </kbd>
+                <kbd className="ml-auto text-[11px] leading-none text-muted-foreground/70">Esc</kbd>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
