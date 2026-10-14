@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { AccountSessionAccessError } from "./errors.ts";
 import { createCloudRequestHandler } from "./cloudHandler.ts";
 import { CloudJobError, createCloudJobStore } from "./cloudStore.ts";
-import { cloudConfigFixture, cloudInputFixture } from "./cloudTestFixtures.ts";
+import { billingConfigFixture, cloudConfigFixture, cloudInputFixture } from "./cloudTestFixtures.ts";
 
 describe("cloud HTTP authorization and routing", () => {
   const query = vi.fn(async (_operation: string, _args: Record<string, unknown>): Promise<unknown> => null);
@@ -76,5 +76,34 @@ describe("cloud HTTP authorization and routing", () => {
     expect(await response?.json()).toEqual({ error: "internal_error" });
     expect(JSON.stringify(log.mock.calls)).not.toContain("password");
     log.mockRestore();
+  });
+  it("serves the caller's own billing view and refuses grants without an operator token", async () => {
+    expect((await request("/v1/cloud/billing"))?.status).toBe(200);
+    expect(query).toHaveBeenCalledWith("billing", { userId: "user-a", planId: "operator", monthlyCredits: 0 });
+    expect((await request("/v1/cloud/credits/grant", "POST", { userId: "user-a", entryId: "top-up-1", amount: 5 }))?.status).toBe(403);
+    expect(query).not.toHaveBeenCalledWith("grant", expect.anything());
+  });
+  it("grants credits only with the configured operator token after body validation", async () => {
+    const admin = billingConfigFixture.adminToken!;
+    handle = createCloudRequestHandler({ config: cloudConfigFixture, billing: billingConfigFixture,
+      store: createCloudJobStore(query, cloudConfigFixture, billingConfigFixture),
+      authenticate: async () => ({ userId, sessionId: "session-a" }), touchSession, corsOrigin: "https://app.invalid" });
+    const grant = (body: unknown, token: string) => handle(new Request("https://account.invalid/v1/cloud/credits/grant", {
+      method: "POST", headers: { "x-axle-admin": token }, body: JSON.stringify(body) }));
+    expect((await grant({ userId: "user-a", entryId: "top-up-1" }, admin))?.status).toBe(400);
+    expect((await grant({ userId: "user-a", entryId: "top-up-1", amount: 5 }, "wrong-token-wrong-token-wrong-token"))?.status).toBe(403);
+    expect((await grant({ userId: "user-a", entryId: "top-up-1", amount: 5 }, admin))?.status).toBe(200);
+    expect(query).toHaveBeenCalledWith("grant", expect.objectContaining({
+      userId: "user-a", entryId: "top-up-1", amount: 5, planId: "pro", monthlyCredits: 120,
+    }));
+    expect(touchSession).not.toHaveBeenCalled();
+  });
+  it("maps entitlement and credit failures to client-visible statuses", async () => {
+    query.mockRejectedValue(new CloudJobError("insufficient_credits"));
+    expect((await request("/v1/cloud/jobs", "POST", cloudInputFixture))?.status).toBe(402);
+    query.mockRejectedValue(new CloudJobError("credit_account_missing"));
+    expect((await request("/v1/cloud/jobs", "POST", cloudInputFixture))?.status).toBe(402);
+    query.mockRejectedValue(new CloudJobError("cloud_not_entitled"));
+    expect((await request("/v1/cloud/jobs", "POST", cloudInputFixture))?.status).toBe(403);
   });
 });
