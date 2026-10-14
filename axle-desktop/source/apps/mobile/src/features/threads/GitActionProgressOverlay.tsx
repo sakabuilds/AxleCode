@@ -63,9 +63,7 @@ function OverlayContent(props: { readonly progress: GitActionProgress }) {
   const iconColor = useThemeColor("--color-icon");
 
   const bgClass =
-    progress.phase === "error"
-      ? "bg-red-50 dark:bg-red-950/80 border-red-200 dark:border-red-800"
-      : "bg-card border-border";
+    progress.phase === "error" ? "bg-danger border-danger-border" : "bg-card border-border";
 
   return (
     <View
@@ -97,22 +95,25 @@ function OverlayIcon(props: {
   readonly phase: GitActionProgress["phase"];
   readonly iconColor: ReturnType<typeof useThemeColor>;
 }) {
+  const successColor = useThemeColor("--color-success");
+  const dangerColor = useThemeColor("--color-danger-foreground");
+
   switch (props.phase) {
     case "running":
       return <ActivityIndicator size="small" />;
     case "success":
       return (
-        <View className="h-6 w-6 items-center justify-center rounded-full bg-green-500">
-          <SymbolView name="checkmark" size={12} tintColor="white" type="monochrome" />
+        <View className="h-6 w-6 items-center justify-center rounded-full bg-success/16">
+          <SymbolView name="checkmark" size={12} tintColor={successColor} type="monochrome" />
         </View>
       );
     case "error":
       return (
-        <View className="h-6 w-6 items-center justify-center rounded-full bg-red-500">
+        <View className="h-6 w-6 items-center justify-center rounded-full bg-danger-foreground/16">
           <SymbolView
             name="exclamationmark.triangle"
             size={12}
-            tintColor="white"
+            tintColor={dangerColor}
             type="monochrome"
           />
         </View>
