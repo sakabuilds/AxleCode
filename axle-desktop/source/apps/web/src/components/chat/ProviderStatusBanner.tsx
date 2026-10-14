@@ -24,12 +24,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
 }: {
   status: ServerProvider | null;
 }) {
-  if (
-    isDemoRenderer() ||
-    !status ||
-    status.status === "ready" ||
-    status.status === "disabled"
-  ) {
+  if (isDemoRenderer() || !status || status.status === "ready" || status.status === "disabled") {
     return null;
   }
 
@@ -46,19 +41,19 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
         : `${providerName} provider has limited availability.`));
 
   return (
-    <div className="mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
+    <div className="mx-auto w-fit max-w-[calc(100%-2rem)] pt-2">
       <div
         className={cn(
-          "inline-flex items-center gap-3 rounded-xl border px-3.5 py-3 text-card-foreground text-sm",
+          "inline-flex items-center gap-2.5 rounded-lg border border-transparent px-3 py-2 text-xs",
           status.status === "warning"
-            ? "border-warning/32 bg-warning/4 [&_svg]:text-warning"
-            : "border-destructive/32 bg-destructive/4 text-destructive-foreground [&_svg]:text-destructive",
+            ? "text-muted-foreground [&_svg]:text-warning"
+            : "border-destructive/20 bg-destructive/4 text-destructive-foreground [&_svg]:text-destructive",
         )}
         role="alert"
       >
-        <InfoIcon className="size-4 shrink-0" aria-hidden />
+        <InfoIcon className="size-3.5 shrink-0" aria-hidden />
         <div className="flex min-w-0 flex-col gap-1">
-          <div className="font-medium">{title}</div>
+          <div className={status.status === "warning" ? "sr-only" : "font-medium"}>{title}</div>
           <Tooltip>
             <TooltipTrigger
               render={<div className="line-clamp-3 text-muted-foreground">{message}</div>}
