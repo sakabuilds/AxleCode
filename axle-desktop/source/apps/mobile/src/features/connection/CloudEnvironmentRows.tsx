@@ -80,7 +80,7 @@ export function CloudEnvironmentRows(props: {
             onPress={() => {
               void controller.refreshRelayEnvironments();
             }}
-            className="h-9 w-9 items-center justify-center rounded-full bg-subtle active:opacity-70 disabled:opacity-50"
+            className="h-9 w-9 items-center justify-center rounded-lg bg-subtle active:opacity-80 disabled:opacity-50"
           >
             {controller.relayDiscovery.isRefreshing ? (
               <ActivityIndicator color={iconColor} size="small" />
@@ -97,7 +97,7 @@ export function CloudEnvironmentRows(props: {
       ) : null}
 
       {hasCloudRows ? (
-        <View collapsable={false} className="overflow-hidden rounded-[24px] bg-card">
+        <View collapsable={false} className="overflow-hidden rounded-2xl bg-card">
           {props.connectedCloudEnvironments.map((environment, index) => (
             <ConnectedCloudEnvironmentRow
               key={environment.environmentId}
@@ -121,14 +121,14 @@ export function CloudEnvironmentRows(props: {
           ))}
         </View>
       ) : controller.relayDiscovery.isRefreshing ? (
-        <View collapsable={false} className="items-center gap-3 rounded-[24px] bg-card p-6">
+        <View collapsable={false} className="items-center gap-3 rounded-2xl bg-card p-6">
           <ActivityIndicator color={iconColor} />
           <Text className="text-center text-sm leading-normal text-foreground-muted">
             Loading linked cloud environments.
           </Text>
         </View>
       ) : controller.relayDiscovery.error ? null : (
-        <View collapsable={false} className="rounded-[24px] bg-card p-5">
+        <View collapsable={false} className="rounded-2xl bg-card p-5">
           <Text className="text-sm leading-normal text-foreground-muted">
             No additional linked cloud environments.
           </Text>
@@ -138,7 +138,7 @@ export function CloudEnvironmentRows(props: {
       {/* Rendered alongside any connected rows — a failed discovery must not
           hide behind an otherwise-healthy list. */}
       {controller.relayDiscovery.error && !controller.relayDiscovery.isRefreshing ? (
-        <View collapsable={false} className="gap-3 rounded-[24px] bg-card p-5">
+        <View collapsable={false} className="gap-3 rounded-2xl bg-card p-5">
           <Text className="text-base font-t3-bold text-foreground">
             Could not load Axle Cloud environments
           </Text>
@@ -151,7 +151,7 @@ export function CloudEnvironmentRows(props: {
             onPress={() => {
               void controller.refreshRelayEnvironments();
             }}
-            className="self-start rounded-full bg-subtle px-3.5 py-2 active:opacity-70"
+            className="self-start rounded-lg bg-subtle px-3.5 py-2 active:opacity-80"
           >
             <Text className="text-xs font-t3-bold text-foreground">Try again</Text>
           </Pressable>
@@ -251,7 +251,7 @@ function CloudEnvironmentRowShell(props: {
       traceId: props.connectionErrorTraceId,
     });
   const statusClassName = props.connectionError
-    ? "text-rose-500 dark:text-rose-400"
+    ? "text-danger-foreground"
     : "text-foreground-muted";
   const [errorMeasurement, setErrorMeasurement] = useState<{
     readonly text: string;
@@ -371,7 +371,7 @@ function CopyTraceIdButton(props: { readonly traceId: string }) {
       onPress={() => {
         copyTextWithHaptic(props.traceId, { target: "connection-trace-id" });
       }}
-      className="self-start flex-row items-center gap-1.5 rounded-full bg-subtle px-3 py-2 active:opacity-70"
+      className="self-start flex-row items-center gap-1.5 rounded-lg bg-subtle px-3 py-2 active:opacity-80"
     >
       <SymbolView name="doc.on.doc" size={12} tintColor={iconColor} type="monochrome" />
       <Text className="text-xs font-t3-bold text-foreground">Copy trace ID</Text>
