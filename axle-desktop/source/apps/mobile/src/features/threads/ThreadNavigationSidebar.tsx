@@ -61,8 +61,8 @@ import {
 } from "./thread-list-items";
 
 /**
- * Shared capsule behind the sidebar header buttons — a native liquid-glass
- * surface on iOS 26+, a tinted pill everywhere else.
+ * Shared surface behind the sidebar header buttons — a native liquid-glass
+ * surface on iOS 26+, a tinted rounded group everywhere else.
  */
 function SidebarHeaderButtonGroup(props: {
   readonly children: ReactNode;
@@ -740,7 +740,7 @@ function ThreadNavigationSidebarPane(
 const styles = StyleSheet.create({
   headerButtonGroup: {
     alignItems: "center",
-    borderRadius: 22,
+    borderRadius: 14,
     flexDirection: "row",
     overflow: "hidden",
   },
