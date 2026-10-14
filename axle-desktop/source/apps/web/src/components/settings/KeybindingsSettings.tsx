@@ -840,7 +840,7 @@ function KeybindingTableRow({
             className="group inline-flex h-7 items-center gap-1.5 rounded-md border border-transparent px-1.5 outline-none transition-colors hover:border-border/70 hover:bg-background focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24"
           >
             <KeybindingPill value={row.key} />
-            <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/0 transition-opacity group-hover:text-muted-foreground/70 group-focus-visible:text-muted-foreground/70">
+            <span className="text-xs text-muted-foreground/0 transition-opacity group-hover:text-muted-foreground group-focus-visible:text-muted-foreground">
               Edit
             </span>
           </button>
@@ -1299,7 +1299,7 @@ export function KeybindingsSettingsPanel() {
           hideScrollbars
           className="w-full max-w-full rounded-none"
         >
-          <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+          <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] border-b border-border/70 px-4 py-3 text-xs font-medium text-muted-foreground">
             <div>Command</div>
             <div>Keybinding</div>
             <div>When</div>
