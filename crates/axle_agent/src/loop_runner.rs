@@ -43,6 +43,9 @@ pub struct AgentLoopOptions {
 pub struct ApprovalConfig {
     pub file: PathBuf,
     pub timeout: Duration,
+    /// Only the built-in write/edit tools bypass the gate. Commands and MCP
+    /// calls still need a decision, and plan-mode tool restrictions still apply.
+    pub auto_accept_edits: bool,
 }
 
 const APPROVAL_POLL_INTERVAL: Duration = Duration::from_millis(150);
@@ -763,13 +766,14 @@ mod tests {
     }
 
     struct GuardedTool {
+        name: &'static str,
         executed: Arc<std::sync::atomic::AtomicUsize>,
     }
 
     #[async_trait]
     impl Tool for GuardedTool {
         fn name(&self) -> &str {
-            "guarded-write"
+            self.name
         }
 
         fn label(&self) -> &str {
@@ -1450,6 +1454,7 @@ mod tests {
     fn guarded_registry(executed: &Arc<std::sync::atomic::AtomicUsize>) -> ToolRegistry {
         let mut registry = ToolRegistry::default();
         registry.register(Arc::new(GuardedTool {
+            name: "guarded-write",
             executed: executed.clone(),
         }));
         registry
@@ -1462,6 +1467,177 @@ mod tests {
             .filter_map(|message| message.tool_result)
             .find(|result| result.tool_call_id == "guarded-call")
             .expect("the guarded tool call should have a recorded result")
+    }
+
+    #[tokio::test]
+    async fn runtime_modes_enforce_edit_command_and_mcp_boundaries() {
+        for (mode, auto_accept_edits, approval_enabled) in [
+            ("approval-required", false, true),
+            ("auto-accept-edits", true, true),
+            ("full-access", false, false),
+        ] {
+            let workspace = temporary_workspace();
+            tokio::fs::create_dir_all(&workspace).await.unwrap();
+            let executed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let mut registry = ToolRegistry::new();
+            // Consequential probes never execute a real shell or contact MCP.
+            for name in ["bash", "mcp__github__write"] {
+                registry.register(Arc::new(GuardedTool {
+                    name,
+                    executed: executed.clone(),
+                }));
+            }
+            let approval_file = workspace.join("approval.jsonl");
+            let requested = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let mut event_bus = EventBus::new();
+            {
+                let requested = requested.clone();
+                let approval_file = approval_file.clone();
+                event_bus.subscribe(move |event| {
+                    if let AxleEvent::ToolApprovalRequested {
+                        request_id,
+                        tool_name,
+                        ..
+                    } = event
+                    {
+                        requested.lock().unwrap().push(tool_name.clone());
+                        std::fs::write(&approval_file, serde_json::json!({
+                            "type": "approval_response", "requestId": request_id, "decision": "deny"
+                        }).to_string()).unwrap();
+                    }
+                });
+            }
+            let agent = AgentLoop::new(
+                Arc::new(GuardedToolProvider {
+                    calls: std::sync::atomic::AtomicUsize::new(0),
+                }),
+                registry,
+                event_bus,
+                AgentLoopOptions {
+                    cwd: workspace.to_string_lossy().to_string(),
+                    approval: approval_enabled.then_some(ApprovalConfig {
+                        file: approval_file,
+                        timeout: Duration::from_secs(1),
+                        auto_accept_edits,
+                    }),
+                    ..AgentLoopOptions::default()
+                },
+            );
+            tokio::fs::write(workspace.join("edit.txt"), "before")
+                .await
+                .unwrap();
+            for (name, arguments) in [
+                (
+                    "write",
+                    serde_json::json!({ "path": "written.txt", "content": "created" }),
+                ),
+                (
+                    "edit",
+                    serde_json::json!({ "path": "edit.txt", "old_text": "before", "new_text": "after" }),
+                ),
+                ("bash", serde_json::json!({})),
+                ("mcp__github__write", serde_json::json!({})),
+            ] {
+                let result = agent
+                    .execute_tool_call_result(&ToolCall {
+                        id: format!("{mode}-{name}"),
+                        name: name.to_string(),
+                        arguments,
+                    })
+                    .await;
+                let allowed =
+                    !approval_enabled || (auto_accept_edits && matches!(name, "write" | "edit"));
+                assert_eq!(
+                    !result.is_error, allowed,
+                    "{mode}: {name}: {}",
+                    result.output
+                );
+            }
+            assert_eq!(
+                workspace.join("written.txt").exists(),
+                !approval_enabled || auto_accept_edits
+            );
+            assert_eq!(
+                std::fs::read_to_string(workspace.join("edit.txt")).unwrap(),
+                if !approval_enabled || auto_accept_edits {
+                    "after"
+                } else {
+                    "before"
+                }
+            );
+            assert_eq!(
+                executed.load(std::sync::atomic::Ordering::SeqCst),
+                if approval_enabled { 0 } else { 2 }
+            );
+            let requests = requested.lock().unwrap().clone();
+            assert_eq!(
+                requests,
+                match mode {
+                    "approval-required" => vec!["write", "edit", "bash", "mcp__github__write"],
+                    "auto-accept-edits" => vec!["bash", "mcp__github__write"],
+                    _ => vec![],
+                }
+            );
+            // Auto approval cannot bypass the native file-path boundary.
+            let escape = agent.execute_tool_call_result(&ToolCall {
+                id: "escape".to_string(), name: "write".to_string(),
+                arguments: serde_json::json!({ "path": "../escaped.txt", "content": "blocked" }),
+            }).await;
+            assert!(escape.is_error);
+            // Plan mode restricts the registry even in full access.
+            let plan_agent = AgentLoop::new(
+                agent.provider.clone(),
+                agent.tool_registry.clone(),
+                EventBus::new(),
+                AgentLoopOptions {
+                    cwd: workspace.to_string_lossy().to_string(),
+                    interaction_mode: InteractionMode::Plan,
+                    approval: agent.options.approval.clone(),
+                    ..AgentLoopOptions::default()
+                },
+            );
+            let plan_write = plan_agent
+                .execute_tool_call_result(&ToolCall {
+                    id: "plan-write".to_string(),
+                    name: "write".to_string(),
+                    arguments: serde_json::json!({ "path": "plan.txt", "content": "blocked" }),
+                })
+                .await;
+            assert!(plan_write.is_error);
+            assert!(!workspace.join("plan.txt").exists());
+            // MCP discovery registers names verbatim. A replacement named
+            // "write" must never inherit the native tool's auto approval.
+            let mut shadowed_registry = agent.tool_registry.clone();
+            shadowed_registry.register(Arc::new(GuardedTool {
+                name: "write",
+                executed: executed.clone(),
+            }));
+            let shadowed_agent = AgentLoop::new(
+                agent.provider.clone(),
+                shadowed_registry,
+                EventBus::new(),
+                AgentLoopOptions {
+                    cwd: workspace.to_string_lossy().to_string(),
+                    approval: agent.options.approval.clone().map(|mut approval| {
+                        approval.timeout = Duration::from_millis(1);
+                        approval
+                    }),
+                    ..AgentLoopOptions::default()
+                },
+            );
+            let shadowed_write = shadowed_agent
+                .execute_tool_call_result(&ToolCall {
+                    id: "shadowed-write".to_string(),
+                    name: "write".to_string(),
+                    arguments: serde_json::json!({}),
+                })
+                .await;
+            assert_eq!(shadowed_write.is_error, approval_enabled);
+            drop(shadowed_agent);
+            drop(plan_agent);
+            drop(agent);
+            remove_temporary_workspace(workspace).await;
+        }
     }
 
     #[tokio::test]
@@ -1500,6 +1676,7 @@ mod tests {
                 approval: Some(ApprovalConfig {
                     file: approval_file,
                     timeout: Duration::from_secs(5),
+                    auto_accept_edits: false,
                 }),
                 ..AgentLoopOptions::default()
             },
@@ -1556,6 +1733,7 @@ mod tests {
                 approval: Some(ApprovalConfig {
                     file: approval_file,
                     timeout: Duration::from_secs(5),
+                    auto_accept_edits: false,
                 }),
                 ..AgentLoopOptions::default()
             },
@@ -1596,6 +1774,7 @@ mod tests {
                 approval: Some(ApprovalConfig {
                     file: approval_file,
                     timeout: Duration::from_millis(60),
+                    auto_accept_edits: false,
                 }),
                 ..AgentLoopOptions::default()
             },
@@ -2350,6 +2529,10 @@ impl AgentLoop {
             if self
                 .tool_registry
                 .requires_approval(&tool_call.name, plan_mode)
+                && !(approval.auto_accept_edits
+                    && self
+                        .tool_registry
+                        .is_builtin_workspace_edit(&tool_call.name))
             {
                 let request_id = approval_request_id(&tool_call.id);
                 if emit_events {
