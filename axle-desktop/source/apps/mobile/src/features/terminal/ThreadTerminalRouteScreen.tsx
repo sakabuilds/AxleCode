@@ -1288,7 +1288,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
                 onPress={handleShowKeyboard}
                 style={({ pressed }) => ({
                   bottom: 16,
-                  borderRadius: 28,
+                  borderRadius: 26,
                   opacity: pressed ? 0.72 : 1,
                   position: "absolute",
                   right: 16,
@@ -1300,7 +1300,7 @@ export function ThreadTerminalRouteScreen(props: ThreadTerminalRouteScreenProps)
                   tintColor="transparent"
                   style={{
                     alignItems: "center",
-                    borderRadius: 24,
+                    borderRadius: 22,
                     height: 48,
                     justifyContent: "center",
                     width: 48,
