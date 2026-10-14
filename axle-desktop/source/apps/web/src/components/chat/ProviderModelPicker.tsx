@@ -217,7 +217,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       data-chat-provider-model-picker="true"
       data-model-selector-style={isSliderStyle ? "slider" : "menu"}
       className={cn(
-        "min-w-0 justify-between whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80",
+        "min-w-0 justify-between gap-1.5 rounded-full whitespace-nowrap px-2 text-xs font-medium text-foreground/80 hover:bg-foreground/5 hover:text-foreground",
         props.compact ? "max-w-42 shrink-0" : "max-w-48 shrink sm:max-w-56 sm:px-3",
         props.triggerClassName,
       )}
