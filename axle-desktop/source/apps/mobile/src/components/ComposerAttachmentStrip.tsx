@@ -66,7 +66,7 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
               />
             </Pressable>
             <Pressable
-              className="absolute h-[22px] w-[22px] items-center justify-center rounded-[11px] bg-black/55"
+              className="absolute h-[22px] w-[22px] items-center justify-center rounded-lg bg-black/55"
               style={{
                 top: removeButtonPlacement === "gutter" ? 0 : 4,
                 right: removeButtonPlacement === "gutter" ? 0 : 4,
