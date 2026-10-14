@@ -7,6 +7,7 @@ import { Pressable, ScrollView, useColorScheme, View, type ViewStyle } from "rea
 
 import { AppText as Text } from "../../components/AppText";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
+import { useThemeColor } from "../../lib/useThemeColor";
 export type ComposerCommandItem =
   | {
       readonly id: string;
@@ -51,7 +52,7 @@ function PopoverSurface(props: {
   readonly style?: ViewStyle;
 }) {
   const baseStyle: ViewStyle = {
-    borderRadius: 16,
+    borderRadius: 14,
     overflow: "hidden",
     ...props.style,
   };
@@ -133,7 +134,8 @@ const CommandRow = memo(function CommandRow(props: {
   readonly isLast: boolean;
 }) {
   const iconName = itemIcon(props.item);
-  const iconColor = "#a1a1aa";
+  const iconColor = useThemeColor("--color-icon-subtle");
+  const separatorColor = useThemeColor("--color-separator");
 
   return (
     <Pressable
@@ -146,7 +148,7 @@ const CommandRow = memo(function CommandRow(props: {
         gap: 10,
         opacity: pressed ? 0.6 : 1,
         borderBottomWidth: props.isLast ? 0 : 0.5,
-        borderBottomColor: "rgba(255,255,255,0.1)",
+        borderBottomColor: separatorColor,
       })}
     >
       {props.item.type === "path" ? (
@@ -158,7 +160,7 @@ const CommandRow = memo(function CommandRow(props: {
         {props.item.label}
       </Text>
       {props.item.description ? (
-        <Text className="min-w-0 flex-1 text-xs text-zinc-400" numberOfLines={1}>
+        <Text className="min-w-0 flex-1 text-xs text-foreground-muted" numberOfLines={1}>
           {props.item.description}
         </Text>
       ) : null}
