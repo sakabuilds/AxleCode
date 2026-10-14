@@ -1,15 +1,8 @@
 .chat-composer-context-strip {
   position: relative;
   isolation: isolate;
-}
-
-.chat-composer-context-strip::before {
-  position: absolute;
-  z-index: -1;
-  inset: 1rem 0 0;
-  border: 1px solid var(--border);
-  border-top: 0;
-  border-radius: 0 0 10px 10px;
-  background: var(--card);
-  content: "";
+  background: var(--composer-context-background);
+  border: 1px solid color-mix(in srgb, var(--foreground) 4%, transparent);
+  border-bottom: 0;
+  margin-bottom: -1px;
 }
