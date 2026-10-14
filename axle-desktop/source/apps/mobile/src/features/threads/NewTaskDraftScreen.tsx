@@ -1067,13 +1067,13 @@ export function NewTaskDraftScreen(props: {
               style={
                 isExpanded
                   ? {
-                      borderRadius: 20,
+                      borderRadius: 18,
                       overflow: "hidden",
                       paddingHorizontal: 14,
                       paddingVertical: 12,
                     }
                   : {
-                      borderRadius: 999,
+                      borderRadius: 18,
                       overflow: "hidden",
                       flexDirection: "row",
                       alignItems: "center",
