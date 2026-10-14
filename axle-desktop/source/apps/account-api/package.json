@@ -10,7 +10,9 @@
     "test": "vp test run"
   },
   "dependencies": {
+    "@axle/contracts": "workspace:*",
     "@neondatabase/serverless": "catalog:",
+    "effect": "catalog:",
     "jose": "catalog:"
   },
   "devDependencies": {
