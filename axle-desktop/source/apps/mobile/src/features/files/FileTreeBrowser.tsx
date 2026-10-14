@@ -69,7 +69,7 @@ const FileTreeRow = memo(function FileTreeRow(props: {
         props.onPressFile(node.path);
       }}
       className={cn(
-        "mx-2 min-h-[42px] flex-row items-center gap-2 rounded-[12px] px-2 active:bg-subtle",
+        "mx-2 min-h-[42px] flex-row items-center gap-2 rounded-lg px-2 active:bg-subtle",
         props.selected && "bg-subtle-strong",
       )}
       style={{ paddingLeft: 8 + depth * 18 }}
