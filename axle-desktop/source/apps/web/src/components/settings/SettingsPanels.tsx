@@ -93,21 +93,7 @@ import {
 } from "./settingsLayout";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useAtomCommand } from "../../state/use-atom-command";
-
-const THEME_OPTIONS = [
-  {
-    value: "system",
-    label: "System",
-  },
-  {
-    value: "light",
-    label: "Light",
-  },
-  {
-    value: "dark",
-    label: "Dark",
-  },
-] as const;
+import { ThemePreferenceControl } from "./ThemePreferenceControl";
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -536,33 +522,11 @@ export function GeneralSettingsPanel() {
               <SettingResetButton label="theme" onClick={() => setTheme("system")} />
             ) : null
           }
-          control={
-            <Select
-              value={theme}
-              onValueChange={(value) => {
-                if (value === "system" || value === "light" || value === "dark") {
-                  setTheme(value);
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Theme preference">
-                <SelectValue>
-                  {THEME_OPTIONS.find((option) => option.value === theme)?.label ?? "System"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                {THEME_OPTIONS.map((option) => (
-                  <SelectItem hideIndicator key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          }
+          control={<ThemePreferenceControl value={theme} onChange={setTheme} />}
         />
 
         <SettingsRow
-          title="Focus Mode"
+          title="Focus mode"
           description="Dim working and inactive threads so completed work stays easy to scan."
           resetAction={
             settings.focusMode !== DEFAULT_UNIFIED_SETTINGS.focusMode ? (
