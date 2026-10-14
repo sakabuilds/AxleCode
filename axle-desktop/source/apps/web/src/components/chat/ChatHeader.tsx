@@ -78,17 +78,20 @@ export const ChatHeader = memo(function ChatHeader({
     primaryEnvironmentId,
   });
   return (
-    <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+    <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2 py-1 sm:gap-3">
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
         {activeProjectName ? (
           <>
             <span
-              className="hidden max-w-40 truncate text-xs text-muted-foreground @xl/header-actions:block"
+              className="hidden max-w-40 truncate text-[13px] text-muted-foreground @xl/header-actions:block"
               title={activeProjectName}
             >
               {activeProjectName}
             </span>
-            <span aria-hidden="true" className="hidden text-border @xl/header-actions:block">
+            <span
+              aria-hidden="true"
+              className="hidden text-muted-foreground/35 @xl/header-actions:block"
+            >
               /
             </span>
           </>
@@ -98,7 +101,7 @@ export const ChatHeader = memo(function ChatHeader({
             render={
               <h2
                 aria-label={activeThreadTitle}
-                className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
+                className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground/90"
               >
                 {activeThreadTitle}
               </h2>
@@ -110,7 +113,7 @@ export const ChatHeader = memo(function ChatHeader({
       <div
         data-chat-header-actions
         className={cn(
-          "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
+          "flex shrink-0 items-center justify-end gap-1 @3xl/header-actions:gap-2",
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
