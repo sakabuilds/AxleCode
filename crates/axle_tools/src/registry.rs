@@ -30,6 +30,7 @@ pub const DEFAULT_TOOL_TIMEOUT: Duration = Duration::from_secs(300);
 #[derive(Clone)]
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
+    builtin_edit_tools: HashMap<String, Arc<dyn Tool>>,
     plan_tools: HashMap<String, Arc<dyn Tool>>,
     registry_timeout: Option<Duration>,
     execution_target: Arc<dyn ExecutionTarget>,
@@ -41,6 +42,7 @@ impl Default for ToolRegistry {
     fn default() -> Self {
         Self {
             tools: HashMap::new(),
+            builtin_edit_tools: HashMap::new(),
             plan_tools: HashMap::new(),
             registry_timeout: Some(DEFAULT_TOOL_TIMEOUT),
             execution_target: Arc::new(LocalExecutionTarget::from_env()),
@@ -130,6 +132,9 @@ impl ToolRegistry {
 
     fn register_builtin(&mut self, tool: Arc<dyn Tool>) {
         let name = tool.name().to_string();
+        if matches!(name.as_str(), "write" | "edit") {
+            self.builtin_edit_tools.insert(name.clone(), tool.clone());
+        }
         self.tools.insert(name.clone(), tool.clone());
         if Self::PLAN_TOOL_NAMES.contains(&name.as_str()) {
             self.plan_tools.insert(name, tool);
@@ -138,6 +143,16 @@ impl ToolRegistry {
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
         self.tools.get(name).cloned()
+    }
+
+    /// An MCP tool may reuse a built-in name. Only the original workspace
+    /// edit implementation is eligible for automatic edit approval.
+    pub fn is_builtin_workspace_edit(&self, name: &str) -> bool {
+        self.builtin_edit_tools
+            .get(name)
+            .zip(self.tools.get(name))
+            .map(|(builtin, registered)| Arc::ptr_eq(builtin, registered))
+            .unwrap_or(false)
     }
 
     /// Restrict every later schema/execution/approval lookup to this tool set
