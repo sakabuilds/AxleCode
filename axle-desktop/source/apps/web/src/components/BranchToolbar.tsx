@@ -27,6 +27,7 @@ import { BranchToolbarBranchSelector } from "./BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { ComposerPluginDock } from "./plugins/ComposerPluginDock";
+import { ComposerProjectPicker } from "./chat/ComposerProjectPicker";
 import { Button } from "./ui/button";
 import {
   Menu,
@@ -147,7 +148,11 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
                 {availableEnvironments.map((env) => {
                   const Icon = env.isPrimary ? MonitorIcon : CloudIcon;
                   return (
-                    <MenuRadioItem key={env.environmentId} disabled={envLocked} value={env.environmentId}>
+                    <MenuRadioItem
+                      key={env.environmentId}
+                      disabled={envLocked}
+                      value={env.environmentId}
+                    >
                       <span className="flex min-w-0 items-center gap-1.5">
                         <Icon className="size-3" />
                         <span className="min-w-0 truncate">{env.label}</span>
@@ -249,8 +254,13 @@ export const BranchToolbar = memo(function BranchToolbar({
   return (
     <div
       data-chat-composer-context-shelf="true"
-      className="chat-composer-context-strip group/composer-context -mt-4 mx-auto flex w-[calc(100%-2.75rem)] max-w-[calc(48rem-2.75rem)] items-center gap-2 ps-1 pe-2 pt-5 pb-1"
+      className="chat-composer-context-strip group/composer-context mx-auto flex min-h-11 w-full items-center gap-2 rounded-t-2xl px-2 pb-1 sm:px-3"
     >
+      <ComposerProjectPicker
+        activeProjectRef={activeProjectRef}
+        activeProjectTitle={activeProject.title}
+        draftId={draftId ?? null}
+      />
       <div className="flex min-w-0 flex-1 items-center gap-1">
         {isMobile ? (
           <MobileRunContextSelector
@@ -273,14 +283,17 @@ export const BranchToolbar = memo(function BranchToolbar({
                   envLocked={envLocked}
                   environmentId={environmentId}
                   availableEnvironments={availableEnvironments}
-                  {...(showEnvironmentPicker && onEnvironmentChange
-                    ? { onEnvironmentChange }
-                    : {})}
+                  {...(showEnvironmentPicker && onEnvironmentChange ? { onEnvironmentChange } : {})}
                 />
                 <Separator orientation="vertical" className="mx-0.5 h-3.5!" />
               </>
             )}
             <BranchToolbarEnvModeSelector
+              localLabel={
+                activeEnvironmentOption?.isPrimary && !showEnvironmentIndicator
+                  ? "Local"
+                  : undefined
+              }
               envLocked={envModeLocked}
               effectiveEnvMode={effectiveEnvMode}
               activeWorktreePath={activeWorktreePath}
@@ -296,17 +309,11 @@ export const BranchToolbar = memo(function BranchToolbar({
           {...(draftId ? { draftId } : {})}
           envLocked={envLocked}
           {...(effectiveEnvModeOverride ? { effectiveEnvModeOverride } : {})}
-          {...(activeThreadBranchOverride !== undefined
-            ? { activeThreadBranchOverride }
-            : {})}
-          {...(onActiveThreadBranchOverrideChange
-            ? { onActiveThreadBranchOverrideChange }
-            : {})}
+          {...(activeThreadBranchOverride !== undefined ? { activeThreadBranchOverride } : {})}
+          {...(onActiveThreadBranchOverrideChange ? { onActiveThreadBranchOverrideChange } : {})}
           startFromOrigin={startFromOrigin}
           onStartFromOriginChange={onStartFromOriginChange}
-          {...(onCheckoutPullRequestRequest
-            ? { onCheckoutPullRequestRequest }
-            : {})}
+          {...(onCheckoutPullRequestRequest ? { onCheckoutPullRequestRequest } : {})}
           {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
         />
       </div>
