@@ -47,4 +47,28 @@ describe("cloud store request boundaries", () => {
     expect(cloudInputHash({ x: 1, y: { b: 2, a: 3 } })).toBe(cloudInputHash({ y: { a: 3, b: 2 }, x: 1 }));
     expect(cloudInputHash({ x: 1 })).not.toBe(cloudInputHash({ x: 2 }));
   });
+  it("rejects plans without cloud entitlement before the queue is touched", async () => {
+    const gated = createCloudJobStore(query, cloudConfigFixture,
+      { plans: [{ planId: "off", cloudJobsEnabled: false, monthlyCredits: 0, maxConcurrentJobs: 1 }], defaultPlanId: "off", creditsPerMinute: 3 });
+    await expect(gated.create("user-a", cloudInputFixture)).rejects.toMatchObject({ code: "cloud_not_entitled" });
+    expect(query).not.toHaveBeenCalled();
+  });
+  it("resolves plan limits server-side and forwards the reservation rate", async () => {
+    const gated = createCloudJobStore(query, cloudConfigFixture,
+      { plans: [{ planId: "pro", cloudJobsEnabled: true, monthlyCredits: 300, maxConcurrentJobs: 1 }], defaultPlanId: "pro", creditsPerMinute: 3 });
+    await gated.create("user-a", cloudInputFixture);
+    expect(query).toHaveBeenCalledWith("create", expect.objectContaining({
+      maxActiveJobsPerUser: 1, planId: "pro", monthlyCredits: 300, creditsPerMinute: 3,
+    }));
+  });
+  it("validates operator grants before any ledger write", async () => {
+    await expect(store.grant("user-a", { entryId: "bad id", amount: 5 })).rejects.toMatchObject({ code: "invalid_entry_id" });
+    await expect(store.grant("user-a", { entryId: "top-up-1", amount: 0 })).rejects.toMatchObject({ code: "invalid_amount" });
+    await expect(store.grant("user-a", { entryId: "top-up-1", amount: 5.5 })).rejects.toMatchObject({ code: "invalid_amount" });
+    expect(query).not.toHaveBeenCalled();
+    await store.grant("user-a", { entryId: "top-up-1", amount: 25, note: "support" });
+    expect(query).toHaveBeenCalledWith("grant", {
+      userId: "user-a", entryId: "top-up-1", amount: 25, note: "support", planId: "operator", monthlyCredits: 0,
+    });
+  });
 });
