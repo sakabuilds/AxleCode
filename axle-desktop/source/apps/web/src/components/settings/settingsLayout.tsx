@@ -31,10 +31,10 @@ export function SettingsSection({
   const titleId = useId();
   return (
     <section aria-labelledby={titleId} {...sectionProps} className={cn("space-y-3", className)}>
-      <div className="flex min-h-6 flex-wrap items-center justify-between gap-3 px-0.5">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-3">
         <h2
           id={titleId}
-          className="flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground"
+          className="flex items-center gap-2 text-sm font-semibold text-foreground [&>svg]:size-4 [&>svg]:text-muted-foreground"
         >
           {icon}
           {title}
@@ -43,9 +43,7 @@ export function SettingsSection({
           <div className="flex min-w-0 items-center justify-end gap-2">{headerAction}</div>
         ) : null}
       </div>
-      <div className="relative min-w-0 rounded-xl border border-border bg-card text-card-foreground">
-        {children}
-      </div>
+      <div className="relative min-w-0 border-t border-border/80 text-foreground">{children}</div>
     </section>
   );
 }
@@ -71,25 +69,25 @@ export function SettingsRow({
     <div
       {...rowProps}
       className={cn(
-        "min-w-0 border-t border-border/70 px-4 first:border-t-0 sm:px-5",
-        children ? "pt-4 pb-0" : "py-4",
+        "min-w-0 border-t border-border/60 first:border-t-0",
+        children ? "pt-5 pb-0" : "py-5",
         className,
       )}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-        <div className="min-w-0 flex-1 space-y-1">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+        <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex min-h-5 items-center gap-1.5">
-            <h3 className="text-[13px] leading-5 font-medium text-foreground">{title}</h3>
+            <h3 className="text-sm leading-5 font-medium text-foreground">{title}</h3>
             {resetAction ? (
               <span className="inline-flex size-5 shrink-0 items-center justify-center">
                 {resetAction}
               </span>
             ) : null}
           </div>
-          <p className="max-w-prose text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+          <p className="max-w-prose text-[13px] leading-5 text-muted-foreground [overflow-wrap:anywhere]">
             {description}
           </p>
-          {status ? <div className="pt-0.5 text-[11px] text-muted-foreground">{status}</div> : null}
+          {status ? <div className="pt-0.5 text-xs text-muted-foreground">{status}</div> : null}
         </div>
         {control ? (
           <div className="flex w-full min-w-0 shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:max-w-[48%] sm:justify-end [&>*]:max-w-full">
@@ -111,7 +109,7 @@ export function SettingResetButton({ label, onClick }: { label: string; onClick:
             size="icon-xs"
             variant="ghost"
             aria-label={`Reset ${label} to default`}
-            className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
+            className="size-5 rounded-md p-0 text-muted-foreground hover:text-foreground"
             onClick={(event) => {
               event.stopPropagation();
               onClick();
@@ -138,11 +136,11 @@ export function SettingsPageContainer({
   description?: string;
 }) {
   return (
-    <div className="scrollbar-gutter-both min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-8 sm:py-8">
-      <div className={cn("mx-auto flex w-full max-w-3xl flex-col gap-7 pb-8", className)}>
+    <div className="scrollbar-gutter-both min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-5 py-8 sm:px-10 sm:py-11">
+      <div className={cn("mx-auto flex w-full max-w-3xl flex-col gap-9 pb-12", className)}>
         {title ? (
-          <div className="space-y-1.5 pb-1">
-            <h1 className="text-xl leading-7 font-semibold tracking-tight text-foreground">
+          <div className="space-y-2 pb-1">
+            <h1 className="text-2xl leading-8 font-semibold tracking-tight text-foreground">
               {title}
             </h1>
             {description ? (
