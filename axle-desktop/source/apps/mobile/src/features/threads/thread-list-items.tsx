@@ -1,8 +1,5 @@
 import { useRecyclingState } from "@legendapp/list/react-native";
-import type {
-  EnvironmentProject,
-  EnvironmentThreadShell,
-} from "@axle/client-runtime/state/shell";
+import type { EnvironmentProject, EnvironmentThreadShell } from "@axle/client-runtime/state/shell";
 import type { MenuAction } from "@react-native-menu/menu";
 import { SymbolView } from "../../components/AppSymbol";
 import { memo, useCallback, useMemo, type ComponentProps } from "react";
@@ -32,7 +29,7 @@ export type ThreadListVariant = "compact" | "sidebar";
 
 /** Left inset that aligns compact secondary rows with the title column. */
 export const THREAD_LIST_COMPACT_INSET = 20;
-const SIDEBAR_ROW_RADIUS = 12;
+const SIDEBAR_ROW_RADIUS = 10;
 
 function pullRequestTintColor(
   state: ThreadPr["state"],
@@ -203,7 +200,7 @@ export const ThreadListShowMoreRow = memo(function ThreadListShowMoreRow(props: 
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label === "Show more" ? "Show more threads" : "Show fewer threads"}
-      className="rounded-full bg-subtle"
+      className="rounded-lg bg-subtle"
       hitSlop={6}
       onPress={onPress}
       style={({ pressed }) => ({
@@ -290,8 +287,8 @@ export const PendingTaskListRow = memo(function PendingTaskListRow(props: {
   );
 
   const statusPill = (
-    <View className="rounded-full bg-zinc-500/12 px-1.5 py-0.5 dark:bg-zinc-500/16">
-      <Text className="text-3xs font-t3-bold text-zinc-600 dark:text-zinc-300">Pending</Text>
+    <View className="rounded-md bg-subtle px-1.5 py-0.5">
+      <Text className="text-3xs font-t3-bold text-foreground-muted">Pending</Text>
     </View>
   );
 
@@ -443,7 +440,8 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   const screenColor = useThemeColor("--color-screen");
   const drawerColor = useThemeColor("--color-drawer");
   const pressedBackgroundColor = useThemeColor("--color-subtle");
-  const selectedBackgroundColor = useThemeColor("--color-user-bubble");
+  const selectedBackgroundColor = useThemeColor("--color-selected");
+  const selectedForegroundColor = String(useThemeColor("--color-selected-foreground"));
 
   const { thread, onSelectThread, onArchiveThread, onDeleteThread } = props;
   const status = resolveThreadStatus(thread);
@@ -457,10 +455,14 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   );
 
   const backgroundColor = compact ? screenColor : drawerColor;
-  const effectivePressedBackground = selected ? "rgba(255,255,255,0.16)" : pressedBackgroundColor;
+  const effectivePressedBackground = pressedBackgroundColor;
   const effectiveStatus =
     selected && status
-      ? { ...status, pillClassName: "bg-white/20", textClassName: "text-white" }
+      ? {
+          ...status,
+          pillClassName: "bg-white/15 dark:bg-white/10",
+          textClassName: "text-selected-foreground",
+        }
       : status;
 
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
@@ -499,8 +501,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
               className={cn(
                 "shrink",
                 compact ? "text-sm text-foreground-muted" : "text-xs",
-                !compact &&
-                  (selected ? "text-user-bubble-foreground-muted" : "text-foreground-muted"),
+                !compact && (selected ? "text-selected-foreground-muted" : "text-foreground-muted"),
               )}
               numberOfLines={1}
             >
@@ -512,11 +513,13 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
           <View className="flex-row items-center gap-0.5">
             <PullRequestIcon
               size={compact ? 13 : 11}
-              color={selected ? "#ffffff" : pullRequestTintColor(pr.state, colorScheme)}
+              color={
+                selected ? selectedForegroundColor : pullRequestTintColor(pr.state, colorScheme)
+              }
             />
             <Text
               className={`${compact ? "text-sm" : "text-xs"} font-t3-medium ${
-                selected ? "text-white" : pr.textClassName
+                selected ? "text-selected-foreground" : pr.textClassName
               }`}
             >
               {pr.label}
@@ -604,7 +607,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
             <Text
               className={cn(
                 "flex-1 text-base font-t3-medium",
-                selected ? "text-user-bubble-foreground" : "text-foreground",
+                selected ? "text-selected-foreground" : "text-foreground",
               )}
               numberOfLines={1}
             >
@@ -615,7 +618,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
               <Text
                 className={cn(
                   "text-xs tabular-nums",
-                  selected ? "text-user-bubble-foreground-muted" : "text-foreground-muted",
+                  selected ? "text-selected-foreground-muted" : "text-foreground-muted",
                 )}
                 numberOfLines={1}
               >
