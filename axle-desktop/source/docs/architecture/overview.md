@@ -1,6 +1,6 @@
 # Architecture
 
-Axle runs as a **Node.js WebSocket server** that wraps `codex app-server` (JSON-RPC over stdio) and serves a React web app.
+Axle runs as a **Node.js HTTP/WebSocket server** that serves the React client and owns projects, orchestration, events, and persistence. Its active built-in provider is the aggregated `AxleDriver`: `AxleAdapter` launches the Rust `axle` CLI and translates NDJSON events into the existing orchestration model. The standalone Codex/Claude adapters remain compatibility code; they are not registered as additional built-in drivers.
 
 ```
 ┌─────────────────────────────────┐
@@ -19,9 +19,9 @@ Axle runs as a **Node.js WebSocket server** that wraps `codex app-server` (JSON-
 │  CheckpointReactor              │
 │  RuntimeReceiptBus              │
 └──────────┬──────────────────────┘
-           │ JSON-RPC over stdio
+           │ Axle CLI / NDJSON over stdio
 ┌──────────▼──────────────────────┐
-│  codex app-server               │
+│  Rust axle agent runtime        │
 └─────────────────────────────────┘
 ```
 
@@ -31,7 +31,7 @@ Axle runs as a **Node.js WebSocket server** that wraps `codex app-server` (JSON-
 
 - **Server**: `apps/server` is the main coordinator. It serves the web app, accepts WebSocket requests, waits for startup readiness before welcoming clients, and sends all outbound pushes through a single ordered push path.
 
-- **Provider runtime**: `codex app-server` does the actual provider/session work. The server talks to it over JSON-RPC on stdio and translates those runtime events into the app's orchestration model.
+- **Provider runtime**: the Rust CLI owns the agent loop, provider HTTP transports, tools, approvals, and durable provider conversation. `AxleAdapter` launches it with a stable session identity and translates its NDJSON events. Server projections and the provider transcript are separate stores with distinct responsibilities.
 
 - **Background workers**: Long-running async flows such as runtime ingestion, command reaction, and checkpoint processing run as queue-backed workers. This keeps work ordered, reduces timing races, and gives tests a deterministic way to wait for the system to go idle.
 
@@ -74,7 +74,7 @@ sequenceDiagram
     participant Transport as WsTransport
     participant Server as wsServer
     participant Provider as ProviderService
-    participant Codex as codex app-server
+    participant Codex as Rust axle CLI
     participant Ingest as ProviderRuntimeIngestion
     participant Engine as OrchestrationEngine
     participant Push as ServerPushBus
@@ -82,7 +82,7 @@ sequenceDiagram
     Browser->>Transport: Send user action
     Transport->>Server: Typed WebSocket request
     Server->>Provider: Route request
-    Provider->>Codex: JSON-RPC over stdio
+    Provider->>Codex: CLI arguments, prompt stdin, stable session
     Codex-->>Ingest: Provider runtime events
     Ingest->>Engine: Normalize into orchestration events
     Engine-->>Server: Domain events
@@ -92,7 +92,7 @@ sequenceDiagram
 
 1. A user action in the browser becomes a typed request through `WsTransport` and the browser API layer in `nativeApi`.
 2. `wsServer` decodes that request using the shared WebSocket contracts in `ws.ts` and routes it to the right service.
-3. [`ProviderService`][8] starts or resumes a session and talks to `codex app-server` over JSON-RPC on stdio.
+3. [`ProviderService`][8] starts or resumes a session through the registered Axle driver. The adapter supplies the stable provider session and the Rust CLI reads its persisted transcript.
 4. Provider-native events are pulled back into the server by [`ProviderRuntimeIngestion`][9], which converts them into orchestration events.
 5. [`OrchestrationEngine`][10] persists those events, updates the read model, and exposes them as domain events.
 6. `wsServer` pushes those updates to the browser through `ServerPushBus` on channels defined in [`orchestration.ts`][11].
@@ -133,3 +133,9 @@ sequenceDiagram
 [14]: ../../apps/server/src/orchestration/Layers/CheckpointReactor.ts
 [15]: ../../apps/server/src/orchestration/Layers/RuntimeReceiptBus.ts
 [16]: ../../packages/shared/src/DrainableWorker.ts
+
+## Execution boundary
+
+Remote access connects a client to another Axle server; a relay does not run agents. The Rust `ExecutionTarget` abstraction currently has only `LocalExecutionTarget`, meaning commands run on the machine hosting that agent. Independent cloud execution needs a separately hosted control plane, provisioned isolated runners, durable job ownership, and artifact storage. The in-memory side-effect queues above are not a durable cloud job queue.
+
+Authoritative runtime registration: `apps/server/src/provider/builtInDrivers.ts`.
