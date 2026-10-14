@@ -53,19 +53,23 @@ function ConfiguredSettingsAuthRouteScreen() {
         {!isLoaded ? (
           <ActivityIndicator />
         ) : isSignedIn ? (
-          <View className="gap-4 rounded-[24px] bg-card p-5">
-            <Text className="text-xl font-t3-bold text-foreground">{user?.name || "Axle account"}</Text>
-            <Text className="text-base text-foreground-secondary">{user?.email ?? "Signed in"}</Text>
+          <View className="gap-4 rounded-2xl bg-card p-5">
+            <Text className="text-xl font-t3-bold text-foreground">
+              {user?.name || "Axle account"}
+            </Text>
+            <Text className="text-base text-foreground-secondary">
+              {user?.email ?? "Signed in"}
+            </Text>
             <Pressable
               accessibilityRole="button"
               onPress={() => void signOut()}
-              className="min-h-[52px] items-center justify-center rounded-full bg-subtle px-5 active:opacity-70"
+              className="min-h-[52px] items-center justify-center rounded-lg bg-subtle px-5 active:opacity-80"
             >
               <Text className="font-t3-bold text-base text-foreground">Sign out</Text>
             </Pressable>
           </View>
         ) : (
-          <View className="gap-4 rounded-[24px] bg-card p-5">
+          <View className="gap-4 rounded-2xl bg-card p-5">
             <Text className="text-xl font-t3-bold text-foreground">
               {isSignUp ? "Create your Axle account" : "Sign in to Axle"}
             </Text>
@@ -109,7 +113,7 @@ function ConfiguredSettingsAuthRouteScreen() {
               disabled={isSubmitting}
               onPress={() => void submit()}
               className={cn(
-                "min-h-[52px] items-center justify-center rounded-full bg-primary px-5 active:opacity-70",
+                "min-h-[52px] items-center justify-center rounded-lg bg-primary px-5 active:opacity-80",
                 isSubmitting && "opacity-50",
               )}
             >
