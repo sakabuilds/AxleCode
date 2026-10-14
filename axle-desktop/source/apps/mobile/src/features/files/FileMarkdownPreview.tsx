@@ -122,7 +122,7 @@ function useMarkdownPreviewStyles(): MarkdownPreviewStyles {
         },
         codeBlock: {
           backgroundColor: codeBackground,
-          borderRadius: 12,
+          borderRadius: 10,
           color: codeText,
           fontFamily: "ui-monospace",
           padding: 12,
