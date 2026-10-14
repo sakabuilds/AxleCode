@@ -200,9 +200,14 @@ const config: ExpoConfig = {
       `webcredentials:${variant.relyingParty}`,
     ],
     infoPlist: {
-      NSAppTransportSecurity: {
-        NSAllowsArbitraryLoads: true,
-      },
+      // Production builds keep App Transport Security on for remote hosts and
+      // only carve out plain HTTP to the local network (dev servers, device
+      // pairing, tailnet boxes on private ranges). Dev/preview dev-client
+      // builds keep arbitrary loads so LAN/tailnet HTTP debugging still works.
+      NSAppTransportSecurity:
+        APP_VARIANT === "production"
+          ? { NSAllowsLocalNetworking: true }
+          : { NSAllowsArbitraryLoads: true, NSAllowsLocalNetworking: true },
       NSLocalNetworkUsageDescription:
         "Allow Axle to connect to Axle servers on your local network or tailnet.",
       ITSAppUsesNonExemptEncryption: false,
@@ -335,6 +340,9 @@ const config: ExpoConfig = {
     },
     neonAuth: {
       url: repoEnv.EXPO_PUBLIC_NEON_AUTH_URL ?? repoEnv.T3CODE_NEON_AUTH_URL ?? null,
+    },
+    accountApi: {
+      url: repoEnv.EXPO_PUBLIC_ACCOUNT_API_URL ?? repoEnv.T3CODE_ACCOUNT_API_URL ?? null,
     },
     observability: {
       tracesUrl: repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL ?? "https://api.axiom.co/v1/traces",
