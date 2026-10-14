@@ -1,0 +1,222 @@
+export const MODEL_PROVIDERS = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    mark: "O",
+    family: "GPT & reasoning models",
+    type: "Cloud",
+    copy: "Work with OpenAI models using your API key, or connect your Codex subscription.",
+    key: "OPENAI_API_KEY",
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    mark: "A",
+    family: "Claude",
+    type: "Cloud",
+    copy: "Bring Claude into your workflow for reasoning, writing code, and working through changes.",
+    key: "ANTHROPIC_API_KEY",
+  },
+  {
+    id: "gemini",
+    name: "Google",
+    mark: "G",
+    family: "Gemini",
+    type: "Cloud",
+    copy: "Connect a Gemini API key and choose the model available in your Google account.",
+    key: "GEMINI_API_KEY",
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    mark: "↗",
+    family: "A wider model catalog",
+    type: "Cloud",
+    copy: "Access multiple model families through one provider account and one API key.",
+    key: "OPENROUTER_API_KEY",
+  },
+  {
+    id: "fireworks",
+    name: "Fireworks",
+    mark: "✳",
+    family: "Hosted open models",
+    type: "Cloud",
+    copy: "Use open model families hosted by Fireworks without running your own infrastructure.",
+    key: "FIREWORKS_API_KEY",
+  },
+  {
+    id: "cerebras",
+    name: "Cerebras",
+    mark: "C",
+    family: "Fast inference",
+    type: "Cloud",
+    copy: "Connect to Cerebras inference with the model and account that fit your work.",
+    key: "CEREBRAS_API_KEY",
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    mark: "g",
+    family: "Hosted open models",
+    type: "Cloud",
+    copy: "Bring your Groq API key for an alternative route to supported open models.",
+    key: "GROQ_API_KEY",
+  },
+  {
+    id: "ollama-cloud",
+    name: "Ollama Cloud",
+    mark: "◉",
+    family: "Open models in the cloud",
+    type: "Cloud",
+    copy: "Use hosted Ollama models when a task needs more than your local hardware.",
+    key: "OLLAMA_API_KEY",
+  },
+  {
+    id: "ollama",
+    name: "Ollama",
+    mark: "◎",
+    family: "Your local models",
+    type: "Local",
+    copy: "Connect a local Ollama runtime. Your machine supplies the compute; no provider key is required.",
+    key: "No API key required",
+  },
+] as const;
+
+export const INTEGRATION_CATALOG = [
+  {
+    name: "GitHub",
+    mark: "GH",
+    category: "Code",
+    kind: "MCP",
+    description:
+      "Repository context, issues, and pull requests in your working conversation.",
+    detail:
+      "Connect GitHub's hosted MCP server with a personal access token. Available tools depend on the token permissions you grant.",
+    anchor: "github",
+  },
+  {
+    name: "Git",
+    mark: "⎇",
+    category: "Code",
+    kind: "Built in",
+    description:
+      "Read your working tree, inspect history, and review changes where they happen.",
+    detail:
+      "Open a project with an existing Git repository. The agent can use local Git commands through the terminal, subject to your approval settings.",
+    anchor: "projects",
+  },
+  {
+    name: "Terminal",
+    mark: ">_",
+    category: "Development",
+    kind: "Built in",
+    description:
+      "Run your project's commands, test suite, and development tools.",
+    detail:
+      "Your local shell keeps the environment you already use. Review commands and their output in the thread, and configure approvals for sensitive actions.",
+    anchor: "approvals",
+  },
+  {
+    name: "Files",
+    mark: "{}",
+    category: "Development",
+    kind: "Built in",
+    description:
+      "Read, search, and edit files directly inside your project folder.",
+    detail:
+      "Add a folder to a project to give the agent workspace context. Changes remain in your local files and can be reviewed with your existing tools.",
+    anchor: "projects",
+  },
+  {
+    name: "Figma",
+    mark: "Fi",
+    category: "Design",
+    kind: "MCP compatible",
+    description:
+      "Bring design context into a build through a compatible Figma MCP server.",
+    detail:
+      "Configure a Figma MCP server supported by your account. Its exposed tools determine which frames, design details, and assets the agent can read.",
+    anchor: "integrations",
+  },
+  {
+    name: "Linear",
+    mark: "◒",
+    category: "Planning",
+    kind: "MCP compatible",
+    description:
+      "Use issue and project context through a compatible Linear MCP connection.",
+    detail:
+      "Connect a Linear MCP server with the access your workspace allows. Review the server's permissions before enabling its tools.",
+    anchor: "integrations",
+  },
+  {
+    name: "Notion",
+    mark: "N",
+    category: "Knowledge",
+    kind: "MCP compatible",
+    description:
+      "Make selected documentation reachable through a Notion MCP server.",
+    detail:
+      "Use a compatible Notion MCP server and grant it access to the pages you want to work with. The connection determines available actions.",
+    anchor: "integrations",
+  },
+  {
+    name: "Sentry",
+    mark: "△",
+    category: "Development",
+    kind: "MCP compatible",
+    description:
+      "Connect production error context with a compatible Sentry MCP server.",
+    detail:
+      "Configure a Sentry MCP server for your organization. Available issue and project tools follow that server's capabilities and permissions.",
+    anchor: "integrations",
+  },
+  {
+    name: "Playwright",
+    mark: "Pw",
+    category: "Development",
+    kind: "MCP compatible",
+    description:
+      "Add browser tools through a locally configured Playwright MCP server.",
+    detail:
+      "Run a compatible Playwright MCP server over stdio. Browser behavior and the actions it can perform are provided by that server.",
+    anchor: "integrations",
+  },
+  {
+    name: "Custom MCP",
+    mark: "+",
+    category: "Development",
+    kind: "MCP",
+    description: "Connect your own tools over HTTP or a local stdio process.",
+    detail:
+      "Rivet's runtime supports remote HTTP endpoints and local stdio MCP servers. Supply the endpoint or command, then configure any required authentication.",
+    anchor: "integrations",
+  },
+] as const;
+
+export const PRICING_FAQS = [
+  {
+    q: "What do I pay for today?",
+    a: "The desktop application is free to download. When you connect a paid model provider, that provider bills your API usage under your own account. Local models use your hardware instead.",
+  },
+  {
+    q: "Do I need a credit card to try Rivet?",
+    a: "Rivet does not ask for a credit card to download the app. A hosted model provider may require billing to be enabled before its API can be used. You can also connect a local Ollama runtime.",
+  },
+  {
+    q: "Can I subscribe to Pro or Team?",
+    a: "Pro and Team are planned offerings. Paid prices, included features, and billing terms are not published yet. There is no paid checkout on this site. The free desktop app is available now.",
+  },
+  {
+    q: "Does annual billing change my provider costs?",
+    a: "No. Your model provider charges are separate from Rivet. Switching the billing view here does not change your provider account or create a subscription.",
+  },
+  {
+    q: "Can I use my existing model accounts?",
+    a: "Yes. Add provider API keys in Settings > Models. The runtime also supports Codex subscription authentication. Which models you can use depends on the access available in that account.",
+  },
+  {
+    q: "Where does my code go?",
+    a: "Your project files live on your computer. When you use a hosted model, the context needed for a request is sent to that provider. Review the provider's data terms, and use a local model when you want inference to run on your machine.",
+  },
+] as const;
