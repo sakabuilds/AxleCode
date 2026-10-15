@@ -8,6 +8,8 @@ import {
   Folder,
   SlidersHorizontal,
 } from "lucide-react";
+import { BrandLogo } from "@/components/site/brand-logo";
+import { providerLogo } from "@/lib/brand-logos";
 import { MODEL_PROVIDERS } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
 
@@ -103,7 +105,7 @@ export function ModelSwitcher() {
                 aria-hidden="true"
                 className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.06] text-xl"
               >
-                {provider.mark}
+                <BrandLogo logo={providerLogo(provider.id)} mark={provider.mark} size={22} />
               </span>
               <div>
                 <p className="text-sm font-medium">{provider.name}</p>
