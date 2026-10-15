@@ -16,6 +16,9 @@ export const AgentProvider = Schema.Literals([
   "cerebras",
   "groq",
   "openrouter",
+  "mistral",
+  "deepseek",
+  "xai",
   "ollama",
 ]);
 export type AgentProvider = typeof AgentProvider.Type;
@@ -47,13 +50,23 @@ const WorkerConfigSchema = Schema.Struct({
   environmentIds: Schema.Array(Identifier).check(Schema.isMinLength(1)),
   workspaceRoot: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024)),
   artifactRoot: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024)),
-  agentBinary: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024))),
+  agentBinary: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024)),
+  ),
   agentEnv: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   providers: Schema.Array(ProviderBindingSchema).check(Schema.isMinLength(1)),
-  pollIntervalMs: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 250, maximum: 60_000 }))),
-  heartbeatIntervalMs: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 120_000 }))),
-  shutdownGraceMs: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 600_000 }))),
-  maxConcurrentJobs: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
+  pollIntervalMs: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 250, maximum: 60_000 })),
+  ),
+  heartbeatIntervalMs: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 120_000 })),
+  ),
+  shutdownGraceMs: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 1_000, maximum: 600_000 })),
+  ),
+  maxConcurrentJobs: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+  ),
   keepWorkspaces: Schema.optionalKey(Schema.Boolean),
 });
 
@@ -108,9 +121,15 @@ export function readWorkerConfig(
       const apiKeyEnv = binding.apiKeyEnv ?? null;
       const baseUrl = binding.baseUrl ? normalizeBaseUrl(binding.baseUrl) : null;
       if (binding.provider !== "ollama" && apiKeyEnv === null) throw new Error();
-      return { providerInstanceId: binding.providerInstanceId, provider: binding.provider, apiKeyEnv, baseUrl };
+      return {
+        providerInstanceId: binding.providerInstanceId,
+        provider: binding.provider,
+        apiKeyEnv,
+        baseUrl,
+      };
     });
-    if (new Set(providers.map((binding) => binding.providerInstanceId)).size !== providers.length) throw new Error();
+    if (new Set(providers.map((binding) => binding.providerInstanceId)).size !== providers.length)
+      throw new Error();
     return {
       controlPlaneUrl,
       workerId: parsed.workerId,
@@ -135,12 +154,14 @@ export function readWorkerConfig(
 
 function normalizeControlPlaneUrl(value: string): string {
   const url = new URL(value);
-  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password) throw new Error();
+  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password)
+    throw new Error();
   return value.replace(/\/+$/u, "");
 }
 
 function normalizeBaseUrl(value: string): string {
   const url = new URL(value);
-  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password) throw new Error();
+  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password)
+    throw new Error();
   return value;
 }
