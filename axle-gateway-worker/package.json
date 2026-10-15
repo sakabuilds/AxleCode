@@ -1,0 +1,15 @@
+{
+  "name": "axle-gateway-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/*.test.js",
+    "gateway:local": "node scripts/local-gateway.mjs",
+    "self-test": "node scripts/self-test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
