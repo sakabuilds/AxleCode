@@ -1,0 +1,70 @@
+# Axle Gateway
+
+The hosted provider behind `axle --provider axle`. It is an OpenAI-compatible
+endpoint that authenticates an `AXLE_API_KEY`, meters the turn in Axle credits,
+and forwards to a single upstream provider key that Axle owns — so every user
+gets working models without configuring a vendor key of their own.
+
+## Routes
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/v1/models` | `GET` | The five Axle models and their credit rates (the desktop picker) |
+| `/v1/credits` | `GET` | Current balance; applies the free daily grant |
+| `/v1/chat/completions` | `POST` | Metered chat completion |
+| `/healthz` | `GET` | Liveness |
+
+## Credits
+
+100 credits == $0.50, so one credit is half a cent. Every user receives **100
+credits ($0.50) per UTC day** for free, granted on their first request of the
+day. Top-ups add to the same balance; there is no separate "paid" bucket.
+
+The five models are priced by tier, so a Max turn drains a day's free credits
+far faster than a Nano turn:
+
+| Model | Tier | Credits / 1M input | Credits / 1M output |
+| --- | --- | --- | --- |
+| `axle-nano` | 1 | 40 | 160 |
+| `axle-flash` | 2 | 60 | 240 |
+| `axle-core` | 3 | 150 | 600 |
+| `axle-pro` | 4 | 300 | 1200 |
+| `axle-max` | 5 | 600 | 2400 |
+
+Rates and upstream model ids live in `src/pricing.js`; the upstream ids are
+data, so the catalog can be re-pointed without touching the gateway logic.
+
+### How a turn is metered
+
+1. The request's `Authorization: Bearer <key>` is hashed into a stable user id.
+2. The daily grant is applied (once per UTC day).
+3. The maximum possible cost of the turn is **reserved** up front, so a
+   streamed response can never be free. If the balance is short, the request
+   is refused with `402` and `error.code = "axle_insufficient_credits"`.
+4. After the upstream reports `usage`, the difference between the reservation
+   and the real cost is refunded. Streaming responses carry the same guarantee
+   because the gateway asks the upstream for `stream_options.include_usage` and
+   settles when the usage chunk arrives.
+
+## Deploy
+
+```sh
+cd axle-gateway-worker
+wrangler d1 create axle-credits          # paste the id into wrangler.toml
+wrangler d1 execute axle-credits --file=migrations/0001_credits.sql --remote
+wrangler secret put UPSTREAM_API_KEY     # the shared upstream key Axle owns
+wrangler deploy
+```
+
+`UPSTREAM_BASE_URL` defaults to `https://openrouter.ai/api/v1`; point it at any
+OpenAI-compatible endpoint. Then serve the worker at `api.axle.llc` and the
+desktop app reaches it through the runtime's default `--provider axle` base URL.
+
+## Tests
+
+```sh
+npm test         # unit tests: node --test src/*.test.js
+npm run self-test  # end-to-end: boots the gateway and drives the real engine
+```
+
+See `TESTING.md` for the manual curl and CLI walkthrough.
