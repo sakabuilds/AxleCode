@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import worker, { handleRequest, releaseConfig, requestedPlatform, updateRequest, validateManifest } from "./index.js";
@@ -21,6 +22,8 @@ const env = {
   RELEASE_LINUX_SIZE: "220000000",
   RELEASE_LINUX_ASC_SIZE: "1024",
   RELEASE_LINUX_ASC_SHA256: "LINUXHASH",
+  RELEASE_LINUX_DEB_SIZE: "230000000",
+  RELEASE_LINUX_DEB_SHA256: "LINUXDEBHASH",
 };
 
 test("the public Windows download redirects to the AWS installer", async () => {
@@ -40,6 +43,52 @@ test("unsupported systems default to Windows, while Linux and macOS resolve to i
   assert.equal(linux.headers.get("location"), "https://downloads.example.test/releases/0.0.28/linux/Axle-x64.AppImage");
 });
 
+test("a Linux visitor can request the .deb package", async () => {
+  const deb = await handleRequest(new Request("https://axle.llc/get?platform=linux&format=deb"), env);
+  assert.equal(deb.status, 302);
+  assert.equal(deb.headers.get("location"), "https://downloads.example.test/releases/0.0.28/linux/Axle-amd64.deb");
+
+  // The default stays the AppImage so links handed out before .deb support
+  // existed keep resolving to the format people were already told to expect.
+  const fallback = await handleRequest(new Request("https://axle.llc/get?platform=linux"), env);
+  assert.equal(fallback.headers.get("location"), "https://downloads.example.test/releases/0.0.28/linux/Axle-x64.AppImage");
+  const explicit = await handleRequest(new Request("https://axle.llc/get?platform=linux&format=AppImage"), env);
+  assert.equal(explicit.headers.get("location"), "https://downloads.example.test/releases/0.0.28/linux/Axle-x64.AppImage");
+});
+
+test("an installer format that does not exist for a platform fails closed", async () => {
+  const windowsDeb = await handleRequest(new Request("https://axle.llc/get?platform=windows&format=deb"), env);
+  assert.equal(windowsDeb.status, 404);
+  assert.match((await windowsDeb.json()).error, /deb windows-x64 installer/u);
+
+  const unknownFormat = await handleRequest(new Request("https://axle.llc/get?platform=linux&format=rpm"), env);
+  assert.equal(unknownFormat.status, 404);
+
+  const intelDmg = await handleRequest(new Request("https://axle.llc/get?platform=macos-x64&format=dmg"), env);
+  assert.equal(intelDmg.status, 302);
+  assert.equal(intelDmg.headers.get("location"), "https://downloads.example.test/releases/0.0.28/macos/x64/Axle.dmg");
+});
+
+test("a missing installer still records which format was asked for", async () => {
+  const originalFetch = globalThis.fetch;
+  let payload;
+  globalThis.fetch = async (_input, init) => {
+    payload = JSON.parse(init.body);
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const response = await handleRequest(
+      new Request("https://axle.llc/get?platform=windows&format=deb"),
+      { ...env, ANALYTICS_ENDPOINT: "https://analytics.example.test/analytics/event" },
+    );
+    assert.equal(response.status, 404);
+    assert.equal(payload.outcome, "missing-installer");
+    assert.equal(payload.file, "deb");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("the manifest describes the local launch build", async () => {
   const response = await handleRequest(new Request("https://axle.llc/get/manifest"), env);
   const body = await response.json();
@@ -47,8 +96,8 @@ test("the manifest describes the local launch build", async () => {
   assert.equal(body.files[0].name, "Axle-x64.exe");
   assert.equal(body.files[0].size, 342384168);
   assert.equal(body.files[0].sha256, env.RELEASE_WINDOWS_SHA256);
-  assert.deepEqual(body.files.slice(1).map((file) => file.platform), ["macos-arm64", "macos-x64", "linux-x64", "linux-x64"]);
-  assert.deepEqual(body.files.slice(1).map((file) => file.sha256), [env.RELEASE_MAC_ARM64_SHA256, env.RELEASE_MAC_X64_SHA256, null, env.RELEASE_LINUX_ASC_SHA256]);
+  assert.deepEqual(body.files.slice(1).map((file) => file.platform), ["macos-arm64", "macos-x64", "linux-x64", "linux-x64", "linux-x64"]);
+  assert.deepEqual(body.files.slice(1).map((file) => file.sha256), [env.RELEASE_MAC_ARM64_SHA256, env.RELEASE_MAC_X64_SHA256, null, env.RELEASE_LINUX_ASC_SHA256, env.RELEASE_LINUX_DEB_SHA256]);
 });
 
 test("the desktop updater resolves only known AWS release assets", async () => {
@@ -188,6 +237,7 @@ test("latest stable GitHub release serves pinned update feeds for every platform
       name,
       size: 1024,
       content_type: "application/octet-stream",
+      digest: name === "Axle-amd64.deb" ? `sha256:${"a".repeat(64)}` : null,
       browser_download_url: `${releaseBase}/${name}`,
     })),
   };
@@ -243,10 +293,18 @@ files:
     const debResponse = await handleRequest(new Request("https://axle.llc/get/updates/linux/Axle-amd64.deb"), updateEnv);
     assert.equal(debResponse.status, 302);
     assert.equal(debResponse.headers.get("location"), `${releaseBase}/Axle-amd64.deb`);
+    const debInstaller = await handleRequest(new Request("https://axle.llc/get?platform=linux&format=deb"), updateEnv);
+    assert.equal(debInstaller.status, 302);
+    assert.equal(debInstaller.headers.get("location"), `${releaseBase}/Axle-amd64.deb`);
+    const appimageInstaller = await handleRequest(new Request("https://axle.llc/get?platform=linux"), updateEnv);
+    assert.equal(appimageInstaller.headers.get("location"), `${releaseBase}/Axle-x64.AppImage`);
     const manifestResponse = await handleRequest(new Request("https://axle.llc/get/manifest"), updateEnv);
     const publicRelease = await manifestResponse.json();
     assert.equal(publicRelease.version, "1.1.22");
     assert(publicRelease.files.some((file) => file.name === "Axle-amd64.deb"));
+    // A digest the API publishes is carried through; assets without one stay null.
+    assert.equal(publicRelease.files.find((file) => file.name === "Axle-amd64.deb").sha256, "A".repeat(64));
+    assert.equal(publicRelease.files.find((file) => file.name === "Axle-x64.exe").sha256, null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -262,4 +320,20 @@ test("invalid AWS release configuration fails closed", async () => {
   assert.throws(() => releaseConfig({ ...env, AWS_LINUX_BASE_URL: undefined }), /AWS_LINUX_BASE_URL must be configured with HTTPS/u);
   const response = await worker.fetch(new Request("https://axle.llc/get"), {});
   assert.equal(response.status, 502);
+});
+
+test("the pinned fallback mirrors the release repository it points at", () => {
+  const toml = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
+  const vars = Object.fromEntries([...toml.matchAll(/^([A-Z][A-Z0-9_]*) = "([^"]*)"$/gmu)].map((match) => [match[1], match[2]]));
+  const repo = /repos\/([^/]+\/[^/]+)\/releases\/latest$/u.exec(vars.RELEASE_LATEST_API_URL)?.[1];
+  assert(repo, "RELEASE_LATEST_API_URL must be a GitHub latest-release endpoint");
+  assert.equal(
+    vars.RELEASE_PUBLIC_BASE_URL,
+    `https://github.com/${repo}/releases/download/v${vars.RELEASE_VERSION}`,
+    "the offline fallback must pin the same repository and version the live lookup uses",
+  );
+  for (const key of ["RELEASE_WINDOWS_SHA256", "RELEASE_LINUX_ASC_SHA256", "RELEASE_LINUX_DEB_SHA256"]) {
+    assert.match(vars[key], /^[0-9A-F]{64}$/u, `${key} must be an uppercase sha256 digest`);
+  }
+  assert(Number(vars.RELEASE_LINUX_DEB_SIZE) > 0, "the fallback must describe the .deb it advertises");
 });
