@@ -39,6 +39,8 @@ const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
+  splashBackgroundColor: "#ffffff",
+  splashBackgroundColorDark: "#0a0a0a",
   androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.developmentUniversalIconPng),
   androidAdaptiveBackgroundColor: "#00639B",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
@@ -47,20 +49,24 @@ const DEVELOPMENT_ASSETS = {
 } as const;
 
 const PREVIEW_ASSETS = {
-  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  androidAdaptiveForeground: fromRepoRoot(BRAND_ASSET_PATHS.nightlyLinuxIconPng),
-  androidAdaptiveBackgroundColor: "#111533",
+  appIcon: "./assets/axle/icon-1a1a1a-1024.png",
+  iosIcon: "./assets/axle/icon-1a1a1a-1024.png",
+  splashIcon: "./assets/axle/splash-white-1024.png",
+  splashBackgroundColor: "#1a1a1a",
+  splashBackgroundColorDark: "#1a1a1a",
+  androidAdaptiveForeground: "./assets/axle/adaptive-foreground-white-432.png",
+  androidAdaptiveBackgroundColor: "#1a1a1a",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#7565C7",
+  androidNotificationColor: "#FFFFFF",
 } as const;
 
 const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
+  splashBackgroundColor: "#ffffff",
+  splashBackgroundColorDark: "#0a0a0a",
   androidAdaptiveForeground: "./assets/android-icon-mark.png",
   androidAdaptiveBackgroundColor: "#000000",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
@@ -78,7 +84,7 @@ const VARIANT_CONFIG = {
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "Axle Preview",
+    appName: "Axle",
     scheme: "t3code-preview",
     iosBundleIdentifier: "com.t3tools.t3code.preview",
     androidPackage: "com.t3tools.t3code.preview",
@@ -296,11 +302,11 @@ const config: ExpoConfig = {
       {
         image: variant.assets.splashIcon,
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        backgroundColor: variant.assets.splashBackgroundColor,
         imageWidth: 220,
         dark: {
           image: variant.assets.splashIcon,
-          backgroundColor: "#0a0a0a",
+          backgroundColor: variant.assets.splashBackgroundColorDark,
         },
       },
     ],
