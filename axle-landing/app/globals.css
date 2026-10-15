@@ -40,7 +40,7 @@ html.lenis,html.lenis body{height:auto}[data-lenis-prevent]{overscroll-behavior:
 .hero-cta-glow{position:absolute;width:450px;height:450px;left:-170px;top:-175px;z-index:-1;pointer-events:none;background:radial-gradient(circle,rgb(255 255 255/.045),transparent 65%)}
 /* A soft light from the card's top-right corner. The gradient is centred on the
    corner and clipped by the card, so it reads as a bloom rather than a blob. */
-.corner-glow{position:absolute;top:0;right:0;width:300px;height:300px;transform:translate(58%,-58%) scale(.7);border-radius:50%;pointer-events:none;opacity:0;transition:opacity .7s var(--ease-premium),transform .7s var(--ease-premium);background:radial-gradient(circle,rgb(255 255 255/.12),rgb(255 255 255/.05) 36%,rgb(255 255 255/.016) 58%,transparent 76%)}
+.corner-glow{position:absolute;top:0;right:0;width:300px;height:300px;transform:translate(58%,-58%) scale(.7);border-radius:50%;pointer-events:none;opacity:0;transition:opacity .55s cubic-bezier(.4,0,.2,1),transform .55s cubic-bezier(.4,0,.2,1);background:radial-gradient(circle,rgb(255 255 255/.12),rgb(255 255 255/.05) 36%,rgb(255 255 255/.016) 58%,transparent 76%)}
 .surface-card:hover .corner-glow{opacity:1;transform:translate(58%,-58%) scale(1)}.hero-product{margin-top:61px}
 .hero-download:before{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1px;background:conic-gradient(from var(--angle),transparent 0deg,#fff 80deg,transparent 140deg);mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;opacity:0;pointer-events:none;transition:opacity .4s var(--ease-premium)}
 .hero-download:hover:before{opacity:1;animation:border-sweep .8s var(--ease-premium)}@keyframes border-sweep{to{--angle:360deg}}
