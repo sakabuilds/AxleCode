@@ -71,7 +71,7 @@ export function PricingCards({ annual }: { annual: boolean }) {
             Model usage billed by your provider.
           </p>
           <Button href="/download" className="mt-8 w-full">
-            Get Rivet <ArrowUpRight size={16} />
+            Get Axle <ArrowUpRight size={16} />
           </Button>
           <ul className="mt-8 space-y-4 border-t border-white/10 pt-7">
             {[
