@@ -96,6 +96,9 @@ const WSL_FORWARDED_ENV_NAMES = [
   "CEREBRAS_API_KEY",
   "GROQ_API_KEY",
   "OPENROUTER_API_KEY",
+  "MISTRAL_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "XAI_API_KEY",
 ] as const;
 
 const WSL_SERVER_SYSTEM_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
@@ -365,7 +368,8 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
         AXLE_CODEX_HOME: environment.path.join(environment.stateDir, "chatgpt-auth"),
-        AXLE_BINARY_PATH: configuredAxleBinaryPath ||
+        AXLE_BINARY_PATH:
+          configuredAxleBinaryPath ||
           (environment.isPackaged
             ? environment.path.join(environment.resourcesPath, "axle", axleExecutable)
             : environment.path.resolve(
