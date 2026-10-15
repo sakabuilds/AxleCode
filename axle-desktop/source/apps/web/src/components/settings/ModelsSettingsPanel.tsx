@@ -5,6 +5,7 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   LoaderCircleIcon,
+  PlusIcon,
   SaveIcon,
   SearchIcon,
   Trash2Icon,
@@ -92,14 +93,62 @@ async function codexAuthRequest(path = "", method = "GET"): Promise<CodexAuthSta
   return payload;
 }
 
+/**
+ * Environment variable prefixes owned by the built-in providers. A user-added
+ * provider must not reuse one, or it would silently reconfigure a vendor.
+ */
+const RESERVED_ENV_PREFIXES: ReadonlySet<string> = new Set([
+  "OPENAI",
+  "ANTHROPIC",
+  "GEMINI",
+  "FIREWORKS",
+  "OLLAMA",
+  "OLLAMA_CLOUD",
+  "CEREBRAS",
+  "GROQ",
+  "OPENROUTER",
+  "AXLE",
+]);
+
+/**
+ * A user-added provider is stored purely as environment variables:
+ * `<PREFIX>_BASE_URL`, `<PREFIX>_API_KEY`, and `<PREFIX>_LABEL`. This pattern
+ * is what the server's model discovery scans for, and the derived prefix is
+ * also the model slug prefix, which is how the runtime routes the turn back to
+ * the same endpoint.
+ */
+const CUSTOM_PROVIDER_BASE_URL_VARIABLE = /^([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)_BASE_URL$/u;
+
+function customProviderEnvPrefix(name: string): string {
+  return name
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/gu, "_")
+    .replace(/^_+|_+$/gu, "");
+}
+
+const isLocalhostProviderUrl = (url: string): boolean =>
+  /localhost|127\.0\.0\.1|\[::1\]/u.test(url);
+
 const MODEL_APIS: ReadonlyArray<{
   readonly id: string;
   readonly name: string;
   readonly envName: string;
+  readonly baseUrlEnvName?: string;
   readonly placeholder: string;
   readonly description: string;
   readonly Logo: Logo;
 }> = [
+  {
+    id: "axle",
+    name: "Axle",
+    envName: "AXLE_API_KEY",
+    baseUrlEnvName: "AXLE_BASE_URL",
+    placeholder: "ax-...",
+    description:
+      "Axle's hosted gateway, or any OpenAI-compatible endpoint you set as the base URL.",
+    Logo: AxleIcon,
+  },
   {
     id: "openai",
     name: "OpenAI",
@@ -180,6 +229,12 @@ export function ModelsSettingsPanel() {
   const [codexAuthBusy, setCodexAuthBusy] = useState(false);
   const [codexAuthError, setCodexAuthError] = useState<string | null>(null);
   const [modelQuery, setModelQuery] = useState("");
+  const [customProviderDraft, setCustomProviderDraft] = useState({
+    name: "",
+    baseUrl: "",
+    apiKey: "",
+  });
+  const [customProviderError, setCustomProviderError] = useState<string | null>(null);
   const modelPreferencesRef = useRef(settings.providerModelPreferences);
   const [modelPreferences, setModelPreferences] = useState(settings.providerModelPreferences);
 
@@ -188,6 +243,37 @@ export function ModelsSettingsPanel() {
     () => new Map((instance?.environment ?? []).map((variable) => [variable.name, variable])),
     [instance?.environment],
   );
+  // The providers the user added by hand, read back from the same environment
+  // variables discovery scans. Sensitive values arrive redacted, so a stored key
+  // is only ever rendered as a "Key saved" badge.
+  const customProviders = useMemo(() => {
+    const found = new Map<
+      string,
+      {
+        readonly envPrefix: string;
+        readonly label: string;
+        readonly baseUrl: string;
+        readonly hasKey: boolean;
+      }
+    >();
+    for (const variable of instance?.environment ?? []) {
+      const envPrefix = CUSTOM_PROVIDER_BASE_URL_VARIABLE.exec(variable.name)?.[1];
+      if (!envPrefix || RESERVED_ENV_PREFIXES.has(envPrefix)) continue;
+      const baseUrl = variable.value.trim();
+      if (baseUrl.length === 0) continue;
+      const keyVariable = variables.get(`${envPrefix}_API_KEY`);
+      found.set(envPrefix, {
+        envPrefix,
+        label: variables.get(`${envPrefix}_LABEL`)?.value.trim() || envPrefix.replaceAll("_", " "),
+        baseUrl,
+        hasKey: keyVariable?.valueRedacted === true || Boolean(keyVariable?.value),
+      });
+    }
+    return [...found.values()].toSorted((left, right) =>
+      left.envPrefix.localeCompare(right.envPrefix),
+    );
+  }, [instance?.environment, variables]);
+
   const providerEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
@@ -298,6 +384,17 @@ export function ModelsSettingsPanel() {
     updateSettings({ providerModelPreferences: nextPreferences });
   };
 
+  // Saving re-probes the providers so a reachable key or base URL lists its
+  // models immediately, without a restart. The settings write itself is
+  // fire-and-forget, so the probe runs once straight away and once after a
+  // short delay in case the write and the probe crossed on the wire.
+  // Discovery is idempotent, and failures already surface on the provider
+  // card, so a failed probe is not re-thrown here.
+  const refreshAfterCredentialsChange = () => {
+    void refreshAxleProvider().catch(() => {});
+    window.setTimeout(() => void refreshAxleProvider().catch(() => {}), 400);
+  };
+
   const commitProviderKey = (api: (typeof MODEL_APIS)[number], keyValue: string) => {
     const providerKeyNames = new Set(MODEL_APIS.map((entry) => entry.envName));
     const legacyEndpointNames = new Set([
@@ -339,6 +436,105 @@ export function ModelsSettingsPanel() {
       },
     });
     setDrafts((current) => ({ ...current, [api.envName]: "" }));
+    refreshAfterCredentialsChange();
+  };
+
+  // Writes any provider environment variable, used for the optional base URL
+  // that points a provider at a custom or self-hosted gateway. Unlike a key,
+  // a base URL is not a secret, so it is stored unsensitive.
+  const commitProviderVariable = (name: string, value: string) => {
+    const environment = (instance?.environment ?? []).filter((variable) => variable.name !== name);
+    if (value.length > 0) {
+      environment.push({ name, value, sensitive: false });
+    }
+    const nextInstance: ProviderInstanceConfig = {
+      driver: AXLE_DRIVER,
+      displayName: instance?.displayName ?? "OpenAI",
+      enabled: true,
+      environment,
+      config: instance?.config ?? { binaryPath: "" },
+    };
+    updateSettings({
+      providerInstances: {
+        ...settings.providerInstances,
+        [AXLE_INSTANCE_ID]: nextInstance,
+      },
+    });
+    setDrafts((current) => ({ ...current, [name]: "" }));
+    refreshAfterCredentialsChange();
+  };
+
+  // A user-added provider is written as `<PREFIX>_BASE_URL`, `<PREFIX>_API_KEY`,
+  // and `<PREFIX>_LABEL`. Writing the whole triple at once keeps the three
+  // variables in sync, and empty values remove the provider outright.
+  const writeCustomProvider = (
+    envPrefix: string,
+    next: { readonly label: string; readonly baseUrl: string; readonly apiKey: string },
+  ) => {
+    const owned = new Set([`${envPrefix}_BASE_URL`, `${envPrefix}_API_KEY`, `${envPrefix}_LABEL`]);
+    const environment = (instance?.environment ?? []).filter(
+      (variable) => !owned.has(variable.name),
+    );
+    if (next.baseUrl.length > 0) {
+      environment.push({ name: `${envPrefix}_BASE_URL`, value: next.baseUrl, sensitive: false });
+      environment.push({ name: `${envPrefix}_LABEL`, value: next.label, sensitive: false });
+      if (next.apiKey.length > 0) {
+        environment.push({
+          name: `${envPrefix}_API_KEY`,
+          value: next.apiKey,
+          sensitive: true,
+          valueRedacted: false,
+        });
+      }
+    }
+    updateSettings({
+      providerInstances: {
+        ...settings.providerInstances,
+        [AXLE_INSTANCE_ID]: {
+          driver: AXLE_DRIVER,
+          displayName: instance?.displayName ?? "OpenAI",
+          enabled: true,
+          environment,
+          config: instance?.config ?? { binaryPath: "" },
+        },
+      },
+    });
+    refreshAfterCredentialsChange();
+  };
+
+  const addCustomProvider = () => {
+    const label = customProviderDraft.name.trim();
+    const envPrefix = customProviderEnvPrefix(label);
+    if (envPrefix.length === 0) {
+      setCustomProviderError("Enter a provider name.");
+      return;
+    }
+    if (RESERVED_ENV_PREFIXES.has(envPrefix)) {
+      setCustomProviderError(`"${envPrefix}" belongs to a built-in provider. Choose another name.`);
+      return;
+    }
+    const baseUrl = customProviderDraft.baseUrl.trim();
+    let parsed: URL;
+    try {
+      parsed = new URL(baseUrl);
+    } catch {
+      setCustomProviderError(
+        "Enter a full base URL, for example https://integrate.api.nvidia.com/v1.",
+      );
+      return;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      setCustomProviderError("The base URL must start with http:// or https://.");
+      return;
+    }
+    const apiKey = customProviderDraft.apiKey.trim();
+    if (apiKey.length === 0 && !isLocalhostProviderUrl(baseUrl)) {
+      setCustomProviderError("Enter an API key. Only a localhost server can run without one.");
+      return;
+    }
+    writeCustomProvider(envPrefix, { label, baseUrl, apiKey });
+    setCustomProviderDraft({ name: "", baseUrl: "", apiKey: "" });
+    setCustomProviderError(null);
   };
 
   return (
@@ -444,10 +640,14 @@ export function ModelsSettingsPanel() {
           </summary>
           <div className="border-t border-border/60">
             {MODEL_APIS.map((api) => {
-              const { id, name, envName, placeholder, description, Logo } = api;
+              const { id, name, envName, baseUrlEnvName, placeholder, description, Logo } = api;
               const stored = variables.get(envName);
               const configured = stored?.valueRedacted === true || Boolean(stored?.value);
               const draft = drafts[envName] ?? "";
+              const baseUrlDraft = baseUrlEnvName ? (drafts[baseUrlEnvName] ?? "") : "";
+              const configuredBaseUrl = Boolean(
+                baseUrlEnvName ? variables.get(baseUrlEnvName)?.value : undefined,
+              );
               return (
                 <div key={id} className="border-t border-border/60 px-5 py-4 first:border-t-0">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -559,6 +759,52 @@ export function ModelsSettingsPanel() {
                           </Button>
                         ) : null}
                       </div>
+                      {baseUrlEnvName ? (
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <input
+                            type="text"
+                            value={baseUrlDraft}
+                            autoComplete="off"
+                            spellCheck={false}
+                            placeholder={
+                              configuredBaseUrl
+                                ? "Replace the current base URL"
+                                : "https://your-gateway.example/v1"
+                            }
+                            aria-label={`${name} base URL`}
+                            onChange={(event) =>
+                              setDrafts((current) => ({
+                                ...current,
+                                [baseUrlEnvName]: event.target.value,
+                              }))
+                            }
+                            className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background/70 px-3 text-sm outline-none shadow-sm/4 transition-colors placeholder:text-muted-foreground/50 focus:border-ring focus:ring-2 focus:ring-ring/20"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-9 shrink-0 gap-1.5"
+                            disabled={baseUrlDraft.trim().length === 0}
+                            onClick={() =>
+                              commitProviderVariable(baseUrlEnvName, baseUrlDraft.trim())
+                            }
+                          >
+                            <SaveIcon className="size-3.5" /> Save URL
+                          </Button>
+                          {configuredBaseUrl ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-9 shrink-0 gap-1.5"
+                              onClick={() => commitProviderVariable(baseUrlEnvName, "")}
+                            >
+                              Reset
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -566,6 +812,117 @@ export function ModelsSettingsPanel() {
             })}
           </div>
         </details>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Custom providers"
+        headerAction={
+          customProviders.length > 0 ? (
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {customProviders.length} added
+            </span>
+          ) : null
+        }
+      >
+        <div className="space-y-4 px-4 py-4 sm:px-5">
+          <p className="text-xs leading-5 text-muted-foreground">
+            Bring your own OpenAI-compatible endpoint. Paste its base URL and API key, and Axle
+            checks the endpoint before listing its models above, so you can switch between any of
+            them.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              type="text"
+              value={customProviderDraft.name}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="Provider name, e.g. NVIDIA NIM"
+              aria-label="Custom provider name"
+              onChange={(event) =>
+                setCustomProviderDraft((current) => ({ ...current, name: event.target.value }))
+              }
+              className="h-9 min-w-0 rounded-lg border border-input bg-background/70 px-3 text-sm outline-none shadow-sm/4 transition-colors placeholder:text-muted-foreground/50 focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+            <input
+              type="password"
+              value={customProviderDraft.apiKey}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="API key"
+              aria-label="Custom provider API key"
+              onChange={(event) =>
+                setCustomProviderDraft((current) => ({ ...current, apiKey: event.target.value }))
+              }
+              className="h-9 min-w-0 rounded-lg border border-input bg-background/70 px-3 text-sm outline-none shadow-sm/4 transition-colors placeholder:text-muted-foreground/50 focus:border-ring focus:ring-2 focus:ring-ring/20"
+            />
+            <input
+              type="text"
+              value={customProviderDraft.baseUrl}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="Base URL, e.g. https://integrate.api.nvidia.com/v1"
+              aria-label="Custom provider base URL"
+              onChange={(event) =>
+                setCustomProviderDraft((current) => ({ ...current, baseUrl: event.target.value }))
+              }
+              className="h-9 min-w-0 rounded-lg border border-input bg-background/70 px-3 text-sm outline-none shadow-sm/4 transition-colors placeholder:text-muted-foreground/50 focus:border-ring focus:ring-2 focus:ring-ring/20 sm:col-span-2"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              size="sm"
+              className="h-9 shrink-0 gap-1.5"
+              disabled={!clientSettingsHydrated}
+              onClick={addCustomProvider}
+            >
+              <PlusIcon className="size-3.5" /> Add provider
+            </Button>
+            {customProviderError ? (
+              <p role="alert" className="text-xs text-destructive">
+                {customProviderError}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        {customProviders.length > 0 ? (
+          <div className="border-t border-border/70">
+            {customProviders.map((provider) => (
+              <div
+                key={provider.envPrefix}
+                className="flex flex-col gap-3 border-b border-border/60 px-5 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-[13px] font-semibold text-foreground">{provider.label}</h3>
+                    {provider.hasKey ? (
+                      <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] font-medium text-foreground">
+                        <CheckCircle2Icon className="size-3" /> Key saved
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{provider.baseUrl}</p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-9 shrink-0 gap-1.5 text-destructive hover:text-destructive"
+                  disabled={!clientSettingsHydrated}
+                  onClick={() =>
+                    writeCustomProvider(provider.envPrefix, {
+                      label: "",
+                      baseUrl: "",
+                      apiKey: "",
+                    })
+                  }
+                >
+                  <Trash2Icon className="size-3.5" /> Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </SettingsSection>
     </SettingsPageContainer>
   );
