@@ -16,11 +16,11 @@ export default function DownloadPage() {
   return (
     <>
       <PageHero
-        eyebrow="Download Rivet"
+        eyebrow="Download Axle"
         title={<>Your next idea.<br /><span className="text-mute">Right at home.</span></>}
         copy="Bring your code, your models, and your tools together. Choose the desktop build for your computer and make it yours."
       >
-        <p className="flex items-center gap-2.5 text-sm text-mute"><span className="h-1.5 w-1.5 rounded-full bg-white/60" />Current desktop builds are published under the Axle project name.</p>
+        <p className="flex items-center gap-2.5 text-sm text-mute"><span className="h-1.5 w-1.5 rounded-full bg-white/60" />Free to download. Bring your own model provider when you are ready.</p>
       </PageHero>
 
       <section className="px-6 pb-24 sm:pb-32" aria-label="Choose your operating system">
