@@ -1,19 +1,25 @@
 import type { Metadata } from "next";
-import { ArrowUpRight, Check, Cpu, KeyRound, RefreshCw } from "lucide-react";
+import { ArrowUpRight, Check, Cpu, KeyRound, Link2, RefreshCw } from "lucide-react";
 import { PageHero } from "@/components/site/page-hero";
 import { Section, SectionHead, Eyebrow } from "@/components/site/section";
 import { CTASection } from "@/components/site/cta-section";
 import { Reveal, RevealGroup, RevealItem } from "@/components/fx/reveal";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/site/brand-logo";
+import { providerLogo } from "@/lib/brand-logos";
 import { MODEL_PROVIDERS } from "@/lib/catalog";
 import { ModelSwitcher } from "./model-switcher";
 
 export const metadata: Metadata = {
   title: "Models",
   description:
-    "Your workspace, your choice of models. Connect OpenAI, Anthropic, Gemini, open model providers, or a local Ollama runtime.",
+    "Your workspace, your choice of models. Connect OpenAI, Anthropic, Google, Mistral, DeepSeek, xAI, open model providers, a local Ollama runtime, or any OpenAI-compatible endpoint you name yourself.",
 };
+
+const LISTED_PROVIDERS = MODEL_PROVIDERS.filter(
+  (provider) => provider.id !== "nvidia-nim" && provider.id !== "agent-router",
+);
 
 export default function ModelsPage() {
   return (
@@ -27,7 +33,7 @@ export default function ModelsPage() {
             <span className="text-mute">Keep yours open.</span>
           </>
         }
-        copy="Some tasks need a different way of thinking. Bring the models you trust into one familiar place to build."
+        copy="Some tasks need a different way of thinking. Bring the models you trust into one familiar place to build — including a provider we do not know yet, as long as it speaks the OpenAI API."
       >
         <Button href="/docs#providers" variant="secondary">
           Connect a provider <ArrowUpRight size={17} />
@@ -48,7 +54,7 @@ export default function ModelsPage() {
           copy="A direct connection to your provider. Familiar tools around it. Model availability follows your account and each provider's current catalog."
         />
         <RevealGroup className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {MODEL_PROVIDERS.map((provider) => (
+          {LISTED_PROVIDERS.map((provider) => (
             <RevealItem key={provider.id}>
               <Card className="flex h-full flex-col p-7">
                 <div className="flex items-start justify-between">
@@ -56,7 +62,7 @@ export default function ModelsPage() {
                     className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-[24px] font-medium"
                     aria-hidden="true"
                   >
-                    {provider.mark}
+                    <BrandLogo logo={providerLogo(provider.id)} mark={provider.mark} size={26} />
                   </span>
                   <span className="rounded-full border border-white/10 px-2.5 py-1 font-mono text-[10px] text-mute">
                     {provider.type}
@@ -106,6 +112,11 @@ export default function ModelsPage() {
                   icon: KeyRound,
                   title: "Your account. Your usage.",
                   copy: "Connect directly with your own provider key. Model costs are billed by your provider.",
+                },
+                {
+                  icon: Link2,
+                  title: "Bring the base URL, not just the name.",
+                  copy: "Paste any OpenAI-compatible endpoint with its API key. Axle identifies the provider, checks that it answers, then lists the models it serves.",
                 },
                 {
                   icon: RefreshCw,
