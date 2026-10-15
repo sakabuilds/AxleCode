@@ -987,6 +987,64 @@ describe("discoverAxleModels", () => {
     expect(unknown?.extra).toBeNull();
   });
 
+  it("discovers Mistral, DeepSeek, and xAI as built-in providers", async () => {
+    const requests: string[] = [];
+    const fetchImplementation = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === "https://api.mistral.ai/v1/models") {
+        return jsonResponse({ data: [{ id: "mistral-large-latest" }] });
+      }
+      if (url === "https://api.deepseek.com/v1/models") {
+        return jsonResponse({ data: [{ id: "deepseek-chat" }] });
+      }
+      if (url === "https://api.x.ai/v1/models") {
+        return jsonResponse({ data: [{ id: "grok-4" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverAxleModels(
+      {
+        MISTRAL_API_KEY: "mistral-secret",
+        DEEPSEEK_API_KEY: "deepseek-secret",
+        XAI_API_KEY: "xai-secret",
+      },
+      fetchImplementation,
+    );
+
+    expect(requests).toContain("https://api.mistral.ai/v1/models");
+    expect(requests).toContain("https://api.deepseek.com/v1/models");
+    expect(requests).toContain("https://api.x.ai/v1/models");
+    expect(result.configuredProviderCount).toBe(3);
+    expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
+      ["mistral/mistral-large-latest", "Mistral"],
+      ["deepseek/deepseek-chat", "DeepSeek"],
+      ["xai/grok-4", "xAI"],
+    ]);
+  });
+
+  it("keeps the new provider base URLs as endpoint overrides, not extra providers", async () => {
+    const requests: string[] = [];
+    const fetchImplementation = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === "https://proxy.example/v1/models") {
+        return jsonResponse({ data: [{ id: "mistral-large-latest" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverAxleModels(
+      { MISTRAL_API_KEY: "mistral-secret", MISTRAL_BASE_URL: "https://proxy.example/v1" },
+      fetchImplementation,
+    );
+
+    expect(requests).toContain("https://proxy.example/v1/models");
+    expect(result.configuredProviderCount).toBe(1);
+    expect(result.models.map((model) => model.slug)).toEqual(["mistral/mistral-large-latest"]);
+  });
+
   it("skips a hosted provider the user brought without a key, but allows a local one", async () => {
     const requests: string[] = [];
     const fetchImplementation = (async (input: string | URL | Request) => {
