@@ -1,0 +1,17 @@
+name = "axle-gateway"
+main = "src/entry.js"
+compatibility_date = "2026-08-31"
+workers_dev = true
+
+# The hosted provider the desktop app calls with `--provider axle`. Point the
+# engine at https://api.axle.llc/v1 (the default) and it reaches these routes.
+#
+# UPSTREAM_API_KEY and any future payment-provider keys must be installed with
+# `wrangler secret put`; never commit them here.
+[vars]
+UPSTREAM_BASE_URL = "https://openrouter.ai/api/v1"
+
+[[d1_databases]]
+binding = "CREDITS_DB"
+database_name = "axle-credits"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
