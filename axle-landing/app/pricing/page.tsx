@@ -21,7 +21,7 @@ export default function PricingPage() {
             <span className="text-mute">The workspace is on us.</span>
           </>
         }
-        copy="Download Rivet for free. Bring your own model keys and pay your provider directly, or keep inference on your own machine."
+        copy="Download Axle for free. Bring your own model keys, point it at any OpenAI-compatible endpoint, or keep inference on your own machine."
       />
       <PricingBody />
       <CTASection
