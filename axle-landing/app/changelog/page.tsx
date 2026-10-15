@@ -7,7 +7,7 @@ import { Reveal } from "@/components/fx/reveal";
 import { Button } from "@/components/ui/button";
 import { PRODUCT_UPDATES, REPOSITORY_URL } from "@/lib/product-content";
 
-export const metadata: Metadata = { title: "Changelog", description: "A running record of Rivet development, with dated updates and links to the changes behind them." };
+export const metadata: Metadata = { title: "Changelog", description: "A running record of Axle development, with dated updates and links to the changes behind them." };
 
 function RemoteAccessVisual() {
   return <div className="hairline mt-8 overflow-hidden rounded-[20px] bg-[#101010]">
