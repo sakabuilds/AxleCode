@@ -108,7 +108,7 @@ struct Cli {
         short = 'r',
         long,
         default_value = "openai",
-        help = "Model API: axle, openai, anthropic, gemini, fireworks, ollama-cloud, cerebras, groq, openrouter, ollama"
+        help = "Model API: axle, openai, anthropic, gemini, fireworks, ollama-cloud, cerebras, groq, openrouter, mistral, deepseek, xai, ollama"
     )]
     provider: String,
 
@@ -1101,12 +1101,13 @@ async fn main() -> anyhow::Result<()> {
                 "https://api.fireworks.ai/inference/v1",
                 "FIREWORKS_BASE_URL",
             );
-            Arc::new(OpenAiProvider::new_named(
+            Arc::new(OpenAiProvider::new_named_with_headers(
                 key,
                 Some(base_url),
                 "FIREWORKS_API_KEY",
                 "fireworks",
                 "Fireworks",
+                provider_headers("FIREWORKS"),
             ))
         }
         "ollama-cloud" | "ollama_cloud" => {
@@ -1116,12 +1117,13 @@ async fn main() -> anyhow::Result<()> {
                 "https://ollama.com/v1",
                 "OLLAMA_CLOUD_BASE_URL",
             );
-            Arc::new(OpenAiProvider::new_named(
+            Arc::new(OpenAiProvider::new_named_with_headers(
                 key,
                 Some(base_url),
                 "OLLAMA_API_KEY",
                 "ollama-cloud",
                 "Ollama Cloud",
+                provider_headers("OLLAMA_CLOUD"),
             ))
         }
         "cerebras" => {
@@ -1131,12 +1133,13 @@ async fn main() -> anyhow::Result<()> {
                 "https://api.cerebras.ai/v1",
                 "CEREBRAS_BASE_URL",
             );
-            Arc::new(OpenAiProvider::new_named(
+            Arc::new(OpenAiProvider::new_named_with_headers(
                 key,
                 Some(base_url),
                 "CEREBRAS_API_KEY",
                 "cerebras",
                 "Cerebras",
+                provider_headers("CEREBRAS"),
             ))
         }
         "groq" => {
@@ -1146,12 +1149,13 @@ async fn main() -> anyhow::Result<()> {
                 "https://api.groq.com/openai/v1",
                 "GROQ_BASE_URL",
             );
-            Arc::new(OpenAiProvider::new_named(
+            Arc::new(OpenAiProvider::new_named_with_headers(
                 key,
                 Some(base_url),
                 "GROQ_API_KEY",
                 "groq",
                 "Groq",
+                provider_headers("GROQ"),
             ))
         }
         "openrouter" => {
@@ -1184,12 +1188,13 @@ async fn main() -> anyhow::Result<()> {
                 DEFAULT_AXLE_BASE_URL,
                 "AXLE_BASE_URL",
             );
-            Arc::new(OpenAiProvider::new_named(
+            Arc::new(OpenAiProvider::new_named_with_headers(
                 key,
                 Some(base_url),
                 "AXLE_API_KEY",
                 "axle",
                 "Axle",
+                provider_headers("AXLE"),
             ))
         }
         "openai" => {
@@ -1199,7 +1204,62 @@ async fn main() -> anyhow::Result<()> {
                 "https://api.openai.com/v1",
                 "OPENAI_BASE_URL",
             );
-            Arc::new(OpenAiProvider::new(key, Some(base_url)))
+            Arc::new(OpenAiProvider::new_named_with_headers(
+                key,
+                Some(base_url),
+                "OPENAI_API_KEY",
+                "openai",
+                "OpenAI",
+                provider_headers("OPENAI"),
+            ))
+        }
+        "mistral" => {
+            let key = resolve_api_key(cli.api_key.as_deref(), "MISTRAL_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.mistral.ai/v1",
+                "MISTRAL_BASE_URL",
+            );
+            Arc::new(OpenAiProvider::new_named_with_headers(
+                key,
+                Some(base_url),
+                "MISTRAL_API_KEY",
+                "mistral",
+                "Mistral",
+                provider_headers("MISTRAL"),
+            ))
+        }
+        "deepseek" => {
+            let key = resolve_api_key(cli.api_key.as_deref(), "DEEPSEEK_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.deepseek.com/v1",
+                "DEEPSEEK_BASE_URL",
+            );
+            Arc::new(OpenAiProvider::new_named_with_headers(
+                key,
+                Some(base_url),
+                "DEEPSEEK_API_KEY",
+                "deepseek",
+                "DeepSeek",
+                provider_headers("DEEPSEEK"),
+            ))
+        }
+        "xai" | "grok" => {
+            let key = resolve_api_key(cli.api_key.as_deref(), "XAI_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.x.ai/v1",
+                "XAI_BASE_URL",
+            );
+            Arc::new(OpenAiProvider::new_named_with_headers(
+                key,
+                Some(base_url),
+                "XAI_API_KEY",
+                "xai",
+                "xAI",
+                provider_headers("XAI"),
+            ))
         }
         custom => custom_provider(custom, cli.api_key.as_deref(), cli.base_url.as_deref())?,
     };
