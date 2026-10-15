@@ -19,7 +19,7 @@ import { DocsNavigation } from "./docs-navigation";
 export const metadata: Metadata = {
   title: "Documentation",
   description:
-    "Install Rivet, connect a model, start a project, and work with approvals, MCP tools, and the local runtime.",
+    "Install Axle, connect a model, start a project, and work with approvals, MCP tools, and the local runtime.",
 };
 
 function DocSection({
@@ -91,7 +91,7 @@ export default function DocsPage() {
               next good idea.
             </h1>
             <p className="mt-6 max-w-xl text-[15px] leading-8 text-mute">
-              Rivet brings AI, your code, and your tools into one desktop
+              Axle brings AI, your code, and your tools into one desktop
               workspace. Start with a conversation. Connect a project when you
               are ready to build.
             </p>
@@ -129,7 +129,7 @@ export default function DocsPage() {
               app.
             </p>
             <Button href="/download" size="md">
-              Download Rivet <ArrowUpRight size={15} />
+              Download Axle <ArrowUpRight size={15} />
             </Button>
             <div className="hairline overflow-hidden rounded-xl">
               <table className="w-full text-left text-xs">
@@ -294,6 +294,16 @@ export default function DocsPage() {
               </div>
             </div>
             <h3 className="pt-2 font-medium text-paper">
+              A provider that is not on the list
+            </h3>
+            <p>
+              Add any OpenAI-compatible endpoint with its own base URL and API
+              key. Axle matches the host against the providers it knows, sends
+              the request headers that endpoint expects, checks that it
+              answers, and then lists the models your key can reach so you can
+              choose which ones to keep.
+            </p>
+            <h3 className="pt-2 font-medium text-paper">
               Prefer a local model?
             </h3>
             <p>
@@ -317,7 +327,7 @@ export default function DocsPage() {
             </p>
             <Note>
               Model availability and capabilities vary by provider and account.
-              A provider listing does not include its paid usage in Rivet.
+              A provider listing does not include its paid usage in Axle.
             </Note>
           </DocSection>
           <DocSection id="approvals" title="Stay part of the process.">
