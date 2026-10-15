@@ -16,7 +16,7 @@ export function PricingBody() {
         <div className="mb-8 flex flex-wrap items-center justify-between gap-5">
           <BillingToggle annual={annual} onChange={setAnnual} />
           <p className="text-xs text-mute">
-            Start free. No Rivet credit card required.
+            Start free. No Axle credit card required.
           </p>
         </div>
         <PricingCards annual={annual} />
