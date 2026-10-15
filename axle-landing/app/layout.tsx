@@ -19,9 +19,9 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Rivet — Build your way", template: "%s | Rivet" },
+  title: { default: "Axle — What would you like to build?", template: "%s | Axle" },
   description:
-    "Everything you need to build, with the freedom to build your way. Rivet connects your code, models, and tools in one thoughtful workspace.",
+    "Axle is a desktop workspace for AI-assisted development. Open a project, talk through the problem, and let an agent read, edit, and run your code with your own models and your own permissions.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
