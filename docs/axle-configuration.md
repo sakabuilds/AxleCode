@@ -69,6 +69,25 @@ Prefixes owned by the built-in providers cannot be reused this way. For those,
 serve. In the desktop app, Settings → Models → Custom providers writes exactly
 these variables and probes the endpoint before listing its models.
 
+### Endpoints that fingerprint their clients
+
+A few OpenAI-compatible routers authorize requests by the client's `User-Agent`
+rather than by the key alone, and answer `401 unauthorized client detected` for
+a valid key sent without it. Those requirements live in the provider catalogue
+(`packages/contracts/src/providerPresets.ts`), which is keyed by hostname, so
+pasting a known base URL is enough: the desktop looks the endpoint up and writes
+its headers to `<PREFIX>_HEADERS` as a JSON object of header name to value.
+
+```sh
+export AGENT_ROUTER_BASE_URL="https://agentrouter.org/v1"
+export AGENT_ROUTER_API_KEY="<token>"
+export AGENT_ROUTER_HEADERS='{"user-agent":"codex_cli_rs/0.47.0"}'
+axle --provider agent-router --model claude-opus-5-5 -p "hello"
+```
+
+`<PREFIX>_HEADERS` also overrides a preset's own headers, and adding an entry to
+the catalogue is a data edit with no code path to change.
+
 The desktop model picker uses `provider/model` slugs (for example
 `anthropic/claude-3-5-sonnet-latest`), split on the first `/`.
 
@@ -172,6 +191,8 @@ rejected at load time. The repository ships working examples in `.axle/agents.to
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `FIREWORKS_API_KEY`, `CEREBRAS_API_KEY`, `GROQ_API_KEY`, `OLLAMA_API_KEY` | Provider credentials (see the table above) |
 | `AXLE_API_KEY` | Universal fallback key for any provider, and the key for `--provider axle` |
 | `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `GEMINI_BASE_URL`, `OPENROUTER_BASE_URL`, `FIREWORKS_BASE_URL`, `CEREBRAS_BASE_URL`, `GROQ_BASE_URL`, `OLLAMA_CLOUD_BASE_URL`, `AXLE_BASE_URL` | Per-provider endpoint override (see the table above) |
+| `<PREFIX>_LABEL` | Display name for a provider declared through `<PREFIX>_BASE_URL` |
+| `<PREFIX>_HEADERS` | Extra request headers as a JSON object, for endpoints that fingerprint their clients. Filled in automatically when the base URL matches a catalogue preset, and overrides that preset when set |
 | `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_TOKEN` | Token for `--github-mcp` |
 | `AXLE_SHELL` | Shell program the `bash` tool uses (overridden by `--shell`) |
 | `AXLE_HOME` | Base directory for the global memory store (`<AXLE_HOME>/memory/memories.json`) |
