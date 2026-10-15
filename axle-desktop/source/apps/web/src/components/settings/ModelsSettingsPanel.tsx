@@ -11,8 +11,13 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import {
+  parseProviderHeaders,
+  providerHeadersVariable,
+  providerPresetHeaders,
   ProviderDriverKind,
   ProviderInstanceId,
+  resolveProviderPreset,
+  serializeProviderHeaders,
   type ProviderInstanceConfig,
 } from "@axle/contracts";
 import {
@@ -112,10 +117,11 @@ const RESERVED_ENV_PREFIXES: ReadonlySet<string> = new Set([
 
 /**
  * A user-added provider is stored purely as environment variables:
- * `<PREFIX>_BASE_URL`, `<PREFIX>_API_KEY`, and `<PREFIX>_LABEL`. This pattern
- * is what the server's model discovery scans for, and the derived prefix is
- * also the model slug prefix, which is how the runtime routes the turn back to
- * the same endpoint.
+ * `<PREFIX>_BASE_URL`, `<PREFIX>_API_KEY`, `<PREFIX>_LABEL`, plus
+ * `<PREFIX>_HEADERS` when the endpoint is one that fingerprinting requires
+ * extra request headers from. This pattern is what the server's model
+ * discovery scans for, and the derived prefix is also the model slug prefix,
+ * which is how the runtime routes the turn back to the same endpoint.
  */
 const CUSTOM_PROVIDER_BASE_URL_VARIABLE = /^([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)_BASE_URL$/u;
 
@@ -235,6 +241,17 @@ export function ModelsSettingsPanel() {
     apiKey: "",
   });
   const [customProviderError, setCustomProviderError] = useState<string | null>(null);
+  // The catalogue entry the draft's base URL belongs to, if any. Its name
+  // fills in for the user and its headers are what the endpoint is known to
+  // require.
+  const customProviderDraftPreset = useMemo(
+    () => resolveProviderPreset(customProviderDraft.baseUrl),
+    [customProviderDraft.baseUrl],
+  );
+  const customProviderDraftHeaders = useMemo(
+    () => providerPresetHeaders(customProviderDraftPreset),
+    [customProviderDraftPreset],
+  );
   const modelPreferencesRef = useRef(settings.providerModelPreferences);
   const [modelPreferences, setModelPreferences] = useState(settings.providerModelPreferences);
 
@@ -254,6 +271,7 @@ export function ModelsSettingsPanel() {
         readonly label: string;
         readonly baseUrl: string;
         readonly hasKey: boolean;
+        readonly headers: ReadonlyArray<readonly [string, string]>;
       }
     >();
     for (const variable of instance?.environment ?? []) {
@@ -262,11 +280,18 @@ export function ModelsSettingsPanel() {
       const baseUrl = variable.value.trim();
       if (baseUrl.length === 0) continue;
       const keyVariable = variables.get(`${envPrefix}_API_KEY`);
+      const declared = parseProviderHeaders(
+        variables.get(providerHeadersVariable(envPrefix))?.value,
+      );
       found.set(envPrefix, {
         envPrefix,
         label: variables.get(`${envPrefix}_LABEL`)?.value.trim() || envPrefix.replaceAll("_", " "),
         baseUrl,
         hasKey: keyVariable?.valueRedacted === true || Boolean(keyVariable?.value),
+        // What is actually sent: the provider's own headers when it has them,
+        // otherwise whatever its hostname is known to require.
+        headers:
+          declared.length > 0 ? declared : providerPresetHeaders(resolveProviderPreset(baseUrl)),
       });
     }
     return [...found.values()].toSorted((left, right) =>
@@ -469,15 +494,33 @@ export function ModelsSettingsPanel() {
   // variables in sync, and empty values remove the provider outright.
   const writeCustomProvider = (
     envPrefix: string,
-    next: { readonly label: string; readonly baseUrl: string; readonly apiKey: string },
+    next: {
+      readonly label: string;
+      readonly baseUrl: string;
+      readonly apiKey: string;
+      readonly headers?: ReadonlyArray<readonly [string, string]>;
+    },
   ) => {
-    const owned = new Set([`${envPrefix}_BASE_URL`, `${envPrefix}_API_KEY`, `${envPrefix}_LABEL`]);
+    const owned = new Set([
+      `${envPrefix}_BASE_URL`,
+      `${envPrefix}_API_KEY`,
+      `${envPrefix}_LABEL`,
+      providerHeadersVariable(envPrefix),
+    ]);
     const environment = (instance?.environment ?? []).filter(
       (variable) => !owned.has(variable.name),
     );
     if (next.baseUrl.length > 0) {
       environment.push({ name: `${envPrefix}_BASE_URL`, value: next.baseUrl, sensitive: false });
       environment.push({ name: `${envPrefix}_LABEL`, value: next.label, sensitive: false });
+      const headers = next.headers ?? [];
+      if (headers.length > 0) {
+        environment.push({
+          name: providerHeadersVariable(envPrefix),
+          value: serializeProviderHeaders(headers),
+          sensitive: false,
+        });
+      }
       if (next.apiKey.length > 0) {
         environment.push({
           name: `${envPrefix}_API_KEY`,
@@ -503,7 +546,10 @@ export function ModelsSettingsPanel() {
   };
 
   const addCustomProvider = () => {
-    const label = customProviderDraft.name.trim();
+    const baseUrl = customProviderDraft.baseUrl.trim();
+    // A base URL the catalogue knows names itself, so pasting one is enough.
+    const preset = resolveProviderPreset(baseUrl);
+    const label = customProviderDraft.name.trim() || preset?.label || "";
     const envPrefix = customProviderEnvPrefix(label);
     if (envPrefix.length === 0) {
       setCustomProviderError("Enter a provider name.");
@@ -513,7 +559,6 @@ export function ModelsSettingsPanel() {
       setCustomProviderError(`"${envPrefix}" belongs to a built-in provider. Choose another name.`);
       return;
     }
-    const baseUrl = customProviderDraft.baseUrl.trim();
     let parsed: URL;
     try {
       parsed = new URL(baseUrl);
@@ -532,7 +577,14 @@ export function ModelsSettingsPanel() {
       setCustomProviderError("Enter an API key. Only a localhost server can run without one.");
       return;
     }
-    writeCustomProvider(envPrefix, { label, baseUrl, apiKey });
+    // Writing the detected headers keeps what the settings show in step with
+    // what the request carries, and gives the user something to edit.
+    writeCustomProvider(envPrefix, {
+      label,
+      baseUrl,
+      apiKey,
+      headers: providerPresetHeaders(preset),
+    });
     setCustomProviderDraft({ name: "", baseUrl: "", apiKey: "" });
     setCustomProviderError(null);
   };
@@ -868,6 +920,17 @@ export function ModelsSettingsPanel() {
               className="h-9 min-w-0 rounded-lg border border-input bg-background/70 px-3 text-sm outline-none shadow-sm/4 transition-colors placeholder:text-muted-foreground/50 focus:border-ring focus:ring-2 focus:ring-ring/20 sm:col-span-2"
             />
           </div>
+          {customProviderDraftPreset ? (
+            <p role="status" className="text-xs leading-5 text-muted-foreground">
+              Detected{" "}
+              <span className="font-medium text-foreground">{customProviderDraftPreset.label}</span>
+              {customProviderDraftHeaders.length > 0
+                ? `. This endpoint requires ${customProviderDraftHeaders
+                    .map(([name]) => name)
+                    .join(", ")}, which Axle sends for you.`
+                : "."}
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-3">
             <Button
               type="button"
@@ -902,6 +965,11 @@ export function ModelsSettingsPanel() {
                     ) : null}
                   </div>
                   <p className="mt-1 truncate text-xs text-muted-foreground">{provider.baseUrl}</p>
+                  {provider.headers.length > 0 ? (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground/80">
+                      Sends {provider.headers.map(([name]) => name).join(", ")}
+                    </p>
+                  ) : null}
                 </div>
                 <Button
                   type="button"
