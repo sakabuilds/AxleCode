@@ -26,22 +26,48 @@ guide lives in `axle-desktop/source/README.md`.
 Select a provider with `--provider <id>` (short `-r`) and a model with
 `--model <id>` (short `-m`).
 
-| Provider id | API key environment variable | Notes |
-| --- | --- | --- |
-| `openai` (default) | `OPENAI_API_KEY` | `--base-url` overrides the endpoint |
-| `anthropic` | `ANTHROPIC_API_KEY` | |
-| `gemini` | `GEMINI_API_KEY` | alias `google` |
-| `openrouter` | `OPENROUTER_API_KEY` | OpenAI wire format; sends Axle attribution headers |
-| `fireworks` | `FIREWORKS_API_KEY` | |
-| `cerebras` | `CEREBRAS_API_KEY` | |
-| `groq` | `GROQ_API_KEY` | |
-| `ollama-cloud` | `OLLAMA_API_KEY` | alias `ollama_cloud` |
-| `ollama` | none | local daemon; defaults to `http://localhost:11434/v1` |
-| `codex` / `chatgpt` | none | ChatGPT Codex subscription auth via `--codex-login` |
+| Provider id | API key environment variable | Endpoint override | Default endpoint |
+| --- | --- | --- | --- |
+| `axle` | `AXLE_API_KEY` | `AXLE_BASE_URL` | `https://api.axle.llc/v1` |
+| `openai` (default) | `OPENAI_API_KEY` | `OPENAI_BASE_URL` | `https://api.openai.com/v1` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com/v1` |
+| `gemini` | `GEMINI_API_KEY` | `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` |
+| `openrouter` | `OPENROUTER_API_KEY` | `OPENROUTER_BASE_URL` | OpenRouter; sends Axle attribution headers |
+| `fireworks` | `FIREWORKS_API_KEY` | `FIREWORKS_BASE_URL` | `https://api.fireworks.ai/inference/v1` |
+| `cerebras` | `CEREBRAS_API_KEY` | `CEREBRAS_BASE_URL` | `https://api.cerebras.ai/v1` |
+| `groq` | `GROQ_API_KEY` | `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` |
+| `ollama-cloud` | `OLLAMA_API_KEY` | `OLLAMA_CLOUD_BASE_URL` | alias `ollama_cloud` |
+| `ollama` | none | `OLLAMA_LOCAL_BASE_URL` | local daemon; `http://localhost:11434/v1` |
+| `codex` / `chatgpt` | none | — | ChatGPT Codex subscription auth via `--codex-login` |
 
 Custom OpenAI-compatible endpoints use `--provider ollama --base-url <url>`
 (keyless) or any provider id with `--base-url`. Localhost base URLs never
 require an API key.
+
+Every provider also reads its own `<PROVIDER>_BASE_URL` variable, so a
+self-hosted or proxied gateway can be configured for one provider without
+redirecting the others. `--base-url` still wins over the variable, and the
+variable wins over the built-in default.
+
+Any provider can take its key from `--api-key <KEY>` or the universal
+`AXLE_API_KEY` fallback instead of its own variable; an explicit key wins over
+both. This is what lets `--provider axle --base-url <gateway>` point at a
+self-hosted or Axle-hosted OpenAI-compatible endpoint.
+
+### Bring your own provider
+
+A provider that is not in the table above is declared entirely through the
+environment: set `<PREFIX>_BASE_URL` and `<PREFIX>_API_KEY`, plus optional
+`<PREFIX>_LABEL` for the display name. The id is the lowercased prefix with
+underscores as hyphens, so `NVIDIA_NIM_BASE_URL` and `NVIDIA_NIM_API_KEY`
+produce model slugs like `nvidia-nim/meta/llama-3.1-70b-instruct`, and
+`--provider nvidia-nim` resolves those variables again at generation time.
+Hosted endpoints need a key; a localhost endpoint does not.
+
+Prefixes owned by the built-in providers cannot be reused this way. For those,
+`<PREFIX>_BASE_URL` only overrides the endpoint the vendor is already known to
+serve. In the desktop app, Settings → Models → Custom providers writes exactly
+these variables and probes the endpoint before listing its models.
 
 The desktop model picker uses `provider/model` slugs (for example
 `anthropic/claude-3-5-sonnet-latest`), split on the first `/`.
@@ -69,6 +95,7 @@ The desktop model picker uses `provider/model` slugs (for example
 | --- | --- |
 | `-r, --provider <ID>` / `-m, --model <ID>` | Provider and model selection |
 | `--base-url <URL>` | Override the provider endpoint |
+| `--api-key <KEY>` | API key override; wins over every `*_API_KEY` / `AXLE_API_KEY` variable |
 | `--session <ID>` | Resume an existing session in the working directory |
 | `--json` | One machine-readable JSON result on stdout |
 | `--json-stream` | NDJSON event stream on stdout (the desktop boundary; see the architecture doc) |
@@ -143,6 +170,8 @@ rejected at load time. The repository ships working examples in `.axle/agents.to
 | Variable | Effect |
 | --- | --- |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `FIREWORKS_API_KEY`, `CEREBRAS_API_KEY`, `GROQ_API_KEY`, `OLLAMA_API_KEY` | Provider credentials (see the table above) |
+| `AXLE_API_KEY` | Universal fallback key for any provider, and the key for `--provider axle` |
+| `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `GEMINI_BASE_URL`, `OPENROUTER_BASE_URL`, `FIREWORKS_BASE_URL`, `CEREBRAS_BASE_URL`, `GROQ_BASE_URL`, `OLLAMA_CLOUD_BASE_URL`, `AXLE_BASE_URL` | Per-provider endpoint override (see the table above) |
 | `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_TOKEN` | Token for `--github-mcp` |
 | `AXLE_SHELL` | Shell program the `bash` tool uses (overridden by `--shell`) |
 | `AXLE_HOME` | Base directory for the global memory store (`<AXLE_HOME>/memory/memories.json`) |
