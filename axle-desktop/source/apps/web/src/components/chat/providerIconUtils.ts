@@ -32,7 +32,8 @@ export type ModelProviderPresentation = {
 
 // Use the provider marks from their official websites; do not redraw them.
 // Source: https://www.cerebras.ai (official favicon), https://groq.com/favicon.svg,
-// and https://openrouter.ai (official apple-touch icon).
+// https://openrouter.ai (official apple-touch icon), https://mistral.ai/favicon.svg,
+// https://www.deepseek.com/favicon.ico, and https://x.ai/favicon.ico.
 export const CerebrasLogo: Icon = ({ className }) =>
   createElement("img", {
     src: "/provider-logos/cerebras.png",
@@ -57,6 +58,30 @@ export const OpenRouterLogo: Icon = ({ className }) =>
     className,
   });
 
+export const MistralLogo: Icon = ({ className }) =>
+  createElement("img", {
+    src: "/provider-logos/mistral.svg",
+    alt: "",
+    "aria-hidden": true,
+    className,
+  });
+
+export const DeepSeekLogo: Icon = ({ className }) =>
+  createElement("img", {
+    src: "/provider-logos/deepseek.png",
+    alt: "",
+    "aria-hidden": true,
+    className,
+  });
+
+export const XaiLogo: Icon = ({ className }) =>
+  createElement("img", {
+    src: "/provider-logos/xai.png",
+    alt: "",
+    "aria-hidden": true,
+    className,
+  });
+
 const MODEL_PROVIDER_PRESENTATION_BY_LABEL: Readonly<Record<string, ModelProviderPresentation>> = {
   Axle: { label: "Axle", Icon: AxleIcon },
   Claude: { label: "Claude", Icon: ClaudeAI },
@@ -68,6 +93,9 @@ const MODEL_PROVIDER_PRESENTATION_BY_LABEL: Readonly<Record<string, ModelProvide
   Cerebras: { label: "Cerebras", Icon: CerebrasLogo },
   Groq: { label: "Groq", Icon: GroqLogo },
   OpenRouter: { label: "OpenRouter", Icon: OpenRouterLogo },
+  Mistral: { label: "Mistral", Icon: MistralLogo },
+  DeepSeek: { label: "DeepSeek", Icon: DeepSeekLogo },
+  xAI: { label: "xAI", Icon: XaiLogo },
 };
 
 /** Resolve the actual model vendor, rather than the Axle runtime serving it. */
@@ -92,6 +120,15 @@ export function getModelProviderPresentation(
   }
   if (slug.startsWith("ollama-cloud/")) {
     return MODEL_PROVIDER_PRESENTATION_BY_LABEL["Ollama Cloud"] ?? null;
+  }
+  if (slug.startsWith("mistral/")) {
+    return MODEL_PROVIDER_PRESENTATION_BY_LABEL.Mistral ?? null;
+  }
+  if (slug.startsWith("deepseek/")) {
+    return MODEL_PROVIDER_PRESENTATION_BY_LABEL.DeepSeek ?? null;
+  }
+  if (slug.startsWith("xai/")) {
+    return MODEL_PROVIDER_PRESENTATION_BY_LABEL.xAI ?? null;
   }
   if (slug.startsWith("anthropic/") || slug.startsWith("claude")) {
     return MODEL_PROVIDER_PRESENTATION_BY_LABEL.Claude ?? null;
