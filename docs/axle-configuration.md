@@ -36,6 +36,9 @@ Select a provider with `--provider <id>` (short `-r`) and a model with
 | `fireworks` | `FIREWORKS_API_KEY` | `FIREWORKS_BASE_URL` | `https://api.fireworks.ai/inference/v1` |
 | `cerebras` | `CEREBRAS_API_KEY` | `CEREBRAS_BASE_URL` | `https://api.cerebras.ai/v1` |
 | `groq` | `GROQ_API_KEY` | `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` |
+| `mistral` | `MISTRAL_API_KEY` | `MISTRAL_BASE_URL` | `https://api.mistral.ai/v1` |
+| `deepseek` | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/v1` |
+| `xai` | `XAI_API_KEY` | `XAI_BASE_URL` | `https://api.x.ai/v1`; alias `grok` |
 | `ollama-cloud` | `OLLAMA_API_KEY` | `OLLAMA_CLOUD_BASE_URL` | alias `ollama_cloud` |
 | `ollama` | none | `OLLAMA_LOCAL_BASE_URL` | local daemon; `http://localhost:11434/v1` |
 | `codex` / `chatgpt` | none | — | ChatGPT Codex subscription auth via `--codex-login` |
