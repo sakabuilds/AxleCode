@@ -1,1 +1,1 @@
-export const SITE={github:"https://github.com/axle-ai-code/Axle",releases:"https://github.com/axle-ai-code/Axle/releases",issues:"https://github.com/axle-ai-code/Axle/issues",download:"https://axle.llc/get"} as const;
+export const SITE={github:"https://github.com/thatcreativetayo/AxleCode",releases:"https://github.com/thatcreativetayo/AxleCode/releases",issues:"https://github.com/thatcreativetayo/AxleCode/issues",download:"https://axle.llc/get"} as const;
