@@ -72,6 +72,17 @@ function clerkExternalOptions(requestUrl) {
   return { external: true, redirectUri, state, pageUrl: requestUrl.toString() };
 }
 
+const CLERK_SIGN_UP_INTENTS = new Set(["signup", "sign-up", "sign_up", "create", "register", "join"]);
+
+/** Which Clerk component the desktop frame opens with; sign-up when the caller asks for it. */
+function clerkInitialMode(requestUrl) {
+  const intent =
+    requestUrl instanceof URL
+      ? (requestUrl.searchParams.get("intent") || "").trim().toLowerCase()
+      : "";
+  return CLERK_SIGN_UP_INTENTS.has(intent) ? "signup" : "signin";
+}
+
 async function createClerkBridge(request, env) {
   const body = await request.clone().json().catch(() => null);
   const redirectUri = typeof body?.redirectUri === "string" ? body.redirectUri : "";
@@ -406,20 +417,23 @@ function clerkDesktopHtml(env, requestUrl = null) {
   const redirectUriJson = JSON.stringify(externalOptions.redirectUri || null);
   const stateJson = JSON.stringify(externalOptions.state || null);
   const pageUrlJson = JSON.stringify(externalOptions.pageUrl || null);
+  const initialMode = clerkInitialMode(requestUrl);
+  const initialModeJson = JSON.stringify(initialMode);
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Axle sign in</title>
+<title>${initialMode === "signup" ? "Axle sign up" : "Axle sign in"}</title>
 <style>
 :root{color-scheme:light dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:transparent;color:CanvasText}body{min-height:100vh;display:grid;place-items:center;padding:24px}.shell{width:min(440px,100%)}#status{font-size:13px;text-align:center;opacity:.68;padding:16px}.error{border:1px solid color-mix(in srgb,crimson 32%,transparent);border-radius:16px;padding:16px;line-height:1.5}
+#switch{margin-top:12px;text-align:center}#switch[hidden]{display:none}#switch button{background:none;border:0;color:inherit;font:inherit;font-size:13px;opacity:.75;cursor:pointer;text-decoration:underline;padding:6px}
 </style>
 <script defer crossorigin="anonymous" src="https://${frontendApi}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
 <script defer crossorigin="anonymous" data-clerk-publishable-key=${JSON.stringify(publishableKey)} src="https://${frontendApi}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
 </head>
 <body>
-<main class="shell"><div id="sign-in"></div><div id="status" aria-live="polite"></div></main>
+<main class="shell"><div id="sign-in"></div><div id="switch" hidden></div><div id="status" aria-live="polite"></div></main>
 <script>
 (() => {
   const SOURCE = "axle-clerk-frame";
@@ -430,9 +444,12 @@ function clerkDesktopHtml(env, requestUrl = null) {
   const redirectUri = ${redirectUriJson};
   const state = ${stateJson};
   const pageUrl = ${pageUrlJson};
+  const initialMode = ${initialModeJson};
   const target = document.getElementById("sign-in");
+  const switcher = document.getElementById("switch");
   const status = document.getElementById("status");
-  let mounted = false;
+  let mode = initialMode;
+  let mountedMode = null;
   let listenerDispose = null;
   let bridgeStarted = false;
 
@@ -481,13 +498,37 @@ function clerkDesktopHtml(env, requestUrl = null) {
     }
   }
 
+  function mountOptions() {
+    return {
+      routing: "virtual",
+      oauthFlow: externalMode ? "redirect" : "popup",
+      ...(externalMode ? { forceRedirectUrl: pageUrl, fallbackRedirectUrl: pageUrl, signUpForceRedirectUrl: pageUrl } : {}),
+      appearance: {
+        layout: { socialButtonsPlacement: "top", socialButtonsVariant: "blockButton" },
+        elements: { rootBox: "width:100%", cardBox: "width:100%" },
+      },
+    };
+  }
+
+  function unmountActive() {
+    if (mountedMode === "signup") window.Clerk.unmountSignUp(target);
+    else if (mountedMode === "signin") window.Clerk.unmountSignIn(target);
+    mountedMode = null;
+  }
+
+  const switchButton = document.createElement("button");
+  switchButton.type = "button";
+  switchButton.addEventListener("click", () => {
+    mode = mode === "signup" ? "signin" : "signup";
+    render();
+  });
+  switcher.append(switchButton);
+
   function render() {
     if (window.Clerk?.user && window.Clerk?.session) {
-      if (mounted) {
-        window.Clerk.unmountSignIn(target);
-        mounted = false;
-      }
+      unmountActive();
       target.hidden = true;
+      switcher.hidden = true;
       status.hidden = false;
       status.textContent = externalMode ? "Returning to Axle…" : "Signed in to Axle";
       if (externalMode) void emitExternalBridge();
@@ -496,17 +537,14 @@ function clerkDesktopHtml(env, requestUrl = null) {
     }
     status.hidden = true;
     target.hidden = false;
-    if (!mounted) {
-      window.Clerk.mountSignIn(target, {
-        routing: "virtual",
-        oauthFlow: externalMode ? "redirect" : "popup",
-        ...(externalMode ? { forceRedirectUrl: pageUrl, fallbackRedirectUrl: pageUrl, signUpForceRedirectUrl: pageUrl } : {}),
-        appearance: {
-          layout: { socialButtonsPlacement: "top", socialButtonsVariant: "blockButton" },
-          elements: { rootBox: "width:100%", cardBox: "width:100%" },
-        },
-      });
-      mounted = true;
+    switcher.hidden = false;
+    switchButton.textContent =
+      mode === "signup" ? "Already have an account? Sign in" : "New to Axle? Create an account";
+    if (mountedMode !== mode) {
+      unmountActive();
+      if (mode === "signup") window.Clerk.mountSignUp(target, mountOptions());
+      else window.Clerk.mountSignIn(target, mountOptions());
+      mountedMode = mode;
     }
     send({ type: "signed-out" });
   }
@@ -668,6 +706,7 @@ export {
   boundedToolText,
   boundedValue,
   clerkDesktopHtml,
+  clerkInitialMode,
   decodeClerkFrontendApi,
   normalizeAnalytics,
   recordAnalyticsEvent,
