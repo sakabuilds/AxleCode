@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FEATURE_DETAILS } from "@/lib/product-content";
 
-export const metadata: Metadata = { title: "Features", description: "The capabilities behind Rivet: code context, file editing, terminal and Git tools, model choice, Plan mode, persistent threads, and remote access." };
+export const metadata: Metadata = { title: "Features", description: "The capabilities behind Axle: code context, file editing, terminal and Git tools, model choice, Plan mode, pull requests, cloud jobs, plugins, schedules, persistent threads, and remote access." };
 
 function CodeVisual() {
   return <div className="flex min-h-[225px] overflow-hidden rounded-tl-xl border-l border-t border-white/10 bg-[#090909] font-mono text-[10px]">
@@ -27,7 +27,7 @@ function TerminalVisual() {
 }
 
 function ApprovalVisual() {
-  return <div className="rounded-xl border border-white/10 bg-[#090909] p-4"><div className="flex items-center gap-2 text-xs"><LockKeyhole size={14}/>Permission to proceed</div><p className="mt-3 text-[11px] leading-6 text-mute">Rivet wants to run a command in your project.</p><div className="mt-4 rounded-lg bg-white/[.04] px-3 py-3 font-mono text-[10px]">$ pnpm test</div><div className="mt-5 flex gap-2" aria-hidden="true"><span className="rounded-lg bg-white px-4 py-2 text-[10px] text-black">Allow once</span><span className="rounded-lg border border-white/15 px-4 py-2 text-[10px] text-mute">Decline</span></div></div>;
+  return <div className="rounded-xl border border-white/10 bg-[#090909] p-4"><div className="flex items-center gap-2 text-xs"><LockKeyhole size={14}/>Permission to proceed</div><p className="mt-3 text-[11px] leading-6 text-mute">Axle wants to run a command in your project.</p><div className="mt-4 rounded-lg bg-white/[.04] px-3 py-3 font-mono text-[10px]">$ pnpm test</div><div className="mt-5 flex gap-2" aria-hidden="true"><span className="rounded-lg bg-white px-4 py-2 text-[10px] text-black">Allow once</span><span className="rounded-lg border border-white/15 px-4 py-2 text-[10px] text-mute">Decline</span></div></div>;
 }
 
 function ThreadsVisual() {
@@ -44,7 +44,7 @@ const cards = [
 
 export default function FeaturesPage() {
   return <>
-    <PageHero eyebrow="Features" title={<>Thoughtfully connected.<br/><span className="text-mute">Ready for real work.</span></>} copy="From the first question to the last test, Rivet gives you the tools to keep going. All in a workspace that feels like yours."/>
+    <PageHero eyebrow="Features" title={<>Thoughtfully connected.<br/><span className="text-mute">Ready for real work.</span></>} copy="From the first question to the last test, Axle gives you the tools to keep going. All in a workspace that feels like yours."/>
     <Section className="!pt-4">
       <RevealGroup className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {cards.map(({title,copy,icon:Icon,href,link,span,visual,wide})=><RevealItem key={title} className={span}><Card className="flex h-full flex-col overflow-hidden !rounded-[20px] !bg-[#101010]">
@@ -60,6 +60,6 @@ export default function FeaturesPage() {
       <div className="mt-14">{FEATURE_DETAILS.map((group,index)=><div key={group.group} className="grid gap-7 border-t border-white/10 py-9 lg:grid-cols-[1fr_3fr] lg:gap-16"><div><span className="font-mono text-[10px] text-mute">0{index+1}</span><h3 className="mt-3 text-lg tracking-tight">{group.group}</h3></div><div className="grid gap-x-10 gap-y-8 sm:grid-cols-2">{group.items.map(item=><div key={item.title}><h4 className="text-[13px] font-medium">{item.title}</h4><p className="mt-2 max-w-sm text-xs leading-6 text-mute">{item.copy}</p></div>)}</div></div>)}</div>
       <div className="mt-6 border-t border-white/10 pt-8"><Button href="/docs" variant="secondary">Go deeper in the docs <ArrowUpRight size={15}/></Button></div>
     </Section>
-    <CTASection title="Everything you need to find your flow." copy="Download Rivet, connect a provider, and start with the work in front of you."/>
+    <CTASection title="Everything you need to find your flow." copy="Download Axle, connect a provider, and start with the work in front of you."/>
   </>;
 }
