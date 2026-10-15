@@ -1,5 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off
-import type { ServerProviderModel } from "@axle/contracts";
+import {
+  parseProviderHeaders,
+  providerHeadersVariable,
+  providerPresetHeaders,
+  resolveProviderPreset,
+  type ServerProviderModel,
+} from "@axle/contracts";
 import { createModelCapabilities } from "@axle/shared/model";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -725,14 +731,20 @@ interface CustomProviderDefinition {
   readonly label: string;
   readonly baseUrl: string;
   readonly apiKey: string;
+  /**
+   * Extra headers for every request, from `<PREFIX>_HEADERS`. This is how a
+   * provider that is not in the catalogue can carry its own requirements.
+   */
+  readonly headers: ReadonlyArray<readonly [string, string]>;
 }
 
 /**
  * Providers the user brought themselves, declared purely as environment
  * variables: `<PREFIX>_BASE_URL` is the endpoint, `<PREFIX>_API_KEY` the
- * credential, and the optional `<PREFIX>_LABEL` the display name. The prefix
- * also becomes the model slug prefix, which is how the runtime routes a turn
- * back to the same endpoint. Built-in prefixes are excluded above, so the same
+ * credential, the optional `<PREFIX>_LABEL` the display name, and the optional
+ * `<PREFIX>_HEADERS` a JSON object of extra request headers. The prefix also
+ * becomes the model slug prefix, which is how the runtime routes a turn back
+ * to the same endpoint. Built-in prefixes are excluded above, so the same
  * mechanism keeps working as an endpoint override for those vendors.
  */
 function customProviders(environment: NodeJS.ProcessEnv): ReadonlyArray<CustomProviderDefinition> {
@@ -754,6 +766,7 @@ function customProviders(environment: NodeJS.ProcessEnv): ReadonlyArray<CustomPr
           label: environment[`${envPrefix}_LABEL`]?.trim() || humanizeModelId(envPrefix),
           baseUrl,
           apiKey,
+          headers: parseProviderHeaders(environment[providerHeadersVariable(envPrefix)]),
         },
       ];
     })
@@ -770,16 +783,30 @@ type RuntimeProviderDefinition = Omit<ProviderDefinition, "env" | "prefix" | "la
   readonly label: string;
 };
 
+/**
+ * Headers for a request to an OpenAI-compatible endpoint: whatever its
+ * hostname requires, then anything the caller adds on top. `Authorization` is
+ * applied last by the caller so a preset can never displace the credential.
+ */
+function providerPresetRequestHeaders(baseUrl: string): Record<string, string> {
+  return Object.fromEntries(providerPresetHeaders(resolveProviderPreset(baseUrl)));
+}
+
 async function loadOpenAICompatibleModels(
   apiKey: string,
   fetchImplementation: FetchImplementation,
   baseUrl: string,
   modelsDev: ModelsDevCatalog | undefined,
   modelsDevProvider: string,
+  extraHeaders?: ReadonlyArray<readonly [string, string]>,
 ): Promise<ReadonlyArray<RemoteModel>> {
   const models = parseOpenAICompatibleModels(
     await fetchJson(fetchImplementation, `${baseUrl}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+      headers: {
+        ...providerPresetRequestHeaders(baseUrl),
+        ...Object.fromEntries(extraHeaders ?? []),
+        Authorization: `Bearer ${apiKey}`,
+      },
     }),
   );
   return models.map((model) =>
@@ -821,6 +848,7 @@ async function loadClaudeModels(
     if (afterId) url.searchParams.set("after_id", afterId);
     const payload = await fetchJson(fetchImplementation, url.toString(), {
       headers: {
+        ...providerPresetRequestHeaders(baseUrl),
         "anthropic-version": "2023-06-01",
         "x-api-key": apiKey,
       },
@@ -846,6 +874,7 @@ async function loadClaudeModels(
           `${baseUrl}/models/${encodeURIComponent(model.id)}`,
           {
             headers: {
+              ...providerPresetRequestHeaders(baseUrl),
               "anthropic-version": "2023-06-01",
               "x-api-key": apiKey,
             },
@@ -1112,6 +1141,7 @@ export async function discoverAxleModels(
             provider.baseUrl,
             modelsDev,
             provider.prefix,
+            provider.headers,
           ),
       } satisfies RuntimeProviderDefinition,
       apiKey: provider.apiKey,
