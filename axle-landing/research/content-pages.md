@@ -1,4 +1,4 @@
-# Rivet: content-page research
+# Axle: content-page research
 
 Research completed 13 October 2026, before UI implementation. Each page received a Kroma UI-inspiration call and a Kroma component-code call, followed by focused searches. Sources were searched together first and individually where the combined results favored a single gallery. References inform composition and interaction, not product claims.
 
@@ -30,7 +30,7 @@ Research completed 13 October 2026, before UI implementation. Each page received
 - Kroma UI search: `developer documentation dark sidebar code content table of contents` across Mobbin, Awwwards, Dribbble; followed by a focused `documentation website` search across Awwwards/Mobbin. Returned [Awwwards documentation](https://www.awwwards.com/inspiration/documentation-design-framework-thesprkl), [Systematic documentation](https://www.awwwards.com/market/product_67d800ee5664f562693309), and [Mobbin Craft document](https://mobbin.com/explore/screens/7c3a89ce-df5a-470f-81f9-3683e21f9d96). Borrow a calm reading column, distinct left navigation and narrow right contents rail.
 - Kroma component search across shadcn/ui and Magic UI returned [Sidebar](https://ui.shadcn.com/docs/components/base/sidebar) and [Sidebar blocks](https://ui.shadcn.com/blocks/sidebar). Borrow grouped navigation, an active section and a mobile disclosure.
 - Focused Kroma component search returned [Command](https://ui.shadcn.com/docs/components/base/command). Borrow a searchable section index with a labeled search field, clear empty result, and keyboard-accessible links. Copy buttons must copy the actual visible snippet and announce success/failure.
-- Section direction: real desktop quickstart; model/key configuration; projects and threads; approvals; MCP; troubleshooting. Use the checked-in runtime documentation for actual CLI options. Never invent a `rivet` executable, hosted API, or installer script.
+- Section direction: real desktop quickstart; model/key configuration; projects and threads; approvals; MCP; troubleshooting. Use the checked-in runtime documentation for actual CLI options. Never invent a `axle` executable, hosted API, or installer script.
 
 ## Repository facts and endpoints
 
@@ -40,4 +40,4 @@ Research completed 13 October 2026, before UI implementation. Each page received
 - `axle-download-worker/wrangler.toml` configures the latest-release API as `https://api.github.com/repos/axle-ai-code/Axle/releases/latest`; the public release repository is `https://github.com/axle-ai-code/Axle/releases`. Prefer the configured current repository over the older README link after endpoint validation.
 - `axle-download-worker/src/index.test.js` confirms public download entry points at `https://axle.llc/get`, with `?platform=windows`, `?platform=macos`, and `?platform=linux`, and a public `/get/manifest` route. These are repository-configured URLs, not evidence that the live server is healthy.
 - `axle-auth-worker/wrangler.toml` configures `PUBLIC_BASE_URL = "https://auth.axle.llc"`. Inspect supported worker routes before selecting a sign-in URL.
-- Rivet is the requested marketing brand; shipped artifacts and binary names currently remain Axle. The site should avoid suggesting a renamed binary already exists.
+- Axle is the requested marketing brand; shipped artifacts and binary names currently remain Axle. The site should avoid suggesting a renamed binary already exists.
