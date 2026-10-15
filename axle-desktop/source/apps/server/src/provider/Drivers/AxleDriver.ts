@@ -61,7 +61,7 @@ function makeSnapshot(input: {
   const message = !input.binaryInstalled
     ? `Axle runtime was not found at ${input.binaryPath}.`
     : discovery.configuredProviderCount === 0
-      ? "Add an OpenAI, Anthropic, Google, Fireworks, Ollama Cloud, Cerebras, Groq, or OpenRouter API key in Models."
+      ? "Add an Axle, OpenAI, Anthropic, Google, Fireworks, Ollama Cloud, Cerebras, Groq, or OpenRouter API key in Models."
       : hasDiscoveryErrors
         ? `Model refresh failed for ${discovery.errors.join("; ")}. Check the API key and your connection.`
         : !hasModels
@@ -325,8 +325,7 @@ export const AxleDriver: ProviderDriver<
                 everyday:
                   "Be warm and approachable. Explain concepts thoroughly as if teaching a peer. Encourage questions and collaboration. Take time to explore ideas together. Be patient and supportive.",
               };
-              const personality =
-                (settings as Record<string, unknown>).axlePersonality ?? "coding";
+              const personality = (settings as Record<string, unknown>).axlePersonality ?? "coding";
               const personalityPrompt = personalityInstructions[personality as string] ?? "";
               const custom = settings.customInstructions.trim();
               return [personalityPrompt, custom, AXLE_PLUGIN_INSTRUCTIONS]
