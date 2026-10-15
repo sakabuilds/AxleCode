@@ -23,6 +23,11 @@ use std::time::Duration as StdDuration;
 use tokio::io::AsyncReadExt;
 use tracing_subscriber::EnvFilter;
 
+/// Axle's hosted gateway. The desktop app ships this base URL so every user
+/// gets a working provider with an `AXLE_API_KEY`, instead of configuring a
+/// vendor key of their own.
+const DEFAULT_AXLE_BASE_URL: &str = "https://api.axle.llc/v1";
+
 #[derive(Parser, Debug)]
 #[command(name = "axle")]
 #[command(about = "Axle AI Coding Agent", long_about = None)]
@@ -103,7 +108,7 @@ struct Cli {
         short = 'r',
         long,
         default_value = "openai",
-        help = "Model API: openai, anthropic, gemini, fireworks, ollama-cloud, cerebras, groq, openrouter, ollama"
+        help = "Model API: axle, openai, anthropic, gemini, fireworks, ollama-cloud, cerebras, groq, openrouter, ollama"
     )]
     provider: String,
 
@@ -135,6 +140,13 @@ struct Cli {
 
     #[arg(long, help = "Custom Base URL for OpenAI/Ollama-compatible provider")]
     base_url: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "KEY",
+        help = "API key for the selected provider; overrides the provider's *_API_KEY environment variable"
+    )]
+    api_key: Option<String>,
 
     #[arg(short, long, help = "Optional JS/TS extension file path to load")]
     extension: Option<String>,
@@ -230,11 +242,50 @@ fn required_api_key(variable: &str) -> anyhow::Result<String> {
     Ok(value)
 }
 
-fn configured_base_url(cli_value: Option<&str>, default: &str) -> String {
+/// Resolve a provider API key: an explicit `--api-key` wins, then the
+/// provider's own environment variable, then `AXLE_API_KEY` as a universal
+/// fallback. The fallback lets the Axle hosted gateway (and any other
+/// OpenAI-compatible endpoint) work without a vendor-specific variable.
+fn resolve_api_key(explicit: Option<&str>, variable: &str) -> anyhow::Result<String> {
+    if let Some(value) = explicit.map(str::trim).filter(|value| !value.is_empty()) {
+        return Ok(value.to_owned());
+    }
+    if let Ok(value) = env::var(variable) {
+        let value = value.trim();
+        if !value.is_empty() {
+            return Ok(value.to_owned());
+        }
+    }
+    if variable != "AXLE_API_KEY" {
+        if let Ok(value) = env::var("AXLE_API_KEY") {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Ok(value.to_owned());
+            }
+        }
+    }
+    anyhow::bail!(
+        "ERROR: {} environment variable is not set. Set it, pass --api-key, or set AXLE_API_KEY before running axle.",
+        variable
+    )
+}
+
+/// Resolve a provider endpoint: `--base-url` wins, then the provider's own
+/// `<PROVIDER>_BASE_URL` variable, then the built-in default. The env fallback
+/// is what lets the desktop point one provider instance at a custom or
+/// self-hosted gateway without a new command-line flag — and, because the
+/// variable is provider-scoped, without redirecting the other providers.
+fn configured_base_url(cli_value: Option<&str>, default: &str, variable: &str) -> String {
     cli_value
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
+        .or_else(|| {
+            env::var(variable)
+                .ok()
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty())
+        })
         .unwrap_or_else(|| default.to_string())
 }
 
@@ -253,6 +304,88 @@ fn resolve_provider_and_model(provider: Option<&str>, model: Option<&str>) -> (S
             .unwrap_or("gpt-4o")
             .to_string(),
     )
+}
+
+/// Environment variable prefix for a provider id: `nvidia-nim` -> `NVIDIA_NIM`.
+///
+/// The desktop stores every provider the user brings themselves as a
+/// `<PREFIX>_BASE_URL` / `<PREFIX>_API_KEY` pair, so the id carried by the
+/// model slug (`<id>/<model>`) is all the runtime needs to route a turn.
+fn provider_env_prefix(provider: &str) -> String {
+    provider
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// A local server never needs a credential, which is why the OpenAI-compatible
+/// provider drops its key requirement for loopback endpoints.
+fn is_localhost_url(url: &str) -> bool {
+    url.contains("localhost") || url.contains("127.0.0.1") || url.contains("[::1]")
+}
+
+fn non_empty_env(variable: &str) -> Option<String> {
+    env::var(variable)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+/// Build a provider for a user-supplied OpenAI-compatible endpoint.
+///
+/// The endpoint comes from `--base-url` or the provider's own
+/// `<PREFIX>_BASE_URL`; the key comes from `--api-key`, `<PREFIX>_API_KEY`, or
+/// the universal `AXLE_API_KEY`. An unknown id with no `<PREFIX>_BASE_URL`
+/// keeps the historical OpenAI default so existing invocations do not change
+/// behavior.
+fn custom_provider(
+    provider: &str,
+    cli_api_key: Option<&str>,
+    cli_base_url: Option<&str>,
+) -> anyhow::Result<Arc<dyn LlmProvider>> {
+    let prefix = provider_env_prefix(provider);
+    let base_variable = format!("{prefix}_BASE_URL");
+    let key_variable = format!("{prefix}_API_KEY");
+    let endpoint = cli_base_url
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| non_empty_env(&base_variable));
+
+    let Some(endpoint) = endpoint else {
+        let key = resolve_api_key(cli_api_key, "OPENAI_API_KEY")?;
+        let base_url =
+            configured_base_url(cli_base_url, "https://api.openai.com/v1", "OPENAI_BASE_URL");
+        return Ok(Arc::new(OpenAiProvider::new(key, Some(base_url))));
+    };
+
+    let key = match resolve_api_key(cli_api_key, &key_variable) {
+        Ok(key) => key,
+        Err(error) => {
+            if is_localhost_url(&endpoint) {
+                String::new()
+            } else {
+                return Err(error);
+            }
+        }
+    };
+    // The provider name and label are `&'static str` because they are identity
+    // strings shared with retry and error reporting. Providers are built once
+    // per process, so leaking the custom id here is bounded and intentional.
+    let label: &'static str = Box::leak(prefix.to_lowercase().into_boxed_str());
+    Ok(Arc::new(OpenAiProvider::new_named(
+        key,
+        Some(endpoint),
+        key_variable,
+        label,
+        label,
+    )))
 }
 
 /// Merge `--append-system-prompt` with the selected agent's instructions. The
@@ -486,6 +619,127 @@ mod tests {
         .unwrap();
         assert!(resolve_approval_config(&full).unwrap().is_none());
         assert!(Cli::try_parse_from(["axle", "--runtime-mode", "unknown-mode"]).is_err());
+    }
+
+    #[test]
+    fn api_key_resolution_prefers_explicit_then_provider_then_axle_fallback() {
+        let provider_var = "AXLE_TEST_PROVIDER_API_KEY";
+        let saved_provider = env::var(provider_var).ok();
+        let saved_axle = env::var("AXLE_API_KEY").ok();
+        let restore = |name: &str, saved: Option<String>| match saved {
+            Some(value) => env::set_var(name, value),
+            None => env::remove_var(name),
+        };
+
+        env::remove_var(provider_var);
+        env::remove_var("AXLE_API_KEY");
+        let error = resolve_api_key(None, provider_var).expect_err("missing key must fail");
+        assert!(error.to_string().contains(provider_var));
+
+        env::set_var("AXLE_API_KEY", "axle-fallback");
+        assert_eq!(
+            resolve_api_key(None, provider_var).unwrap(),
+            "axle-fallback"
+        );
+
+        env::set_var(provider_var, "provider-specific");
+        assert_eq!(
+            resolve_api_key(None, provider_var).unwrap(),
+            "provider-specific"
+        );
+
+        assert_eq!(
+            resolve_api_key(Some("explicit"), provider_var).unwrap(),
+            "explicit"
+        );
+        assert_eq!(
+            resolve_api_key(Some("   "), provider_var).unwrap(),
+            "provider-specific"
+        );
+
+        restore(provider_var, saved_provider);
+        restore("AXLE_API_KEY", saved_axle);
+    }
+
+    #[test]
+    fn provider_env_prefix_maps_ids_to_variables() {
+        assert_eq!(provider_env_prefix("nvidia-nim"), "NVIDIA_NIM");
+        assert_eq!(provider_env_prefix("nvidia_nim"), "NVIDIA_NIM");
+        assert_eq!(provider_env_prefix("NVIDIA"), "NVIDIA");
+        assert_eq!(provider_env_prefix("my.gateway"), "MY_GATEWAY");
+    }
+
+    #[test]
+    fn custom_provider_uses_its_own_base_url_and_key_variables() {
+        let base_var = "AXLE_TEST_CUSTOM_BASE_URL";
+        let key_var = "AXLE_TEST_CUSTOM_API_KEY";
+        let saved_base = env::var(base_var).ok();
+        let saved_key = env::var(key_var).ok();
+
+        env::remove_var(base_var);
+        env::remove_var(key_var);
+
+        // An id that brings no endpoint of its own keeps the OpenAI default.
+        let fallback = custom_provider("axle-test-custom", Some("explicit"), None).unwrap();
+        assert_eq!(fallback.provider_name(), "openai");
+
+        // With an endpoint configured the id routes to its own provider, and
+        // the dash in the id maps onto the underscore in the variable names.
+        env::set_var(base_var, "https://integrate.api.example/v1");
+        env::set_var(key_var, "nvapi-test");
+        let configured = custom_provider("axle-test-custom", None, None).unwrap();
+        assert_eq!(configured.provider_name(), "axle_test_custom");
+
+        match saved_base {
+            Some(value) => env::set_var(base_var, value),
+            None => env::remove_var(base_var),
+        }
+        match saved_key {
+            Some(value) => env::set_var(key_var, value),
+            None => env::remove_var(key_var),
+        }
+    }
+
+    #[test]
+    fn base_url_resolution_prefers_flag_then_provider_env_then_default() {
+        let variable = "AXLE_TEST_PROVIDER_BASE_URL";
+        let saved = env::var(variable).ok();
+        let restore = || match saved {
+            Some(ref value) => env::set_var(variable, value),
+            None => env::remove_var(variable),
+        };
+
+        env::remove_var(variable);
+        assert_eq!(
+            configured_base_url(None, "https://default.example/v1", variable),
+            "https://default.example/v1"
+        );
+
+        env::set_var(variable, "https://gateway.example/v1");
+        assert_eq!(
+            configured_base_url(None, "https://default.example/v1", variable),
+            "https://gateway.example/v1"
+        );
+
+        // The explicit flag still wins over the environment.
+        assert_eq!(
+            configured_base_url(
+                Some("https://flag.example/v1"),
+                "https://default.example/v1",
+                variable
+            ),
+            "https://flag.example/v1"
+        );
+
+        // A different provider's variable must not leak into this one.
+        env::set_var("AXLE_OTHER_PROVIDER_BASE_URL", "https://other.example/v1");
+        assert_eq!(
+            configured_base_url(None, "https://default.example/v1", variable),
+            "https://gateway.example/v1"
+        );
+        env::remove_var("AXLE_OTHER_PROVIDER_BASE_URL");
+
+        restore();
     }
 
     fn profile(provider: Option<&str>, model: Option<&str>) -> AgentProfile {
@@ -768,24 +1022,29 @@ async fn main() -> anyhow::Result<()> {
     let provider: Arc<dyn LlmProvider> = match effective_provider.to_lowercase().as_str() {
         "openai-codex" | "codex" | "chatgpt" => Arc::new(CodexProvider::new()),
         "anthropic" => {
-            let key = required_api_key("ANTHROPIC_API_KEY")?;
-            let base_url =
-                configured_base_url(cli.base_url.as_deref(), "https://api.anthropic.com/v1");
+            let key = resolve_api_key(cli.api_key.as_deref(), "ANTHROPIC_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.anthropic.com/v1",
+                "ANTHROPIC_BASE_URL",
+            );
             Arc::new(AnthropicProvider::new(key, Some(base_url)))
         }
         "gemini" | "google" => {
-            let key = required_api_key("GEMINI_API_KEY")?;
+            let key = resolve_api_key(cli.api_key.as_deref(), "GEMINI_API_KEY")?;
             let base_url = configured_base_url(
                 cli.base_url.as_deref(),
                 "https://generativelanguage.googleapis.com/v1beta",
+                "GEMINI_BASE_URL",
             );
             Arc::new(GeminiProvider::new_with_base_url(key, Some(base_url)))
         }
         "fireworks" => {
-            let key = required_api_key("FIREWORKS_API_KEY")?;
+            let key = resolve_api_key(cli.api_key.as_deref(), "FIREWORKS_API_KEY")?;
             let base_url = configured_base_url(
                 cli.base_url.as_deref(),
                 "https://api.fireworks.ai/inference/v1",
+                "FIREWORKS_BASE_URL",
             );
             Arc::new(OpenAiProvider::new_named(
                 key,
@@ -796,8 +1055,12 @@ async fn main() -> anyhow::Result<()> {
             ))
         }
         "ollama-cloud" | "ollama_cloud" => {
-            let key = required_api_key("OLLAMA_API_KEY")?;
-            let base_url = configured_base_url(cli.base_url.as_deref(), "https://ollama.com/v1");
+            let key = resolve_api_key(cli.api_key.as_deref(), "OLLAMA_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://ollama.com/v1",
+                "OLLAMA_CLOUD_BASE_URL",
+            );
             Arc::new(OpenAiProvider::new_named(
                 key,
                 Some(base_url),
@@ -807,9 +1070,12 @@ async fn main() -> anyhow::Result<()> {
             ))
         }
         "cerebras" => {
-            let key = required_api_key("CEREBRAS_API_KEY")?;
-            let base_url =
-                configured_base_url(cli.base_url.as_deref(), "https://api.cerebras.ai/v1");
+            let key = resolve_api_key(cli.api_key.as_deref(), "CEREBRAS_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.cerebras.ai/v1",
+                "CEREBRAS_BASE_URL",
+            );
             Arc::new(OpenAiProvider::new_named(
                 key,
                 Some(base_url),
@@ -819,9 +1085,12 @@ async fn main() -> anyhow::Result<()> {
             ))
         }
         "groq" => {
-            let key = required_api_key("GROQ_API_KEY")?;
-            let base_url =
-                configured_base_url(cli.base_url.as_deref(), "https://api.groq.com/openai/v1");
+            let key = resolve_api_key(cli.api_key.as_deref(), "GROQ_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.groq.com/openai/v1",
+                "GROQ_BASE_URL",
+            );
             Arc::new(OpenAiProvider::new_named(
                 key,
                 Some(base_url),
@@ -831,14 +1100,20 @@ async fn main() -> anyhow::Result<()> {
             ))
         }
         "openrouter" => {
-            let key = required_api_key("OPENROUTER_API_KEY")?;
-            let base_url =
-                configured_base_url(cli.base_url.as_deref(), DEFAULT_OPENROUTER_BASE_URL);
+            let key = resolve_api_key(cli.api_key.as_deref(), "OPENROUTER_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                DEFAULT_OPENROUTER_BASE_URL,
+                "OPENROUTER_BASE_URL",
+            );
             Arc::new(OpenRouterProvider::new(key, Some(base_url)))
         }
         "ollama" => {
-            let base_url =
-                configured_base_url(cli.base_url.as_deref(), "http://localhost:11434/v1");
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "http://localhost:11434/v1",
+                "OLLAMA_LOCAL_BASE_URL",
+            );
             Arc::new(OpenAiProvider::new_named(
                 "",
                 Some(base_url),
@@ -847,12 +1122,31 @@ async fn main() -> anyhow::Result<()> {
                 "Ollama",
             ))
         }
-        "openai" | _ => {
-            let key = required_api_key("OPENAI_API_KEY")?;
-            let base_url =
-                configured_base_url(cli.base_url.as_deref(), "https://api.openai.com/v1");
+        "axle" | "axle-hosted" | "axle_hosted" => {
+            let key = resolve_api_key(cli.api_key.as_deref(), "AXLE_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                DEFAULT_AXLE_BASE_URL,
+                "AXLE_BASE_URL",
+            );
+            Arc::new(OpenAiProvider::new_named(
+                key,
+                Some(base_url),
+                "AXLE_API_KEY",
+                "axle",
+                "Axle",
+            ))
+        }
+        "openai" => {
+            let key = resolve_api_key(cli.api_key.as_deref(), "OPENAI_API_KEY")?;
+            let base_url = configured_base_url(
+                cli.base_url.as_deref(),
+                "https://api.openai.com/v1",
+                "OPENAI_BASE_URL",
+            );
             Arc::new(OpenAiProvider::new(key, Some(base_url)))
         }
+        custom => custom_provider(custom, cli.api_key.as_deref(), cli.base_url.as_deref())?,
     };
 
     if cli.text_only {
