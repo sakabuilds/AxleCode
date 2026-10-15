@@ -183,7 +183,7 @@ const config: ExpoConfig = {
   userInterfaceStyle: "automatic",
   updates: {
     enabled: true,
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    url: "https://u.expo.dev/b9e15841-5da6-4c43-9162-cd05cd2026c4",
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
