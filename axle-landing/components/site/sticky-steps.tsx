@@ -46,7 +46,7 @@ export function StickySteps({ steps, panels }: { steps: readonly Step[]; panels:
       <div className="sticky top-32 hidden pt-8 lg:block">
         <div className="hairline overflow-hidden rounded-[20px] bg-[#101010]">
           <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-            <span className="font-mono text-[10px] uppercase tracking-[.12em] text-mute">A day with Rivet</span>
+            <span className="font-mono text-[10px] uppercase tracking-[.12em] text-mute">A day with Axle</span>
             <span className="font-mono text-[10px] text-mute">0{active + 1} / 0{steps.length}</span>
           </div>
           <div className="relative min-h-[390px]">
