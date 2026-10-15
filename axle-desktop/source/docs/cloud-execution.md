@@ -25,14 +25,14 @@ worker (apps/cloud-worker)
   `- upload artifacts -> jobs/{jobId}/{kind}/{name}
 ```
 
-| Piece | Where |
-| --- | --- |
-| Job / lease / update contracts | `packages/contracts/src/cloudJobs.ts` |
-| Control-plane routes | `apps/account-api/src/cloudHandler.ts` |
-| Job persistence | `apps/account-api/src/cloudStore.ts`, migration `apps/account-api/migrations/003_cloud_jobs.sql` |
-| Operator config (control plane) | `apps/account-api/src/cloudConfig.ts` (`AXLE_CLOUD_CONFIG`) |
-| Worker | `apps/cloud-worker` (`@axle/cloud-worker`) |
-| CLI runtime mode + approval file | `crates/axle_cli/src/main.rs`, `crates/axle_agent/src/loop_runner.rs` |
+| Piece                            | Where                                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Job / lease / update contracts   | `packages/contracts/src/cloudJobs.ts`                                                            |
+| Control-plane routes             | `apps/account-api/src/cloudHandler.ts`                                                           |
+| Job persistence                  | `apps/account-api/src/cloudStore.ts`, migration `apps/account-api/migrations/003_cloud_jobs.sql` |
+| Operator config (control plane)  | `apps/account-api/src/cloudConfig.ts` (`AXLE_CLOUD_CONFIG`)                                      |
+| Worker                           | `apps/cloud-worker` (`@axle/cloud-worker`)                                                       |
+| CLI runtime mode + approval file | `crates/axle_cli/src/main.rs`, `crates/axle_agent/src/loop_runner.rs`                            |
 
 ## Job lifecycle
 
@@ -45,6 +45,7 @@ provisioning --+--> running --+--> waiting_for_approval --+
                +--> failed
                `--> cancelled
 ```
+
 Invariants enforced by the control plane:
 
 - `completed` requires the worker's reported `result.sourceRevision` to equal the job's `input.sourceRevision` — a job only completes when the agent's work actually landed on the source revision the job started from.
@@ -59,62 +60,62 @@ Invariants enforced by the control plane:
 
 All worker requests are `POST`, authenticated with `Authorization: Bearer <workerToken>` and a body containing `workerId` (timing-safe token comparison); the worker must be listed for the environment or the request is `403 forbidden`.
 
-| Route | Purpose |
-| --- | --- |
-| `/v1/cloud-workers/{environmentId}/claim` | Claim the next queued job. `200` with a lease, or `204` when there is no work. |
-| `/v1/cloud-workers/{environmentId}/recover` | Reclaim this worker's leased job after a worker restart. |
-| `/v1/cloud-workers/{environmentId}/jobs/{jobId}/heartbeat` | Extend the lease while the job runs. |
-| `/v1/cloud-workers/{environmentId}/jobs/{jobId}/update` | Report a state transition / event. Requires `commandId`. |
+| Route                                                      | Purpose                                                                        |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `/v1/cloud-workers/{environmentId}/claim`                  | Claim the next queued job. `200` with a lease, or `204` when there is no work. |
+| `/v1/cloud-workers/{environmentId}/recover`                | Reclaim this worker's leased job after a worker restart.                       |
+| `/v1/cloud-workers/{environmentId}/jobs/{jobId}/heartbeat` | Extend the lease while the job runs.                                           |
+| `/v1/cloud-workers/{environmentId}/jobs/{jobId}/update`    | Report a state transition / event. Requires `commandId`.                       |
 
 ### Client routes
 
 Authenticated with the user's session; `cloud_access_denied` (403) when the user is not in `allowedUserIds`.
 
-| Route | Purpose |
-| --- | --- |
-| `POST /v1/cloud/jobs` | Create a job (`201` created, `200` idempotent replay). |
-| `GET /v1/cloud/jobs` | List the user's jobs. |
-| `GET /v1/cloud/jobs/{jobId}` | Current job state and result summary. |
-| `GET /v1/cloud/jobs/{jobId}/events?after=&limit=` | Event log (cursor paginated; default 200, max 500). |
-| `POST /v1/cloud/jobs/{jobId}/responses` | Answer an approval or input request. |
-| `POST /v1/cloud/jobs/{jobId}/cancel` | Request cancellation. |
+| Route                                             | Purpose                                                |
+| ------------------------------------------------- | ------------------------------------------------------ |
+| `POST /v1/cloud/jobs`                             | Create a job (`201` created, `200` idempotent replay). |
+| `GET /v1/cloud/jobs`                              | List the user's jobs.                                  |
+| `GET /v1/cloud/jobs/{jobId}`                      | Current job state and result summary.                  |
+| `GET /v1/cloud/jobs/{jobId}/events?after=&limit=` | Event log (cursor paginated; default 200, max 500).    |
+| `POST /v1/cloud/jobs/{jobId}/responses`           | Answer an approval or input request.                   |
+| `POST /v1/cloud/jobs/{jobId}/cancel`              | Request cancellation.                                  |
 
 ### Errors
 
-| Error | Status |
-| --- | --- |
-| `cloud_not_configured` | 503 |
-| `unauthorized` | 401 |
-| `forbidden`, `cloud_access_denied` | 403 |
-| `cloud_not_entitled` | 403 |
-| `insufficient_credits`, `credit_account_missing` | 402 |
-| `not_found` | 404 |
-| `invalid_*` | 400 |
-| `environment_unavailable`, `model_unavailable` | 422 |
-| `capacity_exceeded`, `event_limit_exceeded` | 429 |
-| any other `CloudJobError` code | 409 |
-| `internal_error` | 500 |
+| Error                                            | Status |
+| ------------------------------------------------ | ------ |
+| `cloud_not_configured`                           | 503    |
+| `unauthorized`                                   | 401    |
+| `forbidden`, `cloud_access_denied`               | 403    |
+| `cloud_not_entitled`                             | 403    |
+| `insufficient_credits`, `credit_account_missing` | 402    |
+| `not_found`                                      | 404    |
+| `invalid_*`                                      | 400    |
+| `environment_unavailable`, `model_unavailable`   | 422    |
+| `capacity_exceeded`, `event_limit_exceeded`      | 429    |
+| any other `CloudJobError` code                   | 409    |
+| `internal_error`                                 | 500    |
 
 ## Worker configuration
 
 `AXLE_CLOUD_WORKER_CONFIG` (JSON string) or `AXLE_CLOUD_WORKER_CONFIG_FILE` (path to a JSON file). Both are read once at startup; the raw value is never logged.
 
-| Field | Required | Default | Notes |
-| --- | --- | --- | --- |
-| `controlPlaneUrl` | yes | — | `http(s)`, no credentials in the URL; trailing slashes stripped. |
-| `workerId` | yes | — | `[A-Za-z0-9][A-Za-z0-9_-]*`, at most 128 chars; must match the control plane's `workers[].workerId`. |
-| `workerToken` | yes | — | 32-256 chars; must match `workers[].token`. |
-| `environmentIds` | yes | — | Non-empty, unique; environments the worker is bound to on the control plane. |
-| `workspaceRoot` | yes | — | Where per-job clones are created. |
-| `artifactRoot` | yes | — | Artifact store root (`jobs/{jobId}/...`). |
-| `agentBinary` | no | `axle` | Path/name of the CLI binary to spawn. |
-| `agentEnv` | no | `{}` | Extra environment variables for the agent process. |
-| `providers` | yes | — | Non-empty array of `{ providerInstanceId, provider, apiKeyEnv?, baseUrl? }`. `provider` is one of `openai`, `anthropic`, `gemini`, `fireworks`, `ollama-cloud`, `cerebras`, `groq`, `openrouter`, `ollama`. `apiKeyEnv` is required unless the provider is `ollama`; `baseUrl` overrides the provider endpoint. |
-| `pollIntervalMs` | no | `3000` | 250-60000. |
-| `heartbeatIntervalMs` | no | `10000` | 1000-120000. |
-| `shutdownGraceMs` | no | `30000` | 1000-600000; time in-flight jobs get to wind down on SIGINT/SIGTERM. |
-| `maxConcurrentJobs` | no | `4` | 1-100. |
-| `keepWorkspaces` | no | `true` | Keep job workspaces after completion for inspection. |
+| Field                 | Required | Default | Notes                                                                                                                                                                                                                                                                                                                                         |
+| --------------------- | -------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `controlPlaneUrl`     | yes      | —       | `http(s)`, no credentials in the URL; trailing slashes stripped.                                                                                                                                                                                                                                                                              |
+| `workerId`            | yes      | —       | `[A-Za-z0-9][A-Za-z0-9_-]*`, at most 128 chars; must match the control plane's `workers[].workerId`.                                                                                                                                                                                                                                          |
+| `workerToken`         | yes      | —       | 32-256 chars; must match `workers[].token`.                                                                                                                                                                                                                                                                                                   |
+| `environmentIds`      | yes      | —       | Non-empty, unique; environments the worker is bound to on the control plane.                                                                                                                                                                                                                                                                  |
+| `workspaceRoot`       | yes      | —       | Where per-job clones are created.                                                                                                                                                                                                                                                                                                             |
+| `artifactRoot`        | yes      | —       | Artifact store root (`jobs/{jobId}/...`).                                                                                                                                                                                                                                                                                                     |
+| `agentBinary`         | no       | `axle`  | Path/name of the CLI binary to spawn.                                                                                                                                                                                                                                                                                                         |
+| `agentEnv`            | no       | `{}`    | Extra environment variables for the agent process.                                                                                                                                                                                                                                                                                            |
+| `providers`           | yes      | —       | Non-empty array of `{ providerInstanceId, provider, apiKeyEnv?, baseUrl? }`. `provider` is one of `openai`, `anthropic`, `gemini`, `fireworks`, `ollama-cloud`, `cerebras`, `groq`, `openrouter`, `mistral`, `deepseek`, `xai`, `ollama`. `apiKeyEnv` is required unless the provider is `ollama`; `baseUrl` overrides the provider endpoint. |
+| `pollIntervalMs`      | no       | `3000`  | 250-60000.                                                                                                                                                                                                                                                                                                                                    |
+| `heartbeatIntervalMs` | no       | `10000` | 1000-120000.                                                                                                                                                                                                                                                                                                                                  |
+| `shutdownGraceMs`     | no       | `30000` | 1000-600000; time in-flight jobs get to wind down on SIGINT/SIGTERM.                                                                                                                                                                                                                                                                          |
+| `maxConcurrentJobs`   | no       | `4`     | 1-100.                                                                                                                                                                                                                                                                                                                                        |
+| `keepWorkspaces`      | no       | `true`  | Keep job workspaces after completion for inspection.                                                                                                                                                                                                                                                                                          |
 
 Example — see also `apps/cloud-worker/.env.example`:
 
@@ -127,7 +128,11 @@ Example — see also `apps/cloud-worker/.env.example`:
   "workspaceRoot": "/var/lib/axle-cloud/work",
   "artifactRoot": "/var/lib/axle-cloud/artifacts",
   "providers": [
-    { "providerInstanceId": "anthropic-default", "provider": "anthropic", "apiKeyEnv": "ANTHROPIC_API_KEY" }
+    {
+      "providerInstanceId": "anthropic-default",
+      "provider": "anthropic",
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
+    }
   ]
 }
 ```
@@ -138,13 +143,13 @@ Provider credentials live only in the worker host environment (e.g. `ANTHROPIC_A
 
 `AXLE_CLOUD_CONFIG` on the account API (JSON string). When absent, every cloud route reports `cloud_not_configured` (503). Do not announce a runner or paid entitlement until this configuration and billing are actually enabled.
 
-| Field | Notes |
-| --- | --- |
-| `environments[]` | `{ environmentId, repositoryHosts[], providerModels[{ providerInstanceId, model }], maxConcurrentJobs (1-100), limits }`. `repositoryHosts` are DNS names (no `.localhost`); `limits` = `{ maxDurationSeconds <= 86400, maxEvents 10-10000, cpuMillis <= 32000, memoryMb <= 65536, diskMb <= 1048576 }`, with `maxDurationSeconds >= leaseSeconds`. |
-| `workers[]` | `{ workerId, token (32-256), environmentIds[] }`. Worker ids and tokens must be unique and a worker's environments must exist. |
-| `allowedUserIds[]` | Non-empty; only these users can create jobs or answer requests. |
-| `maxActiveJobsPerUser` | 1-100. |
-| `leaseSeconds` | 15-300. |
+| Field                  | Notes                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environments[]`       | `{ environmentId, repositoryHosts[], providerModels[{ providerInstanceId, model }], maxConcurrentJobs (1-100), limits }`. `repositoryHosts` are DNS names (no `.localhost`); `limits` = `{ maxDurationSeconds <= 86400, maxEvents 10-10000, cpuMillis <= 32000, memoryMb <= 65536, diskMb <= 1048576 }`, with `maxDurationSeconds >= leaseSeconds`. |
+| `workers[]`            | `{ workerId, token (32-256), environmentIds[] }`. Worker ids and tokens must be unique and a worker's environments must exist.                                                                                                                                                                                                                      |
+| `allowedUserIds[]`     | Non-empty; only these users can create jobs or answer requests.                                                                                                                                                                                                                                                                                     |
+| `maxActiveJobsPerUser` | 1-100.                                                                                                                                                                                                                                                                                                                                              |
+| `leaseSeconds`         | 15-300.                                                                                                                                                                                                                                                                                                                                             |
 
 ## Billing and credits
 
@@ -193,10 +198,11 @@ axle --prompt-stdin --json-stream --runtime-mode approval-required \
 - Approval requests stream back as events; the worker appends decisions to the approval file:
 
   ```json
-  {"type":"approval_response","requestId":"<cli request id>","decision":"allow"}
+  { "type": "approval_response", "requestId": "<cli request id>", "decision": "allow" }
   ```
 
   The CLI polls the file every 150 ms. Anything unrecognised is **denied** — approvals default to deny.
+
 - Cancellation: the worker sends `SIGTERM` and waits `shutdownGraceMs`; the job settles as `cancelled`.
 - A non-zero agent exit fails the job as `runtime_failed`; a provisioning failure fails it as `provisioning_failed`, and an agent that exits while an approval is pending is held open until the request settles.
 
