@@ -28,6 +28,9 @@ type ProviderDefinition = {
     | "CEREBRAS_API_KEY"
     | "GROQ_API_KEY"
     | "OPENROUTER_API_KEY"
+    | "MISTRAL_API_KEY"
+    | "DEEPSEEK_API_KEY"
+    | "XAI_API_KEY"
     | "AXLE_API_KEY";
   readonly prefix:
     | "openai-codex"
@@ -39,6 +42,9 @@ type ProviderDefinition = {
     | "cerebras"
     | "groq"
     | "openrouter"
+    | "mistral"
+    | "deepseek"
+    | "xai"
     | "axle";
   readonly label:
     | "OpenAI Codex"
@@ -50,6 +56,9 @@ type ProviderDefinition = {
     | "Cerebras"
     | "Groq"
     | "OpenRouter"
+    | "Mistral"
+    | "DeepSeek"
+    | "xAI"
     | "Axle";
   readonly load: (
     apiKey: string,
@@ -716,6 +725,9 @@ const BUILT_IN_ENV_PREFIXES: ReadonlySet<string> = new Set([
   "CEREBRAS",
   "GROQ",
   "OPENROUTER",
+  "MISTRAL",
+  "DEEPSEEK",
+  "XAI",
   "AXLE",
 ]);
 
@@ -1097,6 +1109,45 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
         providerBaseUrl("https://openrouter.ai/api/v1", environment, "OPENROUTER_BASE_URL"),
         modelsDev,
         "openrouter",
+      ),
+  },
+  {
+    env: "MISTRAL_API_KEY",
+    prefix: "mistral",
+    label: "Mistral",
+    load: (apiKey, fetchImplementation, environment, modelsDev) =>
+      loadOpenAICompatibleModels(
+        apiKey,
+        fetchImplementation,
+        providerBaseUrl("https://api.mistral.ai/v1", environment, "MISTRAL_BASE_URL"),
+        modelsDev,
+        "mistral",
+      ),
+  },
+  {
+    env: "DEEPSEEK_API_KEY",
+    prefix: "deepseek",
+    label: "DeepSeek",
+    load: (apiKey, fetchImplementation, environment, modelsDev) =>
+      loadOpenAICompatibleModels(
+        apiKey,
+        fetchImplementation,
+        providerBaseUrl("https://api.deepseek.com/v1", environment, "DEEPSEEK_BASE_URL"),
+        modelsDev,
+        "deepseek",
+      ),
+  },
+  {
+    env: "XAI_API_KEY",
+    prefix: "xai",
+    label: "xAI",
+    load: (apiKey, fetchImplementation, environment, modelsDev) =>
+      loadOpenAICompatibleModels(
+        apiKey,
+        fetchImplementation,
+        providerBaseUrl("https://api.x.ai/v1", environment, "XAI_BASE_URL"),
+        modelsDev,
+        "xai",
       ),
   },
 ];
