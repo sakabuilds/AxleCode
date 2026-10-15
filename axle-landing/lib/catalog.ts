@@ -63,6 +63,51 @@ export const MODEL_PROVIDERS = [
     key: "GROQ_API_KEY",
   },
   {
+    id: "nvidia-nim",
+    name: "NVIDIA NIM",
+    mark: "N",
+    family: "NVIDIA-hosted models",
+    type: "Cloud",
+    copy: "Add an NVIDIA API key and reach the models hosted on build.nvidia.com from your own account.",
+    key: "NVIDIA_API_KEY",
+  },
+  {
+    id: "agent-router",
+    name: "Agent Router",
+    mark: "⇄",
+    family: "One key, many models",
+    type: "Cloud",
+    copy: "Paste the router's base URL and token. Axle identifies the provider, then lists the models your key can reach.",
+    key: "AGENT_ROUTER_TOKEN",
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    mark: "M",
+    family: "Mistral & Codestral",
+    type: "Cloud",
+    copy: "Connect a Mistral API key to work with the Mistral and Codestral models available to you.",
+    key: "MISTRAL_API_KEY",
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    mark: "D",
+    family: "Reasoning and code",
+    type: "Cloud",
+    copy: "Use a DeepSeek API key for chat and coding models, including the reasoning variants.",
+    key: "DEEPSEEK_API_KEY",
+  },
+  {
+    id: "xai",
+    name: "xAI",
+    mark: "X",
+    family: "Grok",
+    type: "Cloud",
+    copy: "Add an xAI API key to bring the Grok models into the same model list.",
+    key: "XAI_API_KEY",
+  },
+  {
     id: "ollama-cloud",
     name: "Ollama Cloud",
     mark: "◉",
@@ -79,6 +124,15 @@ export const MODEL_PROVIDERS = [
     type: "Local",
     copy: "Connect a local Ollama runtime. Your machine supplies the compute; no provider key is required.",
     key: "No API key required",
+  },
+  {
+    id: "custom",
+    name: "Your own endpoint",
+    mark: "⌁",
+    family: "Any OpenAI-compatible API",
+    type: "Cloud",
+    copy: "Bring a base URL and an API key. Axle checks the provider, lists the models it serves, and lets you switch between them.",
+    key: "Your key and base URL",
   },
 ] as const;
 
@@ -189,7 +243,7 @@ export const INTEGRATION_CATALOG = [
     kind: "MCP",
     description: "Connect your own tools over HTTP or a local stdio process.",
     detail:
-      "Rivet's runtime supports remote HTTP endpoints and local stdio MCP servers. Supply the endpoint or command, then configure any required authentication.",
+      "Axle's runtime supports remote HTTP endpoints and local stdio MCP servers. Supply the endpoint or command, then configure any required authentication.",
     anchor: "integrations",
   },
 ] as const;
@@ -200,8 +254,8 @@ export const PRICING_FAQS = [
     a: "The desktop application is free to download. When you connect a paid model provider, that provider bills your API usage under your own account. Local models use your hardware instead.",
   },
   {
-    q: "Do I need a credit card to try Rivet?",
-    a: "Rivet does not ask for a credit card to download the app. A hosted model provider may require billing to be enabled before its API can be used. You can also connect a local Ollama runtime.",
+    q: "Do I need a credit card to try Axle?",
+    a: "Axle does not ask for a credit card to download the app. A hosted model provider may require billing to be enabled before its API can be used. You can also connect a local Ollama runtime.",
   },
   {
     q: "Can I subscribe to Pro or Team?",
@@ -209,11 +263,15 @@ export const PRICING_FAQS = [
   },
   {
     q: "Does annual billing change my provider costs?",
-    a: "No. Your model provider charges are separate from Rivet. Switching the billing view here does not change your provider account or create a subscription.",
+    a: "No. Your model provider charges are separate from Axle. Switching the billing view here does not change your provider account or create a subscription.",
   },
   {
     q: "Can I use my existing model accounts?",
     a: "Yes. Add provider API keys in Settings > Models. The runtime also supports Codex subscription authentication. Which models you can use depends on the access available in that account.",
+  },
+  {
+    q: "Can I connect a provider that is not listed?",
+    a: "Yes. Paste any OpenAI-compatible base URL and its API key in Settings > Models. Axle identifies the provider by its host, checks that the endpoint answers, then lists the models your key can reach so you can choose which ones to keep.",
   },
   {
     q: "Where does my code go?",
