@@ -44,10 +44,13 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { ClaudeAI, FireworksAI, Gemini, Ollama, OpenAI, AxleIcon } from "../Icons";
 import {
   CerebrasLogo,
+  DeepSeekLogo,
   getDisplayModelName,
   getModelProviderPresentation,
   GroqLogo,
+  MistralLogo,
   OpenRouterLogo,
+  XaiLogo,
 } from "../chat/providerIconUtils";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
@@ -112,6 +115,9 @@ const RESERVED_ENV_PREFIXES: ReadonlySet<string> = new Set([
   "CEREBRAS",
   "GROQ",
   "OPENROUTER",
+  "MISTRAL",
+  "DEEPSEEK",
+  "XAI",
   "AXLE",
 ]);
 
@@ -218,6 +224,33 @@ const MODEL_APIS: ReadonlyArray<{
     placeholder: "sk-or-...",
     description: "OpenAI-compatible models from many vendors through OpenRouter.",
     Logo: OpenRouterLogo,
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    envName: "MISTRAL_API_KEY",
+    baseUrlEnvName: "MISTRAL_BASE_URL",
+    placeholder: "Mistral API key",
+    description: "Mistral and Codestral models through the Mistral API.",
+    Logo: MistralLogo,
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    envName: "DEEPSEEK_API_KEY",
+    baseUrlEnvName: "DEEPSEEK_BASE_URL",
+    placeholder: "sk-...",
+    description: "DeepSeek chat and reasoner models through api.deepseek.com.",
+    Logo: DeepSeekLogo,
+  },
+  {
+    id: "xai",
+    name: "xAI",
+    envName: "XAI_API_KEY",
+    baseUrlEnvName: "XAI_BASE_URL",
+    placeholder: "xai-...",
+    description: "Grok models through the xAI API.",
+    Logo: XaiLogo,
   },
 ];
 
