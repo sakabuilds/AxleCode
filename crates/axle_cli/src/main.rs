@@ -337,13 +337,37 @@ fn non_empty_env(variable: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+/// Extra request headers for a provider, from `<PREFIX>_HEADERS`.
+///
+/// A few OpenAI-compatible routers authorize by client fingerprint rather than
+/// by the key alone, and the desktop records the headers an endpoint insists on
+/// in this variable. The value is a flat JSON object of header name to string;
+/// malformed input is ignored so a bad variable cannot break a turn.
+fn provider_headers(prefix: &str) -> Vec<(String, String)> {
+    let Some(value) = non_empty_env(&format!("{prefix}_HEADERS")) else {
+        return Vec::new();
+    };
+    let Ok(serde_json::Value::Object(headers)) = serde_json::from_str::<serde_json::Value>(&value)
+    else {
+        return Vec::new();
+    };
+    headers
+        .into_iter()
+        .filter_map(|(name, value)| {
+            let name = name.trim().to_owned();
+            let value = value.as_str()?.to_owned();
+            (!name.is_empty()).then_some((name, value))
+        })
+        .collect()
+}
+
 /// Build a provider for a user-supplied OpenAI-compatible endpoint.
 ///
 /// The endpoint comes from `--base-url` or the provider's own
 /// `<PREFIX>_BASE_URL`; the key comes from `--api-key`, `<PREFIX>_API_KEY`, or
-/// the universal `AXLE_API_KEY`. An unknown id with no `<PREFIX>_BASE_URL`
-/// keeps the historical OpenAI default so existing invocations do not change
-/// behavior.
+/// the universal `AXLE_API_KEY`; and any extra request headers come from
+/// `<PREFIX>_HEADERS`. An unknown id with no `<PREFIX>_BASE_URL` keeps the
+/// historical OpenAI default so existing invocations do not change behavior.
 fn custom_provider(
     provider: &str,
     cli_api_key: Option<&str>,
@@ -379,12 +403,13 @@ fn custom_provider(
     // strings shared with retry and error reporting. Providers are built once
     // per process, so leaking the custom id here is bounded and intentional.
     let label: &'static str = Box::leak(prefix.to_lowercase().into_boxed_str());
-    Ok(Arc::new(OpenAiProvider::new_named(
+    Ok(Arc::new(OpenAiProvider::new_named_with_headers(
         key,
         Some(endpoint),
         key_variable,
         label,
         label,
+        provider_headers(&prefix),
     )))
 }
 
@@ -697,6 +722,36 @@ mod tests {
         match saved_key {
             Some(value) => env::set_var(key_var, value),
             None => env::remove_var(key_var),
+        }
+    }
+
+    #[test]
+    fn provider_headers_reads_the_json_object_and_ignores_junk() {
+        let prefix = "AXLE_TEST_PRESET";
+        let variable = "AXLE_TEST_PRESET_HEADERS";
+        let saved = env::var(variable).ok();
+
+        env::remove_var(variable);
+        assert!(provider_headers(prefix).is_empty());
+
+        // A variable that is not a JSON object yields no headers rather than
+        // failing the turn.
+        env::set_var(variable, "codex_cli_rs/0.47.0");
+        assert!(provider_headers(prefix).is_empty());
+
+        // Only string values survive; a numeric value is dropped.
+        env::set_var(
+            variable,
+            r#"{"user-agent":"codex_cli_rs/0.47.0","x-retries":3}"#,
+        );
+        assert_eq!(
+            provider_headers(prefix),
+            vec![("user-agent".to_owned(), "codex_cli_rs/0.47.0".to_owned())]
+        );
+
+        match saved {
+            Some(value) => env::set_var(variable, value),
+            None => env::remove_var(variable),
         }
     }
 
