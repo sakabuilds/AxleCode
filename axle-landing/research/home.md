@@ -1,4 +1,4 @@
-# Rivet design direction
+# Axle design direction
 
 The supplied desktop composition is the primary reference: left-aligned two-line headline, quiet navigation, generous negative space, and a large dark product window inside the supplied orange sunset photograph. Orange belongs to that photograph; interface colors remain monochrome.
 
@@ -9,7 +9,7 @@ The supplied desktop composition is the primary reference: left-aligned two-line
 - Three feature pillars and customization: [Bento 2.0](https://dribbble.com/shots/23625635-Bento-2-0), [Aceternity bento grids](https://ui.aceternity.com/categories/bento-grid). Borrow a varied grid with one purposeful visual per card rather than repeated decorative icons.
 - Code-in-action demo: [Magic UI Terminal](https://magicui.design/docs/components/terminal), [Aceternity Terminal](https://ui.aceternity.com/components/terminal). Borrow a readable window frame and progressive execution; use a controllable local demonstration.
 - Compatibility and integrations: Kroma UI searches across Mobbin and Dribbble, plus the bento references above. Results for logo grids were mostly identity work, so use a simple monochrome provider strip and real integration names instead of adopting unrelated references.
-- Quote: an original Rivet product principle, clearly attributed to the product philosophy. Do not fabricate a customer endorsement.
+- Quote: an original Axle product principle, clearly attributed to the product philosophy. Do not fabricate a customer endorsement.
 - Pricing teaser: use the pricing research in content-pages.md; distinguish available local software from unlaunched commercial plans.
 - Final CTA and footer: [Footer.design SaaS](https://www.footer.design/types/saas), [Webflow footer examples](https://webflow.com/blog/website-footer-design-examples). Borrow a clear sitemap and oversized quiet wordmark.
 - Ambient mesh: [Paper MeshGradient](https://shaders.paper.design/mesh-gradient) and [Paper Shaders repository](https://github.com/paper-design/shaders). Lazy-load an extremely subtle monochrome layer with a non-WebGL fallback.
