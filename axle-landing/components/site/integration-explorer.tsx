@@ -1,9 +1,36 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { ArrowUpRight, Search, X } from "lucide-react";
+import { ArrowUpRight, FileCode2, Plug, Search, Terminal, X } from "lucide-react";
+import { BrandLogo } from "@/components/site/brand-logo";
+import { integrationLogo } from "@/lib/brand-logos";
 import { INTEGRATION_CATALOG } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
+
+/**
+ * Built-in capabilities have no vendor logo, so they get a line icon instead of
+ * the written mark; anything the catalogue has no logo for at all still falls
+ * back to its mark.
+ */
+const BUILT_IN_ICONS = {
+  Terminal,
+  Files: FileCode2,
+  "Custom MCP": Plug,
+} as const;
+
+function IntegrationMark({
+  item,
+  size,
+}: {
+  item: (typeof INTEGRATION_CATALOG)[number];
+  size: number;
+}) {
+  const logo = integrationLogo(item.name);
+  if (logo) return <BrandLogo logo={logo} size={size} />;
+  const Icon = BUILT_IN_ICONS[item.name as keyof typeof BUILT_IN_ICONS];
+  if (Icon) return <Icon size={size} strokeWidth={1.5} className="text-mute" />;
+  return <>{item.mark}</>;
+}
 
 const CATEGORIES = [
   "All tools",
@@ -113,7 +140,7 @@ export function IntegrationExplorer() {
                 className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/[0.02] font-mono text-[20px] tracking-tighter"
                 aria-hidden="true"
               >
-                {item.mark}
+                <IntegrationMark item={item} size={26} />
               </span>
               <ArrowUpRight
                 size={17}
@@ -172,7 +199,7 @@ export function IntegrationExplorer() {
       >
         <div className="flex items-start justify-between">
           <span className="font-mono text-3xl" aria-hidden="true">
-            {selected?.mark}
+            {selected ? <IntegrationMark item={selected} size={34} /> : null}
           </span>
           <button
             aria-label="Close integration details"
