@@ -68,10 +68,10 @@ export function MeshBackdrop({ className }: { className?: string }) {
       aria-hidden="true"
       style={{ contain: "paint" }}
     >
-      <div className="rivet-mesh-fallback" data-moving={moving ? "true" : "false"}>
-        <div className="rivet-mesh-blob rivet-mesh-blob-a" />
-        <div className="rivet-mesh-blob rivet-mesh-blob-b" />
-        <div className="rivet-mesh-blob rivet-mesh-blob-c" />
+      <div className="axle-mesh-fallback" data-moving={moving ? "true" : "false"}>
+        <div className="axle-mesh-blob axle-mesh-blob-a" />
+        <div className="axle-mesh-blob axle-mesh-blob-b" />
+        <div className="axle-mesh-blob axle-mesh-blob-c" />
       </div>
       {ready && !reduce && !contextLost ? (
         <div style={{ position: "absolute", inset: 0, opacity: 0.25 }}>
@@ -98,14 +98,14 @@ export function MeshBackdrop({ className }: { className?: string }) {
       ) : null}
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,transparent 35%,#090909 100%)" }} />
       <style>{`
-        .rivet-mesh-fallback { position: absolute; inset: 0; overflow: hidden; }
-        .rivet-mesh-blob { position: absolute; border-radius: 50%; background: radial-gradient(ellipse,rgba(255,255,255,.06),transparent 68%); animation: rivet-mesh-drift 24s cubic-bezier(.16,1,.3,1) infinite alternate; animation-play-state: paused; }
-        .rivet-mesh-blob-a { width: 65%; height: 75%; left: -15%; top: -10%; }
-        .rivet-mesh-blob-b { width: 60%; height: 65%; right: -10%; top: 10%; animation-delay: -8s; }
-        .rivet-mesh-blob-c { width: 55%; height: 60%; left: 25%; bottom: -15%; animation-delay: -16s; opacity: .5; }
-        .rivet-mesh-fallback[data-moving="true"] .rivet-mesh-blob { animation-play-state: running; }
-        @keyframes rivet-mesh-drift { from { transform: translate(-2%,0); } to { transform: translate(3%,4%); } }
-        @media (prefers-reduced-motion: reduce) { .rivet-mesh-blob { animation: none; } }
+        .axle-mesh-fallback { position: absolute; inset: 0; overflow: hidden; }
+        .axle-mesh-blob { position: absolute; border-radius: 50%; background: radial-gradient(ellipse,rgba(255,255,255,.06),transparent 68%); animation: axle-mesh-drift 24s cubic-bezier(.16,1,.3,1) infinite alternate; animation-play-state: paused; }
+        .axle-mesh-blob-a { width: 65%; height: 75%; left: -15%; top: -10%; }
+        .axle-mesh-blob-b { width: 60%; height: 65%; right: -10%; top: 10%; animation-delay: -8s; }
+        .axle-mesh-blob-c { width: 55%; height: 60%; left: 25%; bottom: -15%; animation-delay: -16s; opacity: .5; }
+        .axle-mesh-fallback[data-moving="true"] .axle-mesh-blob { animation-play-state: running; }
+        @keyframes axle-mesh-drift { from { transform: translate(-2%,0); } to { transform: translate(3%,4%); } }
+        @media (prefers-reduced-motion: reduce) { .axle-mesh-blob { animation: none; } }
       `}</style>
     </div>
   );
