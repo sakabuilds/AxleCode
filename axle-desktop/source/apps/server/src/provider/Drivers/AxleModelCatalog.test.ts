@@ -830,4 +830,139 @@ describe("discoverAxleModels", () => {
       ["openrouter/anthropic/claude-3.5-sonnet", "OpenRouter"],
     ]);
   });
+
+  it("redirects only the provider whose base URL variable is set", async () => {
+    const requests: string[] = [];
+    const fetchImplementation = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === "https://gateway.example/v1/models") {
+        return jsonResponse({ data: [{ id: "custom-model" }] });
+      }
+      if (url === "https://api.openai.com/v1/models") {
+        return jsonResponse({ data: [{ id: "gpt-5.6-sol" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverAxleModels(
+      {
+        OPENROUTER_API_KEY: "sk-or-secret",
+        OPENROUTER_BASE_URL: "https://gateway.example/v1/",
+        OPENAI_API_KEY: "sk-openai-secret",
+      },
+      fetchImplementation,
+    );
+
+    // The override is applied with a single trailing slash trimmed.
+    expect(requests).toContain("https://gateway.example/v1/models");
+    expect(requests).not.toContain("https://openrouter.ai/api/v1/models");
+    // Providers without their own override keep their default endpoint.
+    expect(requests).toContain("https://api.openai.com/v1/models");
+    expect(result.models.map((model) => model.slug)).toContain("openrouter/custom-model");
+  });
+
+  it("discovers the Axle gateway through AXLE_BASE_URL", async () => {
+    const requests: string[] = [];
+    const fetchImplementation = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === "https://self-hosted.example/v1/models") {
+        return jsonResponse({ data: [{ id: "axle-nano" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverAxleModels(
+      { AXLE_API_KEY: "axle-secret", AXLE_BASE_URL: "https://self-hosted.example/v1" },
+      fetchImplementation,
+    );
+
+    expect(requests).toContain("https://self-hosted.example/v1/models");
+    expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
+      ["axle/axle-nano", "Axle"],
+    ]);
+  });
+
+  it("discovers a provider the user brought as a base URL and key pair", async () => {
+    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const fetchImplementation = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({
+        url,
+        authorization: new Headers(init?.headers).get("authorization"),
+      });
+      if (url === "https://integrate.api.nvidia.com/v1/models") {
+        return jsonResponse({ data: [{ id: "meta/llama-3.1-70b-instruct" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverAxleModels(
+      {
+        NVIDIA_NIM_BASE_URL: "https://integrate.api.nvidia.com/v1/",
+        NVIDIA_NIM_API_KEY: "nvapi-secret",
+        NVIDIA_NIM_LABEL: "NVIDIA NIM",
+      },
+      fetchImplementation,
+    );
+
+    // The trailing slash is trimmed before the `/models` join, and the
+    // provider's own key authenticates the probe.
+    const probe = requests.find(
+      (request) => request.url === "https://integrate.api.nvidia.com/v1/models",
+    );
+    expect(probe?.authorization).toBe("Bearer nvapi-secret");
+    expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
+      ["nvidia-nim/meta/llama-3.1-70b-instruct", "NVIDIA NIM"],
+    ]);
+    expect(result.configuredProviderCount).toBe(1);
+  });
+
+  it("skips a hosted provider the user brought without a key, but allows a local one", async () => {
+    const requests: string[] = [];
+    const fetchImplementation = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === "http://127.0.0.1:1234/v1/models") {
+        return jsonResponse({ data: [{ id: "local-model" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverAxleModels(
+      {
+        KEYLESS_HOSTED_BASE_URL: "https://keyless.example/v1",
+        LOCAL_LLM_BASE_URL: "http://127.0.0.1:1234/v1",
+      },
+      fetchImplementation,
+    );
+
+    expect(requests).not.toContain("https://keyless.example/v1/models");
+    expect(result.models.map((model) => model.slug)).toEqual(["local-llm/local-model"]);
+  });
+
+  it("keeps built-in base URL variables as endpoint overrides, not providers", async () => {
+    const requests: string[] = [];
+    const fetchImplementation = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === "https://proxy.example/v1/models") {
+        return jsonResponse({ data: [{ id: "gpt-5.6-sol" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverAxleModels(
+      { OPENAI_API_KEY: "sk-openai", OPENAI_BASE_URL: "https://proxy.example/v1" },
+      fetchImplementation,
+    );
+
+    expect(requests).toContain("https://proxy.example/v1/models");
+    // Still the built-in OpenAI provider, not a second "openai" provider.
+    expect(result.configuredProviderCount).toBe(1);
+    expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
+      ["openai/gpt-5.6-sol", "OpenAI"],
+    ]);
+  });
 });
