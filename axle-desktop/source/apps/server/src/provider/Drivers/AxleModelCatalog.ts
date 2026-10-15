@@ -21,7 +21,8 @@ type ProviderDefinition = {
     | "OLLAMA_API_KEY"
     | "CEREBRAS_API_KEY"
     | "GROQ_API_KEY"
-    | "OPENROUTER_API_KEY";
+    | "OPENROUTER_API_KEY"
+    | "AXLE_API_KEY";
   readonly prefix:
     | "openai-codex"
     | "openai"
@@ -31,7 +32,8 @@ type ProviderDefinition = {
     | "ollama-cloud"
     | "cerebras"
     | "groq"
-    | "openrouter";
+    | "openrouter"
+    | "axle";
   readonly label:
     | "OpenAI Codex"
     | "OpenAI"
@@ -41,7 +43,8 @@ type ProviderDefinition = {
     | "Ollama Cloud"
     | "Cerebras"
     | "Groq"
-    | "OpenRouter";
+    | "OpenRouter"
+    | "Axle";
   readonly load: (
     apiKey: string,
     fetchImplementation: FetchImplementation,
@@ -668,9 +671,104 @@ async function loadModelsDevCatalog(
   }
 }
 
-function providerBaseUrl(fallback: string): string {
-  return fallback;
+/**
+ * The Axle hosted provider's default endpoint. Matches the Rust runtime's
+ * `DEFAULT_AXLE_BASE_URL`, so discovery and generation hit the same gateway.
+ */
+const AXLE_HOSTED_BASE_URL = "https://api.axle.llc/v1";
+
+const withoutTrailingSlashes = (value: string): string => value.replace(/\/+$/u, "");
+
+/**
+ * Resolve a discovery endpoint. A provider's own `<PROVIDER>_BASE_URL`
+ * variable overrides its default so a self-hosted, proxied, or Axle-hosted
+ * gateway is discovered exactly where the Rust runtime would send the request.
+ * The variable is provider-scoped, so pointing one provider at a gateway never
+ * redirects the others. Trailing slashes are trimmed so the `/models` join
+ * stays a single slash.
+ */
+function providerBaseUrl(
+  fallback: string,
+  environment: NodeJS.ProcessEnv | undefined,
+  variable: string,
+): string {
+  const override = environment?.[variable]?.trim();
+  return withoutTrailingSlashes(override && override.length > 0 ? override : fallback);
 }
+
+/**
+ * Environment variable prefixes owned by the built-in providers. For these,
+ * `<PREFIX>_BASE_URL` only overrides a vendor endpoint that is already known.
+ */
+const BUILT_IN_ENV_PREFIXES: ReadonlySet<string> = new Set([
+  "OPENAI",
+  "ANTHROPIC",
+  "GEMINI",
+  "FIREWORKS",
+  "OLLAMA",
+  "OLLAMA_CLOUD",
+  "CEREBRAS",
+  "GROQ",
+  "OPENROUTER",
+  "AXLE",
+]);
+
+const CUSTOM_BASE_URL_VARIABLE = /^([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*)_BASE_URL$/u;
+
+const isLocalhostUrl = (url: string): boolean => /localhost|127\.0\.0\.1|\[::1\]/u.test(url);
+
+interface CustomProviderDefinition {
+  /** Environment variable prefix, for example `NVIDIA_NIM`. */
+  readonly envPrefix: string;
+  /** Model slug prefix, for example `nvidia-nim`. */
+  readonly prefix: string;
+  readonly label: string;
+  readonly baseUrl: string;
+  readonly apiKey: string;
+}
+
+/**
+ * Providers the user brought themselves, declared purely as environment
+ * variables: `<PREFIX>_BASE_URL` is the endpoint, `<PREFIX>_API_KEY` the
+ * credential, and the optional `<PREFIX>_LABEL` the display name. The prefix
+ * also becomes the model slug prefix, which is how the runtime routes a turn
+ * back to the same endpoint. Built-in prefixes are excluded above, so the same
+ * mechanism keeps working as an endpoint override for those vendors.
+ */
+function customProviders(environment: NodeJS.ProcessEnv): ReadonlyArray<CustomProviderDefinition> {
+  return Object.entries(environment)
+    .flatMap(([name, rawValue]): ReadonlyArray<CustomProviderDefinition> => {
+      const envPrefix = CUSTOM_BASE_URL_VARIABLE.exec(name)?.[1];
+      if (!envPrefix || BUILT_IN_ENV_PREFIXES.has(envPrefix)) return [];
+      const configuredUrl = rawValue?.trim();
+      if (!configuredUrl) return [];
+      const baseUrl = withoutTrailingSlashes(configuredUrl);
+      const apiKey = environment[`${envPrefix}_API_KEY`]?.trim() ?? "";
+      // A hosted endpoint with no credential only answers 401, so it is not
+      // worth advertising; a local server legitimately needs no key.
+      if (apiKey.length === 0 && !isLocalhostUrl(baseUrl)) return [];
+      return [
+        {
+          envPrefix,
+          prefix: envPrefix.toLowerCase().replaceAll("_", "-"),
+          label: environment[`${envPrefix}_LABEL`]?.trim() || humanizeModelId(envPrefix),
+          baseUrl,
+          apiKey,
+        },
+      ];
+    })
+    .toSorted((left, right) => left.envPrefix.localeCompare(right.envPrefix));
+}
+
+/**
+ * A provider the runtime can execute. Built-ins narrow their ids to literals,
+ * while a provider the user brought widens them to any prefix.
+ */
+type RuntimeProviderDefinition = Omit<ProviderDefinition, "env" | "prefix" | "label"> & {
+  readonly env?: string;
+  readonly prefix: string;
+  readonly label: string;
+};
 
 async function loadOpenAICompatibleModels(
   apiKey: string,
@@ -698,7 +796,7 @@ async function loadOpenAIModels(
   return loadOpenAICompatibleModels(
     apiKey,
     fetchImplementation,
-    providerBaseUrl("https://api.openai.com/v1"),
+    providerBaseUrl("https://api.openai.com/v1", environment, "OPENAI_BASE_URL"),
     modelsDev,
     "openai",
   );
@@ -710,7 +808,11 @@ async function loadClaudeModels(
   environment: NodeJS.ProcessEnv,
   modelsDev?: ModelsDevCatalog,
 ): Promise<ReadonlyArray<RemoteModel>> {
-  const baseUrl = providerBaseUrl("https://api.anthropic.com/v1");
+  const baseUrl = providerBaseUrl(
+    "https://api.anthropic.com/v1",
+    environment,
+    "ANTHROPIC_BASE_URL",
+  );
   const models: RemoteModel[] = [];
   let afterId: string | undefined;
   do {
@@ -769,7 +871,11 @@ async function loadGoogleModels(
   environment: NodeJS.ProcessEnv,
   modelsDev?: ModelsDevCatalog,
 ): Promise<ReadonlyArray<RemoteModel>> {
-  const baseUrl = providerBaseUrl("https://generativelanguage.googleapis.com/v1beta");
+  const baseUrl = providerBaseUrl(
+    "https://generativelanguage.googleapis.com/v1beta",
+    environment,
+    "GEMINI_BASE_URL",
+  );
   const models: RemoteModel[] = [];
   let pageToken: string | undefined;
   do {
@@ -864,6 +970,19 @@ const loadCodexModelsForDiscovery: CodexModelLoader = (environment) =>
 
 const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
   {
+    env: "AXLE_API_KEY",
+    prefix: "axle",
+    label: "Axle",
+    load: (apiKey, fetchImplementation, environment, modelsDev) =>
+      loadOpenAICompatibleModels(
+        apiKey,
+        fetchImplementation,
+        providerBaseUrl(AXLE_HOSTED_BASE_URL, environment, "AXLE_BASE_URL"),
+        modelsDev,
+        "axle",
+      ),
+  },
+  {
     prefix: "openai-codex",
     label: "OpenAI Codex",
     load: loadCodexModels,
@@ -894,7 +1013,7 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
       loadOpenAICompatibleModels(
         apiKey,
         fetchImplementation,
-        providerBaseUrl("https://api.fireworks.ai/inference/v1"),
+        providerBaseUrl("https://api.fireworks.ai/inference/v1", environment, "FIREWORKS_BASE_URL"),
         modelsDev,
         "fireworks-ai",
       ),
@@ -907,7 +1026,7 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
       loadOpenAICompatibleModels(
         apiKey,
         fetchImplementation,
-        providerBaseUrl("https://ollama.com/v1"),
+        providerBaseUrl("https://ollama.com/v1", environment, "OLLAMA_CLOUD_BASE_URL"),
         modelsDev,
         "ollama",
       ),
@@ -920,7 +1039,7 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
       loadOpenAICompatibleModels(
         apiKey,
         fetchImplementation,
-        providerBaseUrl("https://api.cerebras.ai/v1"),
+        providerBaseUrl("https://api.cerebras.ai/v1", environment, "CEREBRAS_BASE_URL"),
         modelsDev,
         "cerebras",
       ),
@@ -933,7 +1052,7 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
       loadOpenAICompatibleModels(
         apiKey,
         fetchImplementation,
-        providerBaseUrl("https://api.groq.com/openai/v1"),
+        providerBaseUrl("https://api.groq.com/openai/v1", environment, "GROQ_BASE_URL"),
         modelsDev,
         "groq",
       ),
@@ -946,7 +1065,7 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
       loadOpenAICompatibleModels(
         apiKey,
         fetchImplementation,
-        providerBaseUrl("https://openrouter.ai/api/v1"),
+        providerBaseUrl("https://openrouter.ai/api/v1", environment, "OPENROUTER_BASE_URL"),
         modelsDev,
         "openrouter",
       ),
@@ -958,18 +1077,46 @@ export async function discoverAxleModels(
   fetchImplementation: FetchImplementation = globalThis.fetch,
   codexModelLoader: CodexModelLoader = loadCodexModelsForDiscovery,
 ): Promise<AxleModelDiscovery> {
-  const configured = PROVIDERS.flatMap((provider) => {
-    if (provider.prefix === "ollama-cloud" && environment.OLLAMA_CLOUD_CONFIGURED !== "true") {
-      return [];
-    }
-    if (!provider.env) {
-      return hasCodexOAuthAuthentication(environment)
-        ? [{ provider, apiKey: "authenticated" }]
-        : [];
-    }
-    const apiKey = environment[provider.env]?.trim();
-    return apiKey ? [{ provider, apiKey }] : [];
-  });
+  const custom = customProviders(environment);
+  const configured: ReadonlyArray<{
+    readonly provider: RuntimeProviderDefinition;
+    readonly apiKey: string;
+  }> = [
+    ...PROVIDERS.flatMap((provider): ReadonlyArray<RuntimeProviderDefinition> => {
+      if (provider.prefix === "ollama-cloud" && environment.OLLAMA_CLOUD_CONFIGURED !== "true") {
+        return [];
+      }
+      if (!provider.env) {
+        return hasCodexOAuthAuthentication(environment) ? [provider] : [];
+      }
+      return environment[provider.env]?.trim() ? [provider] : [];
+    }).map((provider) => ({
+      provider,
+      apiKey:
+        provider.env === undefined ? "authenticated" : (environment[provider.env]?.trim() ?? ""),
+    })),
+    ...custom.map((provider) => ({
+      provider: {
+        env: `${provider.envPrefix}_API_KEY`,
+        prefix: provider.prefix,
+        label: provider.label,
+        load: (
+          apiKey: string,
+          fetchImplementation: FetchImplementation,
+          _environment: NodeJS.ProcessEnv,
+          modelsDev?: ModelsDevCatalog,
+        ) =>
+          loadOpenAICompatibleModels(
+            apiKey,
+            fetchImplementation,
+            provider.baseUrl,
+            modelsDev,
+            provider.prefix,
+          ),
+      } satisfies RuntimeProviderDefinition,
+      apiKey: provider.apiKey,
+    })),
+  ];
 
   const modelsDev =
     configured.length > 0 ? await loadModelsDevCatalog(fetchImplementation) : undefined;
@@ -1083,12 +1230,20 @@ export async function discoverAxleModels(
     }),
   );
 
+  // Built-ins keep their declared order; providers the user brought follow,
+  // because their labels are not in `PROVIDERS`.
+  const providerOrder = new Map(
+    [
+      ...PROVIDERS.map((provider) => provider.label),
+      ...custom.map((provider) => provider.label),
+    ].map((label, index) => [label, index] as const),
+  );
   const models = results
     .flatMap((result) => result.models)
     .toSorted((left, right) => {
       const providerDelta =
-        PROVIDERS.findIndex((provider) => provider.label === left.subProvider) -
-        PROVIDERS.findIndex((provider) => provider.label === right.subProvider);
+        (providerOrder.get(left.subProvider ?? "") ?? Number.MAX_SAFE_INTEGER) -
+        (providerOrder.get(right.subProvider ?? "") ?? Number.MAX_SAFE_INTEGER);
       const codexModelDelta =
         (CHATGPT_CODEX_MODEL_ORDER.get(left.slug) ?? Number.POSITIVE_INFINITY) -
         (CHATGPT_CODEX_MODEL_ORDER.get(right.slug) ?? Number.POSITIVE_INFINITY);
