@@ -64,6 +64,9 @@ function releaseConfig(env) {
     if (env.RELEASE_LINUX_ASC_SIZE?.trim() && env.RELEASE_LINUX_ASC_SHA256?.trim()) {
       files.push({ name: "Axle-x64.AppImage.asc", platform: "linux-x64", size: Number(env.RELEASE_LINUX_ASC_SIZE) || null, contentType: "application/pgp-signature", sha256: env.RELEASE_LINUX_ASC_SHA256?.trim() || null, url: `${linuxBaseUrl}/Axle-x64.AppImage.asc` });
     }
+    if (env.RELEASE_LINUX_DEB_SIZE?.trim()) {
+      files.push({ name: "Axle-amd64.deb", platform: "linux-x64", size: Number(env.RELEASE_LINUX_DEB_SIZE) || null, contentType: "application/x-debian-package", sha256: env.RELEASE_LINUX_DEB_SHA256?.trim() || null, url: `${linuxBaseUrl}/Axle-amd64.deb` });
+    }
   }
   return { schemaVersion: 0, id: version, version, name: `Axle ${version}`, channel: "release", changelog: env.RELEASE_CHANGELOG?.trim() || "", publishedAt: env.RELEASE_PUBLISHED_AT?.trim() || null, files };
 }
@@ -89,6 +92,9 @@ function githubReleaseConfig(env, baseUrl) {
     files.push(file("Axle-x64.AppImage", "linux-x64", Number(env.RELEASE_LINUX_SIZE), "application/octet-stream", env.RELEASE_LINUX_SHA256));
     if (env.RELEASE_LINUX_ASC_SIZE?.trim() && env.RELEASE_LINUX_ASC_SHA256?.trim()) {
       files.push(file("Axle-x64.AppImage.asc", "linux-x64", Number(env.RELEASE_LINUX_ASC_SIZE), "application/pgp-signature", env.RELEASE_LINUX_ASC_SHA256));
+    }
+    if (env.RELEASE_LINUX_DEB_SIZE?.trim()) {
+      files.push(file("Axle-amd64.deb", "linux-x64", Number(env.RELEASE_LINUX_DEB_SIZE), "application/x-debian-package", env.RELEASE_LINUX_DEB_SHA256));
     }
     files.push(file("latest-linux.yml", "linux-x64", Number(env.RELEASE_LINUX_YML_SIZE), "text/yaml", env.RELEASE_LINUX_YML_SHA256));
   }
@@ -139,6 +145,15 @@ const REQUIRED_GITHUB_RELEASE_ASSETS = [
   "Axle-x64.AppImage", "Axle-amd64.deb", "latest-linux.yml",
 ];
 
+// GitHub reports a per-asset `digest` ("sha256:<hex>"). Responses without one
+// are normal for older releases, and any other algorithm is a different field,
+// so anything that is not a sha256 digest is reported as unknown rather than
+// guessed at.
+function assetSha256(asset) {
+  const digest = typeof asset.digest === "string" ? /^sha256:([0-9a-f]{64})$/iu.exec(asset.digest) : null;
+  return digest ? digest[1].toUpperCase() : null;
+}
+
 function githubLatestReleaseConfig(release) {
   if (!release || typeof release !== "object" || release.draft || release.prerelease || typeof release.tag_name !== "string") {
     throw new Error("GitHub latest release has an invalid shape.");
@@ -161,7 +176,7 @@ function githubLatestReleaseConfig(release) {
       platform,
       size: asset.size,
       contentType: typeof asset.content_type === "string" ? asset.content_type : "application/octet-stream",
-      sha256: null,
+      sha256: assetSha256(asset),
       url: requiredHttpsUrl(asset.browser_download_url, `URL for ${name}`),
     });
   }
@@ -249,7 +264,25 @@ function requestedPlatform(request, url) {
   return "windows-x64";
 }
 
-function findInstaller(release, platform) {
+// `format` is optional so existing /get links keep resolving to a platform's
+// default installer. Naming a format makes the choice explicit, which is how a
+// Linux visitor asks for the .deb instead of the AppImage.
+const INSTALLER_FORMATS = new Map([
+  ["exe", ".exe"],
+  ["dmg", ".dmg"],
+  ["appimage", ".AppImage"],
+  ["deb", ".deb"],
+]);
+
+function requestedFormat(url) {
+  const format = url.searchParams.get("format")?.trim().toLowerCase();
+  return format || null;
+}
+
+function findInstaller(release, platform, format) {
+  const suffix = format ? INSTALLER_FORMATS.get(format) : null;
+  if (format && !suffix) return null;
+  if (suffix) return release.files.find((file) => file.platform === platform && file.name.endsWith(suffix));
   return release.files.find((file) => file.platform === platform && (file.name.endsWith(".exe") || file.name.endsWith(".dmg") || file.name.endsWith(".AppImage")));
 }
 
@@ -376,10 +409,11 @@ async function handleRequest(request, env, executionContext) {
   }
   if (path !== "/get" && path !== "/") return errorResponse("Not found.", 404);
   const platform = requestedPlatform(request, url);
-  const installer = findInstaller(release, platform);
+  const format = requestedFormat(url);
+  const installer = findInstaller(release, platform, format);
   if (!installer) {
-    trackDownloadRequest(env, request, executionContext, release, { platform, file: "unknown", outcome: "missing-installer", status: 404 });
-    return errorResponse(`The published release does not contain a ${platform} installer.`, 404);
+    trackDownloadRequest(env, request, executionContext, release, { platform, file: format ?? "unknown", outcome: "missing-installer", status: 404 });
+    return errorResponse(`The published release does not contain a ${format ? `${format} ` : ""}${platform} installer.`, 404);
   }
   trackDownloadRequest(env, request, executionContext, release, { platform: installer.platform, file: installer.name, outcome: "redirect", status: 302 });
   return redirect(installer.url);
