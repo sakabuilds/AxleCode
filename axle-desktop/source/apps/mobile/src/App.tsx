@@ -17,6 +17,7 @@ import { AppearancePreferencesProvider } from "./features/settings/appearance/Ap
 import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/OverlayPortal";
+import { StartupErrorBoundary, StartupErrorOverlay } from "./lib/startupErrorReporting";
 import { appBlurTargetRef } from "./lib/appBlurTarget";
 import { useThemeColor } from "./lib/useThemeColor";
 
@@ -49,7 +50,8 @@ export default function App() {
   }, []);
 
   return (
-    <RegistryContext.Provider value={appAtomRegistry}>
+    <StartupErrorBoundary>
+      <RegistryContext.Provider value={appAtomRegistry}>
       <CloudAuthProvider>
         <AppearancePreferencesProvider>
           <GestureHandlerRootView className="flex-1">
@@ -78,11 +80,15 @@ export default function App() {
                 {/* Anchored-menu overlays render here — in-window, so the
                     keyboard stays up while a dropdown is open. */}
                 <OverlayPortalHost />
+                {/* Last-resort surface for startup errors that would otherwise
+                    kill the app before any screen renders. */}
+                <StartupErrorOverlay />
               </SafeAreaProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
         </AppearancePreferencesProvider>
       </CloudAuthProvider>
-    </RegistryContext.Provider>
+      </RegistryContext.Provider>
+    </StartupErrorBoundary>
   );
 }
