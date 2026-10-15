@@ -39,6 +39,6 @@ Researched with Kroma on 2026-10-13 before writing the rebuild UI. Each page rec
 
 ## Product truth from repository
 
-The root README verifies a local desktop coding app for Windows, macOS, and Linux; own provider API keys; file read/edit/search, terminal and Git; approval controls and read-only Plan mode; project folders and WSL; persistent local threads; local-network or Tailscale remote access; OpenAI/Codex, Anthropic/Claude, Google/Gemini, and OpenRouter support. Downloads are at https://github.com/thatcreativetayo/AxleCode/releases. The rebuild uses the requested Rivet marketing brand while retaining these real product behaviors.
+The root README verifies a local desktop coding app for Windows, macOS, and Linux; own provider API keys; file read/edit/search, terminal and Git; approval controls and read-only Plan mode; project folders and WSL; persistent local threads; local-network or Tailscale remote access; OpenAI/Codex, Anthropic/Claude, Google/Gemini, and OpenRouter support. Downloads are at https://github.com/thatcreativetayo/AxleCode/releases. The rebuild uses the requested Axle marketing brand while retaining these real product behaviors.
 
 The old marketing content includes unsupported testimonials, team statistics, offices, release numbers, performance benchmarks, pricing promises, and hiring listings. Treat those as draft marketing copy, not evidence; remove or replace with verifiable repository facts and neutral contact/contribution links.
