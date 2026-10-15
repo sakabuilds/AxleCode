@@ -58,6 +58,7 @@ export const OpenRouterLogo: Icon = ({ className }) =>
   });
 
 const MODEL_PROVIDER_PRESENTATION_BY_LABEL: Readonly<Record<string, ModelProviderPresentation>> = {
+  Axle: { label: "Axle", Icon: AxleIcon },
   Claude: { label: "Claude", Icon: ClaudeAI },
   Google: { label: "Google", Icon: Gemini },
   OpenAI: { label: "OpenAI", Icon: OpenAI },
@@ -80,6 +81,9 @@ export function getModelProviderPresentation(
   }
 
   const slug = model.slug.toLowerCase();
+  if (slug.startsWith("axle/")) {
+    return MODEL_PROVIDER_PRESENTATION_BY_LABEL.Axle ?? null;
+  }
   if (slug.startsWith("fireworks/")) {
     return MODEL_PROVIDER_PRESENTATION_BY_LABEL.Fireworks ?? null;
   }
