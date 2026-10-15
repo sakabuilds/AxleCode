@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { ArrowUpRight, Code2, GitPullRequest, MessageSquare, Scale } from "lucide-react";
 import { PageHero } from "@/components/site/page-hero";
-import { Section, SectionHead } from "@/components/site/section";
+import { Eyebrow, Section, SectionHead } from "@/components/site/section";
 import { CTASection } from "@/components/site/cta-section";
 import { Reveal, RevealGroup, RevealItem } from "@/components/fx/reveal";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { NexiaLogo } from "@/components/site/nexia";
 import { PRINCIPLES, REPOSITORY_URL } from "@/lib/product-content";
 
 export const metadata: Metadata = { title: "Company", description: "The ideas behind Axle: capable AI development, freedom to choose your tools, and a workspace built in the open." };
@@ -44,6 +45,15 @@ export default function CompanyPage() {
     </Section>
     <Section id="careers" divider className="scroll-mt-28">
       <div className="grid gap-10 lg:grid-cols-[1.2fr_1fr] lg:gap-24"><SectionHead eyebrow="Work with us" title={<>Care about the craft?<br/><span className="text-mute">Let us know.</span></>} copy="If you are interested in helping shape Axle, start a conversation through the project. Share what you have built, what you care about, and where you think you could help."/><div className="flex flex-col items-start justify-center gap-4"><Button href={REPOSITORY_URL+"/issues/new"} variant="secondary"><MessageSquare size={16}/>Start a conversation <ArrowUpRight size={15}/></Button><p className="max-w-sm text-xs leading-6 text-mute">For work, contribution, and collaboration enquiries. GitHub issues are public, so keep private details out of your message.</p></div></div>
+    </Section>
+    <Section id="nexia" divider className="scroll-mt-28">
+      <Reveal>
+        <div className="flex flex-col items-center gap-8 text-center">
+          <Eyebrow>The company behind Axle</Eyebrow>
+          <NexiaLogo className="text-[48px] sm:text-[68px] lg:text-[84px]"/>
+          <p className="max-w-2xl text-[15.5px] leading-8 text-mute">Axle is designed, built, and maintained by Nexia. It is the same team, the same standard, and the same bias toward tools that stay out of your way.</p>
+        </div>
+      </Reveal>
     </Section>
     <Section id="contact" divider className="scroll-mt-28">
       <div className="flex flex-col gap-8 sm:flex-row sm:items-center sm:justify-between"><div><span className="font-mono text-[10px] uppercase tracking-[.12em] text-mute">Get in touch</span><h2 className="mt-4 text-3xl font-medium tracking-[-.04em]">The conversation is open.</h2><p className="mt-3 max-w-lg text-[13px] leading-7 text-mute">Questions, feedback, or a bug worth fixing. Find the project on GitHub and help make the next version better.</p></div><Button href={REPOSITORY_URL} variant="secondary"><Code2 size={16}/>Axle on GitHub <ArrowUpRight size={15}/></Button></div>
