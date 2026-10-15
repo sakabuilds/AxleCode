@@ -919,6 +919,74 @@ describe("discoverAxleModels", () => {
     expect(result.configuredProviderCount).toBe(1);
   });
 
+  it("sends the headers a known endpoint fingerprints on, detected from its base URL", async () => {
+    const requests: Array<{ url: string; userAgent: string | null }> = [];
+    const fetchImplementation = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, userAgent: new Headers(init?.headers).get("user-agent") });
+      if (url === "https://agentrouter.org/v1/models") {
+        return jsonResponse({ data: [{ id: "claude-opus-5-5" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    // The catalogue is keyed by hostname, so the base URL alone is enough to
+    // discover that this endpoint wants a recognised client fingerprint.
+    const result = await discoverAxleModels(
+      {
+        AGENT_ROUTER_BASE_URL: "https://agentrouter.org/v1",
+        AGENT_ROUTER_API_KEY: "agent-token",
+      },
+      fetchImplementation,
+    );
+
+    const probe = requests.find((request) => request.url === "https://agentrouter.org/v1/models");
+    expect(probe?.userAgent).toBe("codex_cli_rs/0.47.0");
+    expect(result.models.map((model) => model.slug)).toEqual(["agent-router/claude-opus-5-5"]);
+  });
+
+  it("lets a provider carry extra headers and override a preset's own", async () => {
+    const requests: Array<{ url: string; userAgent: string | null; extra: string | null }> = [];
+    const fetchImplementation = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      requests.push({
+        url,
+        userAgent: headers.get("user-agent"),
+        extra: headers.get("x-axle-test"),
+      });
+      if (
+        url === "https://unknown.example/v1/models" ||
+        url === "https://agentrouter.org/v1/models"
+      ) {
+        return jsonResponse({ data: [{ id: "claude-opus-5-5" }] });
+      }
+      return jsonResponse({});
+    }) as typeof fetch;
+
+    await discoverAxleModels(
+      {
+        AGENT_ROUTER_BASE_URL: "https://agentrouter.org/v1",
+        AGENT_ROUTER_API_KEY: "agent-token",
+        AGENT_ROUTER_HEADERS: '{"user-agent":"custom-agent","x-axle-test":"1"}',
+        UNKNOWN_BASE_URL: "https://unknown.example/v1",
+        UNKNOWN_API_KEY: "token",
+        UNKNOWN_HEADERS: "not json",
+      },
+      fetchImplementation,
+    );
+
+    const known = requests.find((request) => request.url === "https://agentrouter.org/v1/models");
+    expect(known?.userAgent).toBe("custom-agent");
+    expect(known?.extra).toBe("1");
+
+    // An endpoint outside the catalogue still works, and a malformed header
+    // variable is ignored rather than failing discovery.
+    const unknown = requests.find((request) => request.url === "https://unknown.example/v1/models");
+    expect(unknown?.userAgent).toBeNull();
+    expect(unknown?.extra).toBeNull();
+  });
+
   it("skips a hosted provider the user brought without a key, but allows a local one", async () => {
     const requests: string[] = [];
     const fetchImplementation = (async (input: string | URL | Request) => {
