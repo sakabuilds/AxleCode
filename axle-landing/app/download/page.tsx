@@ -58,10 +58,15 @@ export default function DownloadPage() {
                 <Terminal size={33} strokeWidth={1.5} className="mb-9" />
                 <h2 className="text-[25px] font-medium tracking-[-0.035em]">Linux</h2>
                 <p className="mt-2 mb-8 text-sm leading-6 text-mute">Built for the way you like to work.</p>
-                <Button href={SITE.download + "?platform=linux-x64"} variant="secondary" className="mt-auto w-full justify-between" ariaLabel="Download Linux x64 AppImage">
-                  Download AppImage <ArrowDownToLine size={17} />
-                </Button>
-                <p className="mt-5 text-xs leading-5 text-mute">AppImage · x64</p>
+                <div className="mt-auto space-y-3">
+                  <Button href={SITE.download + "?platform=linux-x64&format=deb"} variant="secondary" className="w-full justify-between" ariaLabel="Download Linux amd64 Debian package">
+                    Download .deb <ArrowDownToLine size={17} />
+                  </Button>
+                  <Button href={SITE.download + "?platform=linux-x64&format=appimage"} variant="secondary" className="w-full justify-between" ariaLabel="Download Linux x64 AppImage">
+                    Download AppImage <ArrowDownToLine size={17} />
+                  </Button>
+                </div>
+                <p className="mt-5 text-xs leading-5 text-mute">.deb or AppImage · x64. Only the AppImage updates itself.</p>
               </article>
             </RevealItem>
           </RevealGroup>
