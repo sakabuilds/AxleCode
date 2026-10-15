@@ -346,6 +346,7 @@ jobs:
             platform: linux
             target: AppImage
             arch: x64
+            update_path: /updates/linux
           - label: Windows x64
             runner: blacksmith-32vcpu-windows-2025
             platform: win
