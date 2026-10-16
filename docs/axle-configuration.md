@@ -28,7 +28,7 @@ Select a provider with `--provider <id>` (short `-r`) and a model with
 
 | Provider id | API key environment variable | Endpoint override | Default endpoint |
 | --- | --- | --- | --- |
-| `axle` | `AXLE_API_KEY` | `AXLE_BASE_URL` | `https://api.axle.llc/v1` |
+| `axle` | `AXLE_API_KEY` | `AXLE_BASE_URL` | `https://axle-gateway.axle-download-worker.workers.dev/v1` |
 | `openai` (default) | `OPENAI_API_KEY` | `OPENAI_BASE_URL` | `https://api.openai.com/v1` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` | `https://api.anthropic.com/v1` |
 | `gemini` | `GEMINI_API_KEY` | `GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` |
