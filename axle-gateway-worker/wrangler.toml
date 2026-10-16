@@ -4,7 +4,7 @@ compatibility_date = "2026-08-31"
 workers_dev = true
 
 # The hosted provider the desktop app calls with `--provider axle`. Point the
-# engine at https://api.axle.llc/v1 (the default) and it reaches these routes.
+# engine at https://axle-gateway.axle-download-worker.workers.dev/v1 (the default) and it reaches these routes.
 #
 # UPSTREAM_API_KEY and any future payment-provider keys must be installed with
 # `wrangler secret put`; never commit them here.
@@ -14,4 +14,13 @@ UPSTREAM_BASE_URL = "https://openrouter.ai/api/v1"
 [[d1_databases]]
 binding = "CREDITS_DB"
 database_name = "axle-credits"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "d62b83bb-52de-4319-aec9-dab4a38db6cd"
+
+# The account database the auth worker owns. A key presented as `axl_...` is
+# resolved here so its balance follows the user's account and revocation takes
+# effect immediately. Without this binding the gateway falls back to hashing
+# the token, which is what self-hosted deployments use.
+[[d1_databases]]
+binding = "ACCOUNTS_DB"
+database_name = "axle-accounts"
+database_id = "92573546-757a-4fc4-939c-2eb41015ff13"
