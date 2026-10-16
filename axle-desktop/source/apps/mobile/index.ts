@@ -1,4 +1,5 @@
 import "./src/lib/installStartupErrorReporting";
+import "./src/lib/installNativeCrypto";
 import { registerRootComponent } from "expo";
 import * as SplashScreen from "expo-splash-screen";
 import "react-native-gesture-handler";
