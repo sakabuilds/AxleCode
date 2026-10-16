@@ -690,7 +690,7 @@ async function loadModelsDevCatalog(
  * The Axle hosted provider's default endpoint. Matches the Rust runtime's
  * `DEFAULT_AXLE_BASE_URL`, so discovery and generation hit the same gateway.
  */
-const AXLE_HOSTED_BASE_URL = "https://api.axle.llc/v1";
+const AXLE_HOSTED_BASE_URL = "https://axle-gateway.axle-download-worker.workers.dev/v1";
 
 const withoutTrailingSlashes = (value: string): string => value.replace(/\/+$/u, "");
 
