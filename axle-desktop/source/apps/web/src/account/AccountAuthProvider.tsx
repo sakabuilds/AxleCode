@@ -20,14 +20,19 @@ import {
   syncPluginSessionToServer,
 } from "../components/plugins/pluginApi";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { pollDesktopSignIn } from "./desktopSignInPoll";
 import {
+  axleWorkerBaseUrl,
+  claimClerkDesktopSignIn,
   clerkAuthFrameUrl,
   clerkAuthOrigin,
+  clerkCallbackUrl,
   clerkExternalAuthUrl,
   exchangeClerkBrowserCode,
   isClerkFrameMessage,
   restoreClerkSession,
   setActiveClerkTokenReader,
+  type ClerkBrowserExchange,
   type ClerkFrameMessage,
   type ClerkSession,
   type ClerkUser,
@@ -58,7 +63,19 @@ type AccountState =
 
 interface AccountContextValue {
   readonly account: AccountState;
+  /** Opens the system browser at the Axle sign-in page. */
+  readonly signIn: () => void;
+  /** Clears the local account and best-effort revokes the server session. */
+  readonly signOut: () => void;
+  /** Connects an extra sign-in provider to the signed-in account. */
+  readonly linkProvider: (providerId: string) => Promise<void>;
 }
+
+const NO_ACCOUNT_ACTIONS = {
+  signIn: () => undefined,
+  signOut: () => undefined,
+  linkProvider: async () => undefined,
+} as const;
 
 const AccountContext = createContext<AccountContextValue>({
   account: {
@@ -66,8 +83,11 @@ const AccountContext = createContext<AccountContextValue>({
     user: null,
     session: null,
   },
+  ...NO_ACCOUNT_ACTIONS,
 });
 const TOKEN_REQUEST_TIMEOUT_MS = 5_000;
+const EXTERNAL_AUTH_POLL_INTERVAL_MS = 1_000;
+const EXTERNAL_AUTH_TIMEOUT_MS = 5 * 60_000;
 let tokenRequestSequence = 0;
 
 function tokenExpiresWithin(token: string, seconds: number): boolean {
@@ -87,6 +107,15 @@ export function useAccountState(): AccountState {
   return useContext(AccountContext).account;
 }
 
+/** Sign-in and sign-out entry points for account UI. */
+export function useAccountActions(): Pick<
+  AccountContextValue,
+  "signIn" | "signOut" | "linkProvider"
+> {
+  const { signIn, signOut, linkProvider } = useContext(AccountContext);
+  return { signIn, signOut, linkProvider };
+}
+
 function makeRequestId(): string {
   tokenRequestSequence += 1;
   return `clerk-token-${tokenRequestSequence}`;
@@ -104,8 +133,12 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
     >(),
   );
   const pendingExternalStateRef = useRef<string | null>(null);
+  const appliedExternalStateRef = useRef<string | null>(null);
   const externalSessionRef = useRef(false);
   const restoringSessionRef = useRef(true);
+  const signInRef = useRef<() => void>(() => undefined);
+  const signOutRef = useRef<() => void>(() => undefined);
+  const linkProviderRef = useRef<(providerId: string) => Promise<void>>(async () => undefined);
   const [state, setState] = useState<AccountState>({
     status: "loading",
     user: null,
@@ -270,6 +303,59 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
         });
     };
 
+    const finishExternalSignIn = (result: ClerkBrowserExchange, state: string) => {
+      appliedExternalStateRef.current = state;
+      pendingExternalStateRef.current = null;
+      externalSessionRef.current = true;
+      applySession({
+        source: "axle-clerk-frame",
+        type: "session",
+        token: result.token,
+        sessionId: result.sessionId,
+        user: result.user,
+      });
+    };
+
+    // The browser page cannot always hand its custom-scheme callback back to the
+    // app (dev builds and fresh Linux installs have no scheme handler), so the app
+    // also waits for the same one-time code here. Both paths are single-use: the
+    // first one to arrive signs the user in and the other finds nothing.
+    const pollExternalSignIn = async (
+      state: string,
+      options: {
+        /** Sign-in results are stale once a session exists; connecting is not. */
+        readonly abandonWhenSignedIn: boolean;
+        readonly failureMessage: string;
+      },
+    ) => {
+      const outcome = await pollDesktopSignIn({
+        state,
+        claim: (value) => claimClerkDesktopSignIn(value),
+        delay: (milliseconds) =>
+          new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds)),
+        now: () => Date.now(),
+        intervalMs: EXTERNAL_AUTH_POLL_INTERVAL_MS,
+        timeoutMs: EXTERNAL_AUTH_TIMEOUT_MS,
+        isAbandoned: () =>
+          !active ||
+          pendingExternalStateRef.current !== state ||
+          (options.abandonWhenSignedIn && activeSessionIdRef.current !== null),
+      });
+      if (!active) return;
+      if (outcome.outcome === "signed-in") {
+        finishExternalSignIn(outcome.session, state);
+        return;
+      }
+      if (outcome.outcome !== "timed-out") return;
+      pendingExternalStateRef.current = null;
+      setState({
+        status: "error",
+        user: null,
+        session: null,
+        error: options.failureMessage,
+      });
+    };
+
     const startExternalAuth = () => {
       const openExternal = window.desktopBridge?.openExternal;
       if (typeof openExternal !== "function") {
@@ -286,6 +372,10 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
       void openExternal(clerkExternalAuthUrl(state))
         .then((opened) => {
           if (opened === false) throw new Error("Axle could not open the default browser.");
+          void pollExternalSignIn(state, {
+            abandonWhenSignedIn: true,
+            failureMessage: "Sign-in was not completed in the browser. Try again from Axle.",
+          });
         })
         .catch((error: unknown) => {
           pendingExternalStateRef.current = null;
@@ -299,6 +389,62 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
         });
     };
 
+    // Exposed to the app as `signIn` / `signOut`. Sign-in always runs in the
+    // system browser: the broker frame is invisible by design, so it can launch
+    // the flow but never host a clickable form.
+    signInRef.current = startExternalAuth;
+    signOutRef.current = () => {
+      externalSessionRef.current = false;
+      restoringSessionRef.current = false;
+      clearAccount();
+    };
+
+    // Connect an additional provider to the account that is already signed in.
+    // The worker hands back a provider consent URL, and the callback it embeds
+    // lands on the same `handleExternalCallback` path as a normal sign-in.
+    const startProviderLink = async (providerId: string) => {
+      const openExternal = window.desktopBridge?.openExternal;
+      if (typeof openExternal !== "function") {
+        throw new Error("Connecting another sign-in method requires Axle Desktop.");
+      }
+      const token = await readToken();
+      if (!token) throw new Error("Sign in to Axle before connecting another sign-in method.");
+      const state = window.crypto.randomUUID();
+      const response = await fetch(`${axleWorkerBaseUrl()}/v1/auth/link/start`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: providerId,
+          redirectUri: clerkCallbackUrl(),
+          state,
+        }),
+      });
+      const value = (await response.json().catch(() => null)) as {
+        readonly authorizeUrl?: unknown;
+        readonly error?: unknown;
+      } | null;
+      if (!response.ok || typeof value?.authorizeUrl !== "string") {
+        throw new Error(
+          typeof value?.error === "string"
+            ? value.error
+            : "Axle could not start connecting that account.",
+        );
+      }
+      pendingExternalStateRef.current = state;
+      const opened = await openExternal(value.authorizeUrl);
+      if (opened === false) {
+        pendingExternalStateRef.current = null;
+        throw new Error("Axle could not open the default browser.");
+      }
+      // The connected account is attached server-side; the app only needs the
+      // same completion signal it uses for sign-in.
+      void pollExternalSignIn(state, {
+        abandonWhenSignedIn: false,
+        failureMessage: "Connecting that account was not completed in the browser. Try again.",
+      });
+    };
+    linkProviderRef.current = startProviderLink;
+
     const handleExternalCallback = (callbackUrl: string) => {
       let parsed: URL;
       try {
@@ -308,6 +454,9 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
       }
       const code = parsed.searchParams.get("code");
       const callbackState = parsed.searchParams.get("state");
+      // The background poll may have already collected this exact sign-in; the
+      // deep link then carries a code that is spent, which is not an error.
+      if (callbackState !== null && appliedExternalStateRef.current === callbackState) return;
       const expectedState = pendingExternalStateRef.current;
       if (
         parsed.pathname !== "/clerk-callback" ||
@@ -330,14 +479,7 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
           if (result.state !== expectedState) {
             throw new Error("The browser sign-in state did not match the request.");
           }
-          externalSessionRef.current = true;
-          applySession({
-            source: "axle-clerk-frame",
-            type: "session",
-            token: result.token,
-            sessionId: result.sessionId,
-            user: result.user,
-          });
+          finishExternalSignIn(result, expectedState);
         })
         .catch((error: unknown) => {
           setState({
@@ -482,7 +624,15 @@ export function AccountAuthProvider({ children }: { readonly children: ReactNode
     };
   }, [readToken]);
 
-  const contextValue = useMemo(() => ({ account: state }), [state]);
+  const contextValue = useMemo(
+    () => ({
+      account: state,
+      signIn: () => signInRef.current(),
+      signOut: () => signOutRef.current(),
+      linkProvider: (providerId: string) => linkProviderRef.current(providerId),
+    }),
+    [state],
+  );
   const authFrame = (
     <iframe
       ref={iframeRef}
