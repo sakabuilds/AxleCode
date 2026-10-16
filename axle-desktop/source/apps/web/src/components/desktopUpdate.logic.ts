@@ -1,10 +1,15 @@
 import type { DesktopUpdateActionResult, DesktopUpdateState } from "@axle/contracts";
 
-export type DesktopUpdateButtonAction = "download" | "install" | "none";
+export type DesktopUpdateButtonAction = "download" | "install" | "manual" | "none";
 
 export function resolveDesktopUpdateButtonAction(
   state: DesktopUpdateState,
 ): DesktopUpdateButtonAction {
+  // Platforms that install updates by hand (macOS) never drive the updater;
+  // every action opens the download page from `manualUpdateUrl`.
+  if (state.manualUpdateUrl) {
+    return "manual";
+  }
   if (state.downloadedVersion) {
     return "install";
   }
@@ -22,6 +27,15 @@ export function resolveDesktopUpdateButtonAction(
 export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null): boolean {
   if (!state || !state.enabled) {
     return false;
+  }
+  if (state.manualUpdateUrl) {
+    // The manual action is always available from settings, but the transient
+    // banners/pills should only appear while an update is worth acting on.
+    return (
+      state.status === "available" ||
+      state.status === "downloading" ||
+      state.status === "downloaded"
+    );
   }
   if (state.status === "downloading") {
     return true;
@@ -53,6 +67,11 @@ export function getArm64IntelBuildWarningDescription(state: DesktopUpdateState):
 }
 
 export function getDesktopUpdateButtonTooltip(state: DesktopUpdateState): string {
+  if (state.manualUpdateUrl) {
+    return state.availableVersion
+      ? `Update ${state.availableVersion} is ready. Download it from axle.llc.`
+      : "Get the latest version from axle.llc.";
+  }
   if (state.status === "available") {
     return `Update ${state.availableVersion ?? "available"} ready to download`;
   }
