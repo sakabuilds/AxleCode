@@ -7,9 +7,12 @@ import * as Option from "effect/Option";
 
 import type * as Electron from "electron";
 
+import type { DesktopUpdateState } from "@axle/contracts";
+
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
+import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as DesktopApplicationMenu from "./DesktopApplicationMenu.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -56,16 +59,43 @@ const electronDialogLayer = Layer.succeed(ElectronDialog.ElectronDialog, {
   showErrorBox: () => Effect.void,
 } satisfies ElectronDialog.ElectronDialog["Service"]);
 
-const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
-  getState: Effect.die("unexpected getState"),
-  emitState: Effect.void,
-  disabledReason: Effect.succeed(Option.none()),
-  configure: Effect.void,
-  setChannel: () => Effect.die("unexpected setChannel"),
-  check: () => Effect.die("unexpected check"),
-  download: Effect.die("unexpected download"),
-  install: Effect.die("unexpected install"),
-} satisfies DesktopUpdates.DesktopUpdates["Service"]);
+const desktopUpdateState: DesktopUpdateState = {
+  enabled: true,
+  status: "idle",
+  channel: "latest",
+  currentVersion: "1.2.3",
+  hostArch: "x64",
+  appArch: "x64",
+  runningUnderArm64Translation: false,
+  availableVersion: null,
+  downloadedVersion: null,
+  releaseNotes: [],
+  downloadPercent: null,
+  checkedAt: null,
+  message: null,
+  manualUpdateUrl: null,
+  errorContext: null,
+  canRetry: false,
+};
+
+const makeDesktopUpdatesLayer = (state: DesktopUpdateState = desktopUpdateState) =>
+  Layer.succeed(DesktopUpdates.DesktopUpdates, {
+    getState: Effect.succeed(state),
+    emitState: Effect.void,
+    disabledReason: Effect.succeed(Option.none()),
+    configure: Effect.void,
+    setChannel: () => Effect.die("unexpected setChannel"),
+    check: () => Effect.die("unexpected check"),
+    download: Effect.die("unexpected download"),
+    install: Effect.die("unexpected install"),
+  } satisfies DesktopUpdates.DesktopUpdates["Service"]);
+
+const makeElectronShellLayer = (openedExternalUrl: Deferred.Deferred<string>) =>
+  Layer.succeed(ElectronShell.ElectronShell, {
+    openExternal: (rawUrl) =>
+      Deferred.succeed(openedExternalUrl, String(rawUrl)).pipe(Effect.as(true)),
+    copyText: () => Effect.void,
+  } satisfies ElectronShell.ElectronShell["Service"]);
 
 const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
   Layer.succeed(DesktopWindow.DesktopWindow, {
@@ -98,6 +128,7 @@ describe("DesktopApplicationMenu", () => {
       const selectedAction = yield* Deferred.make<string>();
       const applicationMenuTemplate =
         yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const openedExternalUrl = yield* Deferred.make<string>();
 
       yield* Effect.gen(function* () {
         const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
@@ -107,7 +138,8 @@ describe("DesktopApplicationMenu", () => {
           DesktopApplicationMenu.layer.pipe(
             Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
             Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
-            Layer.provideMerge(desktopUpdatesLayer),
+            Layer.provideMerge(makeDesktopUpdatesLayer()),
+            Layer.provideMerge(makeElectronShellLayer(openedExternalUrl)),
             Layer.provideMerge(electronDialogLayer),
             Layer.provideMerge(electronAppLayer),
             Layer.provideMerge(
@@ -134,6 +166,56 @@ describe("DesktopApplicationMenu", () => {
 
       settingsClick({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
       assert.equal(yield* Deferred.await(selectedAction), "open-settings");
+    }),
+  );
+
+  it.effect("opens the download page instead of checking when updates are manual", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+      const openedExternalUrl = yield* Deferred.make<string>();
+      const manualState: DesktopUpdateState = {
+        ...desktopUpdateState,
+        manualUpdateUrl: "https://axle.llc/download",
+      };
+
+      yield* Effect.gen(function* () {
+        const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
+        yield* menu.configure;
+      }).pipe(
+        Effect.provide(
+          DesktopApplicationMenu.layer.pipe(
+            Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
+            Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
+            Layer.provideMerge(makeDesktopUpdatesLayer(manualState)),
+            Layer.provideMerge(makeElectronShellLayer(openedExternalUrl)),
+            Layer.provideMerge(electronDialogLayer),
+            Layer.provideMerge(electronAppLayer),
+            Layer.provideMerge(
+              DesktopEnvironment.layer(environmentInput).pipe(
+                Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const helpMenu = template.find((item) => item.role === "help");
+      assert.isDefined(helpMenu);
+      if (!Array.isArray(helpMenu.submenu)) {
+        throw new Error("Expected Help menu submenu to be an array.");
+      }
+      const checkItem = helpMenu.submenu.find((item) => item.label === "Check for Updates...");
+      assert.isDefined(checkItem);
+      const checkClick = checkItem.click;
+      if (typeof checkClick !== "function") {
+        throw new Error("Expected Check for Updates menu item to have a click handler.");
+      }
+
+      checkClick({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.equal(yield* Deferred.await(openedExternalUrl), "https://axle.llc/download");
     }),
   );
 });
