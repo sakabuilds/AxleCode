@@ -21,7 +21,7 @@ const FIXED_NOW = Date.UTC(2026, 9, 13, 12, 0, 0);
 const TOKEN = "axle_test_key";
 
 function request(path, init = {}) {
-  return new Request(`https://api.axle.llc/v1${path}`, {
+  return new Request(`https://axle-gateway.axle-download-worker.workers.dev/v1${path}`, {
     headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
     ...init,
   });
@@ -133,9 +133,58 @@ test("GET /v1/credits grants the free daily balance and reports USD", async () =
 });
 
 test("requests without an Axle key are rejected", async () => {
-  const anonymous = new Request("https://api.axle.llc/v1/credits");
+  const anonymous = new Request("https://axle-gateway.axle-download-worker.workers.dev/v1/credits");
   const response = await handleRequest(anonymous, environment());
   assert.equal(response.status, 401);
+});
+
+test("GET /v1/usage reports the ledger behind the balance, newest first", async () => {
+  const store = new MemoryCreditsStore();
+  const env = environment(store);
+  const userId = await resolveUserId(request("/usage"));
+
+  // A grant, then a spend whose real cost was refunded down.
+  const ledger = new CreditsLedger(store, { now: () => FIXED_NOW });
+  await ledger.ensureDailyGrant(userId);
+  await ledger.charge(userId, 12.5, { model: "axle-nano", reserved: true });
+  await ledger.credit(userId, 4, { model: "axle-nano", kind: "refund" });
+
+  const response = await handleRequest(request("/usage", { method: "GET" }), env);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.object, "axle.usage");
+  assert.equal(body.credit_usd, 0.005);
+  assert.equal(body.entries.length, 3);
+  assert.deepEqual(
+    body.entries.map((entry) => [entry.kind, entry.credits]),
+    [
+      ["top_up", 4],
+      ["spend", -12.5],
+      ["daily_grant", 100],
+    ],
+  );
+  assert.equal(body.entries[1].model, "axle-nano");
+  assert.equal(body.entries[0].balance_after, 91.5);
+  assert.equal(body.entries[0].created_at, FIXED_NOW);
+});
+
+test("GET /v1/usage rejects an anonymous caller and clamps its limit", async () => {
+  const anonymous = new Request("https://axle-gateway.axle-download-worker.workers.dev/v1/usage");
+  assert.equal((await handleRequest(anonymous, environment())).status, 401);
+
+  const store = new MemoryCreditsStore();
+  const env = environment(store);
+  const userId = await resolveUserId(request("/usage"));
+  const ledger = new CreditsLedger(store, { now: () => FIXED_NOW });
+  await ledger.ensureDailyGrant(userId);
+  for (let index = 0; index < 5; index += 1) await ledger.charge(userId, 1);
+
+  const limited = await handleRequest(request("/usage?limit=2", { method: "GET" }), env);
+  assert.equal((await limited.json()).entries.length, 2);
+
+  const absurd = await handleRequest(request("/usage?limit=9999", { method: "GET" }), env);
+  assert.equal(absurd.status, 200);
+  assert.ok((await absurd.json()).entries.length <= 100);
 });
 
 test("an unknown model is refused before any upstream call", async () => {
