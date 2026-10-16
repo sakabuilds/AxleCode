@@ -235,10 +235,10 @@ BEGIN
       THEN RAISE EXCEPTION 'AXLE_CLOUD:request_not_answered'; END IF;
       IF v_next IN ('waiting_for_approval', 'waiting_for_input') AND v_next <> j.state THEN
         -- Reserve one response and one resume event before exposing an approval.
-        IF j.last_sequence + 4 + CASE WHEN a ? 'event' THEN 1 ELSE 0 END > (j.limits->>'maxEvents')::INTEGER
+        IF (j.last_sequence + 4 + CASE WHEN a ? 'event' THEN 1 ELSE 0 END) > (j.limits->>'maxEvents')::INTEGER
           THEN RAISE EXCEPTION 'AXLE_CLOUD:event_limit_exceeded'; END IF;
-        IF a->'pendingRequest' IS NULL OR a->'pendingRequest'->>'kind' <>
-          CASE WHEN v_next = 'waiting_for_approval' THEN 'approval' ELSE 'input' END
+        IF (a->'pendingRequest' IS NULL OR a->'pendingRequest'->>'kind' <>
+          CASE WHEN v_next = 'waiting_for_approval' THEN 'approval' ELSE 'input' END)
         THEN RAISE EXCEPTION 'AXLE_CLOUD:invalid_request'; END IF;
       ELSIF a ? 'pendingRequest' THEN RAISE EXCEPTION 'AXLE_CLOUD:invalid_request'; END IF;
       IF v_next = 'completed' AND (a->'result' IS NULL OR a->'result'->>'sourceRevision' <> j.input->>'sourceRevision')
