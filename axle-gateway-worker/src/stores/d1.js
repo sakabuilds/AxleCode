@@ -82,6 +82,37 @@ export class D1CreditsStore {
       .bind(userId, kind, amount, balanceAfter, JSON.stringify(meta ?? {}), at)
       .run();
   }
+
+  /** Most recent ledger entries, newest first, for the account's usage view. */
+  async history(userId, limit = 25) {
+    const result = await this.#db
+      .prepare(
+        `SELECT kind, amount, balance_after, meta, created_at
+           FROM axle_credit_ledger
+          WHERE user_id = ?1
+          ORDER BY created_at DESC, id DESC
+          LIMIT ?2`,
+      )
+      .bind(userId, limit)
+      .all();
+    return (result.results ?? []).map((row) => ({
+      kind: row.kind,
+      amount: Number(row.amount ?? 0),
+      balanceAfter: Number(row.balance_after ?? 0),
+      meta: parseMeta(row.meta),
+      createdAt: Number(row.created_at ?? 0),
+    }));
+  }
+}
+
+function parseMeta(value) {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function changedRows(result) {
