@@ -27,7 +27,7 @@ export type ClerkFrameMessage =
     }
   | { readonly source: "axle-clerk-frame"; readonly type: "error"; readonly message: string };
 
-const DEFAULT_WORKER_URL = "https://auth.axle.llc";
+const DEFAULT_WORKER_URL = "https://axle-auth.axle-download-worker.workers.dev";
 let activeAccountTokenReader: (() => Promise<string | null>) | null = null;
 
 function workerBaseUrl(): string {
@@ -41,7 +41,12 @@ function workerBaseUrl(): string {
 }
 
 export function clerkAuthFrameUrl(): string {
-  return `${workerBaseUrl()}/v1/clerk/desktop`;
+  return `${workerBaseUrl()}/v1/auth/desktop`;
+}
+
+/** Origin of the Axle plugin/auth worker, shared with the account client. */
+export function axleWorkerBaseUrl(): string {
+  return workerBaseUrl();
 }
 
 export function clerkAuthOrigin(): string {
@@ -70,7 +75,7 @@ export type ClerkBrowserExchange = {
 export async function exchangeClerkBrowserCode(code: string): Promise<ClerkBrowserExchange> {
   let lastError = "Clerk browser sign-in could not be completed.";
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetch(`${workerBaseUrl()}/v1/clerk/bridge/exchange`, {
+    const response = await fetch(`${workerBaseUrl()}/v1/auth/exchange`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code }),
@@ -93,8 +98,46 @@ export async function exchangeClerkBrowserCode(code: string): Promise<ClerkBrows
   throw new Error(lastError);
 }
 
-export async function restoreClerkSession(pluginSessionToken: string): Promise<ClerkBrowserExchange | null> {
-  const response = await fetch(`${workerBaseUrl()}/v1/clerk/restore`, {
+/**
+ * Polls for the session the browser sign-in started for `state`. Returns null
+ * while the flow is still pending (or on any transport hiccup) so callers can
+ * simply keep waiting; the worker hands the session over exactly once.
+ */
+export async function claimClerkDesktopSignIn(state: string): Promise<ClerkBrowserExchange | null> {
+  const response = await fetch(`${workerBaseUrl()}/v1/auth/desktop/claim`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state }),
+  }).catch(() => null);
+  if (!response?.ok) return null;
+  const value = (await response.json().catch(() => null)) as {
+    readonly status?: unknown;
+    readonly token?: unknown;
+    readonly sessionId?: unknown;
+    readonly state?: unknown;
+    readonly user?: { readonly id?: unknown; readonly email?: unknown };
+  } | null;
+  if (value?.status !== "signed-in") return null;
+  if (
+    typeof value.token !== "string" ||
+    typeof value.sessionId !== "string" ||
+    typeof value.user?.id !== "string" ||
+    (typeof value.user.email !== "string" && value.user.email !== null)
+  ) {
+    return null;
+  }
+  return {
+    token: value.token,
+    sessionId: value.sessionId,
+    state: typeof value.state === "string" ? value.state : state,
+    user: { id: value.user.id, email: value.user.email ?? null },
+  };
+}
+
+export async function restoreClerkSession(
+  pluginSessionToken: string,
+): Promise<ClerkBrowserExchange | null> {
+  const response = await fetch(`${workerBaseUrl()}/v1/auth/restore`, {
     method: "POST",
     headers: { Authorization: `Bearer ${pluginSessionToken}`, "Content-Type": "application/json" },
     body: "{}",
@@ -125,7 +168,8 @@ export function isClerkFrameMessage(value: unknown): value is ClerkFrameMessage 
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   if (record.source !== "axle-clerk-frame" || typeof record.type !== "string") return false;
-  if (record.type === "ready" || record.type === "signed-out" || record.type === "external-auth") return true;
+  if (record.type === "ready" || record.type === "signed-out" || record.type === "external-auth")
+    return true;
   if (record.type === "error") return typeof record.message === "string";
   if (record.type === "token") {
     return (
@@ -143,17 +187,12 @@ export function isClerkFrameMessage(value: unknown): value is ClerkFrameMessage 
       return false;
     }
     const user = record.user as Record<string, unknown>;
-    return (
-      typeof user.id === "string" &&
-      (typeof user.email === "string" || user.email === null)
-    );
+    return typeof user.id === "string" && (typeof user.email === "string" || user.email === null);
   }
   return false;
 }
 
-export function setActiveClerkTokenReader(
-  reader: (() => Promise<string | null>) | null,
-): void {
+export function setActiveClerkTokenReader(reader: (() => Promise<string | null>) | null): void {
   activeAccountTokenReader = reader;
 }
 
