@@ -9,7 +9,7 @@ workers_dev = true
 # UPSTREAM_API_KEY and any future payment-provider keys must be installed with
 # `wrangler secret put`; never commit them here.
 [vars]
-UPSTREAM_BASE_URL = "https://openrouter.ai/api/v1"
+UPSTREAM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 [[d1_databases]]
 binding = "CREDITS_DB"
