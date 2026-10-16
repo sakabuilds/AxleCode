@@ -324,3 +324,56 @@ async fn complete_tool_calls_are_not_modified_and_orphan_results_are_removed() {
     assert_eq!(context.len(), 2);
     assert_eq!(context[1].tool_result.as_ref().unwrap().output, "ready");
 }
+
+#[tokio::test]
+async fn missing_thinking_on_tool_turns_is_repaired_for_replay_and_persisted() {
+    let dir = tempdir().unwrap();
+    let cwd = dir.path().to_str().unwrap();
+    let mut session = SessionManager::create_new(cwd, None).await.unwrap();
+    session
+        .append_message(Message::user("Start the preview server"))
+        .await
+        .unwrap();
+    session
+        .append_message(Message::assistant(
+            "",
+            Some(vec![ToolCall {
+                id: "call-preview".to_string(),
+                name: "bash".to_string(),
+                arguments: serde_json::json!({ "command": "python -m http.server 8080" }),
+            }]),
+        ))
+        .await
+        .unwrap();
+    session
+        .append_message(Message::assistant("No tool call here.", None))
+        .await
+        .unwrap();
+    let session_id = session.session_id().to_string();
+
+    assert_eq!(session.repair_missing_thinking_for_replay(), 1);
+    let context = session.build_context_messages();
+    let assistant_turn = context
+        .iter()
+        .find(|message| !message.tool_calls.as_deref().unwrap_or_default().is_empty())
+        .expect("the tool-call turn should be in context");
+    assert!(assistant_turn
+        .content
+        .iter()
+        .any(|part| matches!(part, ContentPart::Thinking { .. })));
+
+    // Re-running the repair is a no-op: repaired turns are not double-patched.
+    assert_eq!(session.repair_missing_thinking_for_replay(), 0);
+
+    session.rewrite_session_file().await.unwrap();
+    let resumed = SessionManager::load(cwd, &session_id).await.unwrap();
+    let resumed_context = resumed.build_context_messages();
+    let resumed_turn = resumed_context
+        .iter()
+        .find(|message| !message.tool_calls.as_deref().unwrap_or_default().is_empty())
+        .expect("the tool-call turn should survive the rewrite");
+    assert!(resumed_turn
+        .content
+        .iter()
+        .any(|part| matches!(part, ContentPart::Thinking { .. })));
+}

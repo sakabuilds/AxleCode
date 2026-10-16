@@ -1,5 +1,5 @@
 use crate::types::{SessionEntry, SessionHeader, CURRENT_SESSION_VERSION};
-use axle_ai::{Message, Role};
+use axle_ai::{ContentPart, Message, Role};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock, Weak};
@@ -333,6 +333,64 @@ impl SessionManager {
         }
 
         Self::repair_tool_protocol(messages)
+    }
+
+    /// Older sessions recorded assistant tool-call turns before reasoning
+    /// deltas were captured. Thinking-capable endpoints reject replaying such
+    /// turns with "content[].thinking ... must be passed back", so mark them
+    /// with an empty thinking part to satisfy the presence contract without
+    /// inventing reasoning content. Returns the number of repaired turns.
+    pub fn repair_missing_thinking_for_replay(&mut self) -> usize {
+        let mut repaired_ids: Vec<String> = Vec::new();
+        let mut current_id = self.leaf_id.clone();
+        while let Some(id) = current_id {
+            let Some(entry) = self.by_id.get(&id) else {
+                break;
+            };
+            if let SessionEntry::Message { message, .. } = entry {
+                let has_tool_calls = message
+                    .tool_calls
+                    .as_ref()
+                    .map(|calls| !calls.is_empty())
+                    .unwrap_or(false);
+                let has_thinking = message
+                    .content
+                    .iter()
+                    .any(|part| matches!(part, ContentPart::Thinking { .. }));
+                if message.role == Role::Assistant && has_tool_calls && !has_thinking {
+                    repaired_ids.push(id.clone());
+                }
+            }
+            current_id = entry.parent_id().map(str::to_string);
+        }
+
+        for id in &repaired_ids {
+            if let Some(SessionEntry::Message { message, .. }) = self.by_id.get_mut(id) {
+                message.content.push(ContentPart::Thinking {
+                    thinking: String::new(),
+                    signature: None,
+                });
+            }
+            for entry in self.entries.iter_mut() {
+                if entry.id() == id.as_str() {
+                    if let SessionEntry::Message { message, .. } = entry {
+                        if !message
+                            .content
+                            .iter()
+                            .any(|part| matches!(part, ContentPart::Thinking { .. }))
+                        {
+                            message.content.push(ContentPart::Thinking {
+                                thinking: String::new(),
+                                signature: None,
+                            });
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        repaired_ids.len()
     }
 
     /// Build only the history that will be replaced by a compaction entry.
