@@ -3449,7 +3449,7 @@ const SidebarChatsSection = memo(function SidebarChatsSection(props: SidebarChat
 interface SidebarProjectsContentProps {
   showArm64IntelBuildWarning: boolean;
   arm64IntelBuildWarningDescription: string | null;
-  desktopUpdateButtonAction: "download" | "install" | "none";
+  desktopUpdateButtonAction: "download" | "install" | "manual" | "none";
   desktopUpdateButtonDisabled: boolean;
   handleDesktopUpdateButtonClick: () => void;
   projectSortOrder: SidebarProjectSortOrder;
@@ -3637,9 +3637,9 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                   disabled={desktopUpdateButtonDisabled}
                   onClick={handleDesktopUpdateButtonClick}
                 >
-                  {desktopUpdateButtonAction === "download"
-                    ? "Download ARM build"
-                    : "Install ARM build"}
+                  {desktopUpdateButtonAction === "install"
+                    ? "Install ARM build"
+                    : "Download ARM build"}
                 </Button>
               </AlertAction>
             ) : null}
@@ -4357,6 +4357,14 @@ export default function Sidebar() {
     const bridge = window.desktopBridge;
     if (!bridge || !desktopUpdateState) return;
     if (desktopUpdateButtonDisabled || desktopUpdateButtonAction === "none") return;
+
+    if (desktopUpdateButtonAction === "manual") {
+      const url = desktopUpdateState.manualUpdateUrl;
+      if (url && typeof bridge.openExternal === "function") {
+        void bridge.openExternal(url);
+      }
+      return;
+    }
 
     if (desktopUpdateButtonAction === "download") {
       void bridge
