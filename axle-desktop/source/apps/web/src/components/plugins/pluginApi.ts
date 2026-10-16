@@ -4,7 +4,7 @@ import { PrimaryEnvironmentHttpClient } from "../../environments/primary/httpCli
 import { runPrimaryHttp } from "../../lib/runtime";
 import type { PluginId } from "./pluginCatalog";
 
-const DEFAULT_WORKER_URL = "https://auth.axle.llc";
+const DEFAULT_WORKER_URL = "https://axle-auth.axle-download-worker.workers.dev";
 const SESSION_STORAGE_KEY = "axle.plugin-session.v1";
 const INSTALLATION_ID_STORAGE_KEY = "axle.plugin-installation-id.v1";
 const PENDING_SESSION_REVOKE_STORAGE_KEY = "axle.plugin-session-revoke.v1";
