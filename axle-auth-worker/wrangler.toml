@@ -20,9 +20,9 @@ FIGMA_CLIENT_ID = "n5YVQ37BEBKnWIXaaq24H3"
 # the isolated desktop sign-in frame from this value.
 CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsuYXV0aC5zcGFya3kubGxjJA"
 # Set to the deployed Worker origin, e.g. https://auth.axle.llc.
-PUBLIC_BASE_URL = "https://auth.axle.llc"
+PUBLIC_BASE_URL = "https://axle-auth.axle-download-worker.workers.dev"
 
 [[kv_namespaces]]
 binding = "PLUGIN_STORE"
-id = "df075aa7ae94404793168002a9c0225a"
-preview_id = "9450a264797e437c90c2bd5452bf8907"
+id = "f38addbc6f63456e8066f705855bca24"
+preview_id = "f38addbc6f63456e8066f705855bca24"
