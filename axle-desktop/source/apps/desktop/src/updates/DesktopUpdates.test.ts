@@ -31,6 +31,7 @@ interface UpdatesHarnessOptions {
   readonly setDisableDifferentialDownload?: Effect.Effect<void>;
   readonly stopBackend?: Effect.Effect<void>;
   readonly env?: Record<string, string | undefined>;
+  readonly platform?: NodeJS.Platform;
 }
 
 const flushCallbacks = Effect.yieldNow;
@@ -132,7 +133,7 @@ function makeHarness(options: UpdatesHarnessOptions = {}) {
   const environmentLayer = DesktopEnvironment.layer({
     dirname: "/repo/apps/desktop/src",
     homeDirectory: `/tmp/t3-desktop-updates-home-${process.pid}`,
-    platform: "darwin",
+    platform: options.platform ?? "darwin",
     processArch: "x64",
     appVersion: "1.2.3",
     appPath: "/repo",
@@ -246,6 +247,55 @@ describe("DesktopUpdates", () => {
       "Desktop update install action failed unexpectedly.",
     );
   });
+
+  it.effect("keeps macOS checks enabled and routes installs to the download page", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        const reason = yield* updates.disabledReason;
+        assert.isTrue(Option.isNone(reason));
+
+        yield* updates.configure;
+        const state = yield* updates.getState;
+        assert.isTrue(state.enabled);
+        assert.equal(state.manualUpdateUrl, DesktopUpdates.MANUAL_MACOS_UPDATE_URL);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("does not set a manual download URL off macOS", () => {
+    const harness = makeHarness({ platform: "linux" });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+
+        yield* updates.configure;
+        const state = yield* updates.getState;
+        assert.isNull(state.manualUpdateUrl);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect(
+    "does not set a manual download URL when updates are disabled by the environment",
+    () => {
+      const harness = makeHarness({ env: { T3CODE_DISABLE_AUTO_UPDATE: "true" } });
+
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+
+          yield* updates.configure;
+          const state = yield* updates.getState;
+          assert.isFalse(state.enabled);
+          assert.isNull(state.manualUpdateUrl);
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
+  );
 
   it.effect("configures the updater and runs startup checks on the test clock", () => {
     const harness = makeHarness();
