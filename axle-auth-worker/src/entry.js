@@ -1,5 +1,8 @@
+import { consumeAuthCode } from "./accounts.js";
 import baseApp from "./app.js";
+import { accountsDb } from "./identity.js";
 import { openStateless, sealStateless, verifyClerkJwt } from "./index.js";
+import { handleAuthRequest, issueSignInPayload } from "./signin.js";
 
 const ANALYTICS_PREFIX = "analytics:user:";
 const ANALYTICS_EVENT_PREFIX = "analytics:event:";
@@ -62,27 +65,6 @@ function isClerkRedirectUri(value) {
   return value === "axle://app/clerk-callback" || value === "axle-dev://app/clerk-callback";
 }
 
-function clerkExternalOptions(requestUrl) {
-  if (!(requestUrl instanceof URL) || requestUrl.searchParams.get("mode") !== "external") {
-    return { external: false };
-  }
-  const redirectUri = requestUrl.searchParams.get("redirect_uri") || "";
-  const state = requestUrl.searchParams.get("state") || "";
-  if (!isClerkRedirectUri(redirectUri) || !/^[A-Za-z0-9._~-]{16,160}$/u.test(state)) return null;
-  return { external: true, redirectUri, state, pageUrl: requestUrl.toString() };
-}
-
-const CLERK_SIGN_UP_INTENTS = new Set(["signup", "sign-up", "sign_up", "create", "register", "join"]);
-
-/** Which Clerk component the desktop frame opens with; sign-up when the caller asks for it. */
-function clerkInitialMode(requestUrl) {
-  const intent =
-    requestUrl instanceof URL
-      ? (requestUrl.searchParams.get("intent") || "").trim().toLowerCase()
-      : "";
-  return CLERK_SIGN_UP_INTENTS.has(intent) ? "signup" : "signin";
-}
-
 async function createClerkBridge(request, env) {
   const body = await request.clone().json().catch(() => null);
   const redirectUri = typeof body?.redirectUri === "string" ? body.redirectUri : "";
@@ -119,21 +101,29 @@ async function exchangeClerkBridge(request, env) {
   const code = typeof body?.code === "string" ? body.code : "";
   const value = await openStateless(code, env);
   if (
-    !value ||
-    value.type !== "clerk-bridge" ||
-    typeof value.token !== "string" ||
-    typeof value.sessionId !== "string" ||
-    typeof value.expiresAt !== "number" ||
-    value.expiresAt <= Math.floor(Date.now() / 1000)
+    value &&
+    value.type === "clerk-bridge" &&
+    typeof value.token === "string" &&
+    typeof value.sessionId === "string" &&
+    typeof value.expiresAt === "number" &&
+    value.expiresAt > Math.floor(Date.now() / 1000)
   ) {
-    return json({ error: "Clerk bridge code is invalid or expired." }, 401);
+    return json({
+      token: value.token,
+      sessionId: value.sessionId,
+      state: value.state,
+      user: { id: value.userId, email: value.email },
+    });
   }
-  return json({
-    token: value.token,
-    sessionId: value.sessionId,
-    state: value.state,
-    user: { id: value.userId, email: value.email },
-  });
+  // Builds that predate Axle owning this worker only know this endpoint, and the
+  // code they hand back now comes from Axle's own sign-in. Redeem it the same
+  // way `/v1/auth/exchange` does so those installs still finish signing in.
+  const claimed = await consumeAuthCode(accountsDb(env), code).catch(() => null);
+  if (claimed) {
+    const payload = await issueSignInPayload(env, claimed).catch(() => null);
+    if (payload) return json(payload);
+  }
+  return json({ error: "Clerk bridge code is invalid or expired." }, 401);
 }
 
 async function authenticatePluginSession(request, env) {
@@ -393,228 +383,6 @@ async function boundMcpResponse(response) {
   });
 }
 
-function decodeClerkFrontendApi(key) {
-  if (typeof key !== "string" || !/^pk_(?:test|live)_/u.test(key)) return null;
-  try {
-    const encoded = key.split("_")[2] || "";
-    const domain = new TextDecoder().decode(base64UrlToBytes(encoded)).replace(/\$$/u, "").trim();
-    if (!domain || /[^A-Za-z0-9.-]/u.test(domain)) return null;
-    return domain;
-  } catch {
-    return null;
-  }
-}
-
-function clerkDesktopHtml(env, requestUrl = null) {
-  const publishableKey = env.CLERK_PUBLISHABLE_KEY?.trim() || "";
-  const frontendApi = decodeClerkFrontendApi(publishableKey);
-  if (!frontendApi) return null;
-  const externalOptions = clerkExternalOptions(requestUrl);
-  if (externalOptions === null) return null;
-  const keyJson = JSON.stringify(publishableKey);
-  const frontendApiJson = JSON.stringify(frontendApi);
-  const externalJson = JSON.stringify(externalOptions.external);
-  const redirectUriJson = JSON.stringify(externalOptions.redirectUri || null);
-  const stateJson = JSON.stringify(externalOptions.state || null);
-  const pageUrlJson = JSON.stringify(externalOptions.pageUrl || null);
-  const initialMode = clerkInitialMode(requestUrl);
-  const initialModeJson = JSON.stringify(initialMode);
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${initialMode === "signup" ? "Axle sign up" : "Axle sign in"}</title>
-<style>
-:root{color-scheme:light dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:transparent;color:CanvasText}body{min-height:100vh;display:grid;place-items:center;padding:24px}.shell{width:min(440px,100%)}#status{font-size:13px;text-align:center;opacity:.68;padding:16px}.error{border:1px solid color-mix(in srgb,crimson 32%,transparent);border-radius:16px;padding:16px;line-height:1.5}
-#switch{margin-top:12px;text-align:center}#switch[hidden]{display:none}#switch button{background:none;border:0;color:inherit;font:inherit;font-size:13px;opacity:.75;cursor:pointer;text-decoration:underline;padding:6px}
-</style>
-<script defer crossorigin="anonymous" src="https://${frontendApi}/npm/@clerk/ui@1/dist/ui.browser.js"></script>
-<script defer crossorigin="anonymous" data-clerk-publishable-key=${JSON.stringify(publishableKey)} src="https://${frontendApi}/npm/@clerk/clerk-js@6/dist/clerk.browser.js"></script>
-</head>
-<body>
-<main class="shell"><div id="sign-in"></div><div id="switch" hidden></div><div id="status" aria-live="polite"></div></main>
-<script>
-(() => {
-  const SOURCE = "axle-clerk-frame";
-  const HOST_SOURCE = "axle-clerk-host";
-  const publishableKey = ${keyJson};
-  const frontendApi = ${frontendApiJson};
-  const externalMode = ${externalJson};
-  const redirectUri = ${redirectUriJson};
-  const state = ${stateJson};
-  const pageUrl = ${pageUrlJson};
-  const initialMode = ${initialModeJson};
-  const target = document.getElementById("sign-in");
-  const switcher = document.getElementById("switch");
-  const status = document.getElementById("status");
-  let mode = initialMode;
-  let mountedMode = null;
-  let listenerDispose = null;
-  let bridgeStarted = false;
-
-  const send = (payload) => window.parent.postMessage({ source: SOURCE, ...payload }, "*");
-  const emailForUser = (user) => user?.primaryEmailAddress?.emailAddress || user?.emailAddresses?.[0]?.emailAddress || null;
-
-  async function emitSession() {
-    if (!window.Clerk?.user || !window.Clerk?.session) {
-      send({ type: "signed-out" });
-      return;
-    }
-    const token = await window.Clerk.session.getToken();
-    if (!token) {
-      send({ type: "error", message: "Clerk did not provide an active session token." });
-      return;
-    }
-    send({
-      type: "session",
-      token,
-      sessionId: window.Clerk.session.id,
-      user: { id: window.Clerk.user.id, email: emailForUser(window.Clerk.user) },
-    });
-  }
-
-  async function emitExternalBridge() {
-    if (!externalMode || bridgeStarted || !redirectUri || !state) return;
-    bridgeStarted = true;
-    try {
-      const token = await window.Clerk.session.getToken();
-      const response = await fetch(location.origin + "/v1/clerk/bridge", {
-        method: "POST",
-        headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({ redirectUri, state }),
-      });
-      const result = await response.json().catch(() => null);
-      if (!response.ok || typeof result?.code !== "string") throw new Error(result?.error || "Clerk bridge failed.");
-      const callback = new URL(redirectUri);
-      callback.searchParams.set("code", result.code);
-      callback.searchParams.set("state", state);
-      window.location.replace(callback.toString());
-    } catch (error) {
-      bridgeStarted = false;
-      status.hidden = false;
-      status.className = "error";
-      status.textContent = error instanceof Error ? error.message : "Clerk sign-in could not return to Axle.";
-    }
-  }
-
-  function mountOptions() {
-    return {
-      routing: "virtual",
-      oauthFlow: externalMode ? "redirect" : "popup",
-      ...(externalMode ? { forceRedirectUrl: pageUrl, fallbackRedirectUrl: pageUrl, signUpForceRedirectUrl: pageUrl } : {}),
-      appearance: {
-        layout: { socialButtonsPlacement: "top", socialButtonsVariant: "blockButton" },
-        elements: { rootBox: "width:100%", cardBox: "width:100%" },
-      },
-    };
-  }
-
-  function unmountActive() {
-    if (mountedMode === "signup") window.Clerk.unmountSignUp(target);
-    else if (mountedMode === "signin") window.Clerk.unmountSignIn(target);
-    mountedMode = null;
-  }
-
-  const switchButton = document.createElement("button");
-  switchButton.type = "button";
-  switchButton.addEventListener("click", () => {
-    mode = mode === "signup" ? "signin" : "signup";
-    render();
-  });
-  switcher.append(switchButton);
-
-  function render() {
-    if (window.Clerk?.user && window.Clerk?.session) {
-      unmountActive();
-      target.hidden = true;
-      switcher.hidden = true;
-      status.hidden = false;
-      status.textContent = externalMode ? "Returning to Axle…" : "Signed in to Axle";
-      if (externalMode) void emitExternalBridge();
-      else void emitSession();
-      return;
-    }
-    status.hidden = true;
-    target.hidden = false;
-    switcher.hidden = false;
-    switchButton.textContent =
-      mode === "signup" ? "Already have an account? Sign in" : "New to Axle? Create an account";
-    if (mountedMode !== mode) {
-      unmountActive();
-      if (mode === "signup") window.Clerk.mountSignUp(target, mountOptions());
-      else window.Clerk.mountSignIn(target, mountOptions());
-      mountedMode = mode;
-    }
-    send({ type: "signed-out" });
-  }
-
-  document.addEventListener("click", (event) => {
-    if (externalMode || window.top === window.self) return;
-    const button = event.composedPath().find((node) => node instanceof HTMLElement && node.tagName === "BUTTON");
-    if (!(button instanceof HTMLElement) || !/google/iu.test(button.textContent || "")) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    send({ type: "external-auth" });
-  }, true);
-
-  window.addEventListener("message", (event) => {
-    const data = event.data;
-    if (!data || data.source !== HOST_SOURCE) return;
-    if (data.type === "request-token" && typeof data.requestId === "string") {
-      Promise.resolve(window.Clerk?.session?.getToken?.())
-        .then((token) => send({ type: "token", requestId: data.requestId, token: token || null }))
-        .catch(() => send({ type: "token", requestId: data.requestId, token: null }));
-    } else if (data.type === "sign-out") {
-      void window.Clerk?.signOut?.();
-    }
-  });
-
-  window.addEventListener("load", async () => {
-    try {
-      if (!window.Clerk || window.__internal_ClerkUICtor === undefined) {
-        throw new Error("Clerk failed to load.");
-      }
-      await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
-      listenerDispose = window.Clerk.addListener(() => render());
-      render();
-      window.setInterval(() => {
-        if (window.Clerk?.session) void emitSession();
-      }, 30_000);
-      send({ type: "ready", frontendApi });
-    } catch (error) {
-      status.hidden = false;
-      status.className = "error";
-      status.textContent = error instanceof Error ? error.message : "Clerk could not be initialized.";
-      send({ type: "error", message: status.textContent });
-    }
-  });
-
-  window.addEventListener("beforeunload", () => listenerDispose?.());
-})();
-</script>
-</body>
-</html>`;
-}
-
-function clerkDesktopResponse(request, env) {
-  const html = clerkDesktopHtml(env, new URL(request.url));
-  if (!html) {
-    return new Response("Clerk is not configured on the Axle auth worker.", {
-      status: 503,
-      headers: { ...securityHeaders(), "Content-Type": "text/plain; charset=utf-8" },
-    });
-  }
-  const frontendApi = decodeClerkFrontendApi(env.CLERK_PUBLISHABLE_KEY?.trim() || "");
-  return new Response(html, {
-    headers: {
-      ...securityHeaders(),
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": `default-src 'none'; script-src 'unsafe-inline' https://${frontendApi}; style-src 'unsafe-inline' https:; img-src https: data:; font-src https: data:; connect-src https: wss:; frame-ancestors *; form-action https:; base-uri 'none'`,
-    },
-  });
-}
-
 async function readJsonClone(request) {
   return request.clone().json().catch(() => null);
 }
@@ -622,8 +390,21 @@ async function readJsonClone(request) {
 async function handleRequest(request, env) {
   const url = new URL(request.url);
 
+  if (url.pathname.startsWith("/v1/auth") || url.pathname === "/.well-known/jwks.json") {
+    const authResponse = await handleAuthRequest(request, env);
+    if (authResponse) return authResponse;
+  }
+
+  // Legacy sign-in surface. Builds shipped before Axle owned this worker still
+  // point here, so the route stays alive, but it now hands those users straight
+  // to the Axle page instead of embedding a third-party sign-in frame.
   if (request.method === "GET" && url.pathname === "/v1/clerk/desktop") {
-    return clerkDesktopResponse(request, env);
+    const target = new URL(request.url);
+    target.pathname = "/v1/auth/desktop";
+    return new Response(null, {
+      status: 302,
+      headers: { ...securityHeaders(), Location: target.toString() },
+    });
   }
 
   if (request.method === "POST" && url.pathname === "/v1/clerk/bridge") {
@@ -705,9 +486,6 @@ export default {
 export {
   boundedToolText,
   boundedValue,
-  clerkDesktopHtml,
-  clerkInitialMode,
-  decodeClerkFrontendApi,
   normalizeAnalytics,
   recordAnalyticsEvent,
 };
