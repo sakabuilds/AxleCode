@@ -408,6 +408,27 @@ describe("Axle session continuity", () => {
     ).toContain("unexpected argument");
   });
 
+  it("explains thinking-replay and schema rejections with actionable next steps", () => {
+    expect(
+      formatAxleProcessError(
+        'agent_router API error (HTTP 400 Bad Request): {"error":{"message":"The `content[].thinking` in the thinking mode must be passed back to the API."}}',
+        "project",
+      ),
+    ).toContain("repaired the session history automatically");
+    expect(
+      formatAxleProcessError(
+        "agent_router API error (HTTP 400 Bad Request): {\"error\":{\"message\":\"Invalid schema for function 'ls': null is not of type \\\"array\\\"\"}}",
+        "project",
+      ),
+    ).toContain("tool schemas");
+    expect(
+      formatAxleProcessError("agent_router API error (HTTP 429 Too Many Requests)", "project"),
+    ).toContain("rate-limiting");
+    expect(
+      formatAxleProcessError("agent_router API error (HTTP 502 Bad Gateway)", "project"),
+    ).toContain("temporary server error");
+  });
+
   it("uses the provider-native text-only path for metadata generation", () => {
     const args = makeAxleProcessArgs({
       cwd: "C:\\workspace",

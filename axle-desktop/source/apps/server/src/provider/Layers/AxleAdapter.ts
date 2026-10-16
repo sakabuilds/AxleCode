@@ -165,6 +165,18 @@ export function formatAxleProcessError(
   ) {
     return "The configured Axle runtime is outdated and does not support project-free chats. Rebuild or update the Axle binary, then retry.";
   }
+  if (/content\[\]\.thinking[\s\S]*passed back|thinking[\s\S]*must be passed back/iu.test(detail)) {
+    return "The provider rejected replayed reasoning from an earlier turn. Axle repaired the session history automatically; send your last message again to continue.";
+  }
+  if (/invalid schema for function/iu.test(detail)) {
+    return "The provider rejected one of Axle's tool schemas. Update Axle to the latest build, then retry. If it persists, switch to another model for this turn.";
+  }
+  if (/429|rate limit|too many requests/iu.test(detail)) {
+    return "The provider is rate-limiting requests. Axle retried automatically; wait a few seconds and send the message again.";
+  }
+  if (/http 5\d\d|internal server error|bad gateway|service unavailable|gateway timeout/iu.test(detail)) {
+    return "The provider had a temporary server error and Axle's automatic retries were exhausted. Try again in a few seconds.";
+  }
   return detail;
 }
 
