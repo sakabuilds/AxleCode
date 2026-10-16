@@ -37,17 +37,17 @@ curl -s -H 'Authorization: Bearer demo_key' http://127.0.0.1:8791/v1/credits
 
 # A metered turn — watch the x-axle-credits-* response headers
 curl -s -D - -H 'Authorization: Bearer demo_key' -H 'Content-Type: application/json' \
-  -d '{"model":"axle-core","messages":[{"role":"user","content":"hi"}]}' \
+  -d '{"model":"axle-320b","messages":[{"role":"user","content":"hi"}]}' \
   http://127.0.0.1:8791/v1/chat/completions
 
 # A streamed turn (settles from the upstream usage chunk)
 curl -s -N -H 'Authorization: Bearer demo_key' -H 'Content-Type: application/json' \
-  -d '{"model":"axle-nano","stream":true,"messages":[{"role":"user","content":"hi"}]}' \
+  -d '{"model":"axle-20b","stream":true,"messages":[{"role":"user","content":"hi"}]}' \
   http://127.0.0.1:8791/v1/chat/completions
 
 # Out of credits: this reserves more than the balance and returns 402
 curl -s -o - -w '\nHTTP %{http_code}\n' -H 'Authorization: Bearer demo_key' -H 'Content-Type: application/json' \
-  -d '{"model":"axle-max","max_tokens":100000,"messages":[{"role":"user","content":"hi"}]}' \
+  -d '{"model":"axle-552b","max_tokens":100000,"messages":[{"role":"user","content":"hi"}]}' \
   http://127.0.0.1:8791/v1/chat/completions
 ```
 
@@ -59,11 +59,11 @@ Build the runtime once from the repo root, then point it at the local gateway:
 cargo build --release -p axle_cli
 
 AXLE_BASE_URL=http://127.0.0.1:8791/v1 AXLE_API_KEY=demo_key \
-  ./target/release/axle --provider axle --model axle-nano --text-only -p "say hi"
+  ./target/release/axle --provider axle --model axle-20b --text-only -p "say hi"
 ```
 
 Swap `--text-only` for a normal prompt to run a full agent turn, and try
-`--model axle-max` to watch a smarter (more expensive) model drain credits
+`--model axle-552b` to watch a smarter (more expensive) model drain credits
 faster. `--api-key <key>` works too, and wins over `AXLE_API_KEY`.
 
 ## 4. Run the desktop app against it
