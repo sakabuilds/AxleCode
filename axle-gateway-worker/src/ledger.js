@@ -55,6 +55,16 @@ export class CreditsLedger {
   }
 
   /**
+   * Recent ledger entries for the account's usage view. Stores without a
+   * durable history return an empty list rather than failing the page.
+   */
+  async history(userId, limit = 25) {
+    if (typeof this.#store.history !== "function") return [];
+    const bounded = Math.min(Math.max(Math.trunc(Number(limit) || 25), 1), 100);
+    return this.#store.history(userId, bounded);
+  }
+
+  /**
    * Attempt to charge `amount` credits. Returns `{ charged: false, balance }`
    * when the balance is too low; the caller turns that into a 402.
    */
