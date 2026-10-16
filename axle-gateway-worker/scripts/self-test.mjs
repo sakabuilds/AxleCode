@@ -36,11 +36,11 @@ console.log(`Gateway: ${base}\n`);
 
 console.log("Catalog and grant");
 const models = await (await clientFetch(`${base}/v1/models`)).json();
-check("five models are listed", models.data.length === 5, models.data.length);
+check("four models are listed", models.data.length === 4, models.data.length);
 check(
   "models are the tiered Axle ids",
   models.data.map((model) => model.id).join(",") ===
-    "axle-nano,axle-flash,axle-core,axle-pro,axle-max",
+    "axle-20b,axle-55b,axle-320b,axle-552b",
 );
 
 const credits = await (await clientFetch(`${base}/v1/credits`, { headers: auth })).json();
@@ -51,11 +51,11 @@ console.log("\nMetering");
 const core = await clientFetch(`${base}/v1/chat/completions`, {
   method: "POST",
   headers: { ...auth, ...json },
-  body: JSON.stringify({ model: "axle-core", messages: [{ role: "user", content: "hi" }] }),
+  body: JSON.stringify({ model: "axle-320b", messages: [{ role: "user", content: "hi" }] }),
 });
 check("non-streaming turn succeeds", core.status === 200, core.status);
 check(
-  "charge matches the axle-core rate",
+  "charge matches the axle-320b rate",
   core.headers.get("x-axle-credits-charged") === "0.0042",
   core.headers.get("x-axle-credits-charged"),
 );
@@ -69,7 +69,7 @@ const stream = await clientFetch(`${base}/v1/chat/completions`, {
   method: "POST",
   headers: { ...auth, ...json },
   body: JSON.stringify({
-    model: "axle-nano",
+    model: "axle-20b",
     stream: true,
     messages: [{ role: "user", content: "hi" }],
   }),
@@ -79,7 +79,7 @@ check("streaming turn returns SSE content", streamText.includes("Hello"));
 await sleep(80);
 const afterStream = await (await clientFetch(`${base}/v1/credits`, { headers: auth })).json();
 check(
-  "streamed turn charged real usage (nano rate)",
+  "streamed turn charged real usage (Axle-20b rate)",
   afterStream.credits === 99.99468,
   afterStream.credits,
 );
@@ -89,7 +89,7 @@ const insufficient = await clientFetch(`${base}/v1/chat/completions`, {
   method: "POST",
   headers: { ...auth, ...json },
   body: JSON.stringify({
-    model: "axle-max",
+    model: "axle-552b",
     max_tokens: 100000,
     messages: [{ role: "user", content: "hi" }],
   }),
@@ -127,7 +127,7 @@ if (!existsSync(binary)) {
   const output = await new Promise((resolve) => {
     const child = spawn(
       binary,
-      ["--provider", "axle", "--model", "axle-nano", "--text-only", "-p", "say hi", "--cwd", "/tmp"],
+      ["--provider", "axle", "--model", "axle-20b", "--text-only", "-p", "say hi", "--cwd", "/tmp"],
       {
         env: { ...process.env, AXLE_BASE_URL: `${base}/v1`, AXLE_API_KEY: "axle_engine_key" },
       },
