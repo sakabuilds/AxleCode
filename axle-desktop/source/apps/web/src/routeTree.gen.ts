@@ -27,6 +27,13 @@ import { Route as SettingsInstructionsRouteImport } from './routes/settings.inst
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
+import { Route as SettingsAccountRouteImport } from './routes/settings.account'
+import { Route as SettingsAccountIndexRouteImport } from './routes/settings.account.index'
+import { Route as SettingsAccountSessionsRouteImport } from './routes/settings.account.sessions'
+import { Route as SettingsAccountProfileRouteImport } from './routes/settings.account.profile'
+import { Route as SettingsAccountCreditsRouteImport } from './routes/settings.account.credits'
+import { Route as SettingsAccountConnectionsRouteImport } from './routes/settings.account.connections'
+import { Route as SettingsAccountApiKeysRouteImport } from './routes/settings.account.api-keys'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
@@ -119,6 +126,42 @@ const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
   path: '/archived',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsAccountRoute = SettingsAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAccountIndexRoute = SettingsAccountIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsAccountRoute,
+} as any)
+const SettingsAccountSessionsRoute = SettingsAccountSessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
+  getParentRoute: () => SettingsAccountRoute,
+} as any)
+const SettingsAccountProfileRoute = SettingsAccountProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => SettingsAccountRoute,
+} as any)
+const SettingsAccountCreditsRoute = SettingsAccountCreditsRouteImport.update({
+  id: '/credits',
+  path: '/credits',
+  getParentRoute: () => SettingsAccountRoute,
+} as any)
+const SettingsAccountConnectionsRoute =
+  SettingsAccountConnectionsRouteImport.update({
+    id: '/connections',
+    path: '/connections',
+    getParentRoute: () => SettingsAccountRoute,
+  } as any)
+const SettingsAccountApiKeysRoute = SettingsAccountApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
+  getParentRoute: () => SettingsAccountRoute,
+} as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
@@ -139,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/pull-requests': typeof PullRequestsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/settings/account': typeof SettingsAccountRouteWithChildren
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -151,6 +195,12 @@ export interface FileRoutesByFullPath {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/settings/account/api-keys': typeof SettingsAccountApiKeysRoute
+  '/settings/account/connections': typeof SettingsAccountConnectionsRoute
+  '/settings/account/credits': typeof SettingsAccountCreditsRoute
+  '/settings/account/profile': typeof SettingsAccountProfileRoute
+  '/settings/account/sessions': typeof SettingsAccountSessionsRoute
+  '/settings/account/': typeof SettingsAccountIndexRoute
 }
 export interface FileRoutesByTo {
   '/cloud-jobs': typeof CloudJobsRoute
@@ -172,6 +222,12 @@ export interface FileRoutesByTo {
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/settings/account/api-keys': typeof SettingsAccountApiKeysRoute
+  '/settings/account/connections': typeof SettingsAccountConnectionsRoute
+  '/settings/account/credits': typeof SettingsAccountCreditsRoute
+  '/settings/account/profile': typeof SettingsAccountProfileRoute
+  '/settings/account/sessions': typeof SettingsAccountSessionsRoute
+  '/settings/account': typeof SettingsAccountIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -182,6 +238,7 @@ export interface FileRoutesById {
   '/pull-requests': typeof PullRequestsRoute
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/settings/account': typeof SettingsAccountRouteWithChildren
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -195,6 +252,12 @@ export interface FileRoutesById {
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/settings/account/api-keys': typeof SettingsAccountApiKeysRoute
+  '/settings/account/connections': typeof SettingsAccountConnectionsRoute
+  '/settings/account/credits': typeof SettingsAccountCreditsRoute
+  '/settings/account/profile': typeof SettingsAccountProfileRoute
+  '/settings/account/sessions': typeof SettingsAccountSessionsRoute
+  '/settings/account/': typeof SettingsAccountIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -206,6 +269,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/schedules'
     | '/settings'
+    | '/settings/account'
     | '/settings/archived'
     | '/settings/diagnostics'
     | '/settings/general'
@@ -218,6 +282,12 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/settings/account/api-keys'
+    | '/settings/account/connections'
+    | '/settings/account/credits'
+    | '/settings/account/profile'
+    | '/settings/account/sessions'
+    | '/settings/account/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/cloud-jobs'
@@ -239,6 +309,12 @@ export interface FileRouteTypes {
     | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/settings/account/api-keys'
+    | '/settings/account/connections'
+    | '/settings/account/credits'
+    | '/settings/account/profile'
+    | '/settings/account/sessions'
+    | '/settings/account'
   id:
     | '__root__'
     | '/_chat'
@@ -248,6 +324,7 @@ export interface FileRouteTypes {
     | '/pull-requests'
     | '/schedules'
     | '/settings'
+    | '/settings/account'
     | '/settings/archived'
     | '/settings/diagnostics'
     | '/settings/general'
@@ -261,6 +338,12 @@ export interface FileRouteTypes {
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/settings/account/api-keys'
+    | '/settings/account/connections'
+    | '/settings/account/credits'
+    | '/settings/account/profile'
+    | '/settings/account/sessions'
+    | '/settings/account/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -401,6 +484,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsArchivedRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/account': {
+      id: '/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof SettingsAccountRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/account/': {
+      id: '/settings/account/'
+      path: '/'
+      fullPath: '/settings/account/'
+      preLoaderRoute: typeof SettingsAccountIndexRouteImport
+      parentRoute: typeof SettingsAccountRoute
+    }
+    '/settings/account/sessions': {
+      id: '/settings/account/sessions'
+      path: '/sessions'
+      fullPath: '/settings/account/sessions'
+      preLoaderRoute: typeof SettingsAccountSessionsRouteImport
+      parentRoute: typeof SettingsAccountRoute
+    }
+    '/settings/account/profile': {
+      id: '/settings/account/profile'
+      path: '/profile'
+      fullPath: '/settings/account/profile'
+      preLoaderRoute: typeof SettingsAccountProfileRouteImport
+      parentRoute: typeof SettingsAccountRoute
+    }
+    '/settings/account/credits': {
+      id: '/settings/account/credits'
+      path: '/credits'
+      fullPath: '/settings/account/credits'
+      preLoaderRoute: typeof SettingsAccountCreditsRouteImport
+      parentRoute: typeof SettingsAccountRoute
+    }
+    '/settings/account/connections': {
+      id: '/settings/account/connections'
+      path: '/connections'
+      fullPath: '/settings/account/connections'
+      preLoaderRoute: typeof SettingsAccountConnectionsRouteImport
+      parentRoute: typeof SettingsAccountRoute
+    }
+    '/settings/account/api-keys': {
+      id: '/settings/account/api-keys'
+      path: '/api-keys'
+      fullPath: '/settings/account/api-keys'
+      preLoaderRoute: typeof SettingsAccountApiKeysRouteImport
+      parentRoute: typeof SettingsAccountRoute
+    }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
       path: '/draft/$draftId'
@@ -432,7 +564,30 @@ const ChatRouteChildren: ChatRouteChildren = {
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
+interface SettingsAccountRouteChildren {
+  SettingsAccountApiKeysRoute: typeof SettingsAccountApiKeysRoute
+  SettingsAccountConnectionsRoute: typeof SettingsAccountConnectionsRoute
+  SettingsAccountCreditsRoute: typeof SettingsAccountCreditsRoute
+  SettingsAccountProfileRoute: typeof SettingsAccountProfileRoute
+  SettingsAccountSessionsRoute: typeof SettingsAccountSessionsRoute
+  SettingsAccountIndexRoute: typeof SettingsAccountIndexRoute
+}
+
+const SettingsAccountRouteChildren: SettingsAccountRouteChildren = {
+  SettingsAccountApiKeysRoute: SettingsAccountApiKeysRoute,
+  SettingsAccountConnectionsRoute: SettingsAccountConnectionsRoute,
+  SettingsAccountCreditsRoute: SettingsAccountCreditsRoute,
+  SettingsAccountProfileRoute: SettingsAccountProfileRoute,
+  SettingsAccountSessionsRoute: SettingsAccountSessionsRoute,
+  SettingsAccountIndexRoute: SettingsAccountIndexRoute,
+}
+
+const SettingsAccountRouteWithChildren = SettingsAccountRoute._addFileChildren(
+  SettingsAccountRouteChildren,
+)
+
 interface SettingsRouteChildren {
+  SettingsAccountRoute: typeof SettingsAccountRouteWithChildren
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -446,6 +601,7 @@ interface SettingsRouteChildren {
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAccountRoute: SettingsAccountRouteWithChildren,
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
