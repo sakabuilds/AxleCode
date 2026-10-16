@@ -6,7 +6,7 @@ import "react-native-gesture-handler";
 import { LogBox } from "react-native";
 import { featureFlags } from "react-native-screens";
 
-import App from "./src/App";
+import { BootGate } from "./src/lib/bootGate";
 
 // Required for react-native-screens' iOS FormSheet sizing fix when a nested
 // native stack is rendered inside a non-fitToContents formSheet.
@@ -16,9 +16,9 @@ if (process.env.EXPO_PUBLIC_SHOWCASE === "1") {
   LogBox.ignoreAllLogs();
 }
 
-// Keep the native splash visible until the JS tree has mounted (App hides it
-// from its mount effect). If startup throws before that, the splash stays up
-// instead of the window going blank.
+// Keep the native splash visible until the JS tree has mounted. BootGate hides
+// it as soon as it renders and surfaces any startup failure on screen instead
+// of leaving the splash visible forever.
 void SplashScreen.preventAutoHideAsync().catch(() => {});
 
-registerRootComponent(App);
+registerRootComponent(BootGate);
