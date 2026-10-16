@@ -32,6 +32,14 @@ export function DesktopUpdateBanner() {
     const bridge = window.desktopBridge;
     if (!bridge || !state || isDesktopUpdateButtonDisabled(state) || action === "none") return;
 
+    if (action === "manual") {
+      const url = state.manualUpdateUrl;
+      if (url && typeof bridge.openExternal === "function") {
+        void bridge.openExternal(url);
+      }
+      return;
+    }
+
     if (action === "download") {
       void bridge
         .downloadUpdate()
@@ -95,7 +103,9 @@ export function DesktopUpdateBanner() {
               ? `Downloading${typeof state.downloadPercent === "number" ? ` (${Math.floor(state.downloadPercent)}%)` : "…"}`
               : isDownloaded
                 ? "Restart Axle to install the update."
-                : "Get the latest fixes and improvements."}
+                : action === "manual"
+                  ? "Download the latest version from axle.llc."
+                  : "Get the latest fixes and improvements."}
           </p>
         </div>
         {!isDownloading && (
