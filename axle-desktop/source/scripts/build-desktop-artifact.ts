@@ -1451,6 +1451,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       executableName: "t3code",
       icon: "icons",
       category: "Development",
+      // electron-builder turns these into `MimeType=x-scheme-handler/...` in the
+      // .desktop entry, which is what lets `xdg-open axle://...` hand the
+      // browser sign-in callback back to a running Axle on Linux.
+      protocols: [
+        {
+          name: "Axle",
+          schemes: ["axle", "axle-dev"],
+        },
+      ],
       desktop: {
         entry: {
           StartupWMClass: "t3code",
