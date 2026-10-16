@@ -28,6 +28,7 @@ const baseState: DesktopUpdateState = {
   downloadPercent: null,
   checkedAt: null,
   message: null,
+  manualUpdateUrl: null,
   errorContext: null,
   canRetry: false,
 };
@@ -104,6 +105,29 @@ describe("desktop update button state", () => {
     expect(shouldShowDesktopUpdateButton(state)).toBe(true);
     expect(isDesktopUpdateButtonDisabled(state)).toBe(true);
     expect(getDesktopUpdateButtonTooltip(state)).toContain("42%");
+  });
+
+  it("prefers the manual download action on platforms that install by hand", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "available",
+      availableVersion: "1.1.0",
+      manualUpdateUrl: "https://axle.llc/download",
+    };
+    expect(resolveDesktopUpdateButtonAction(state)).toBe("manual");
+    expect(shouldShowDesktopUpdateButton(state)).toBe(true);
+    expect(getDesktopUpdateButtonTooltip(state)).toContain("1.1.0");
+  });
+
+  it("keeps manual banners hidden while no update is worth acting on", () => {
+    const state: DesktopUpdateState = {
+      ...baseState,
+      status: "up-to-date",
+      manualUpdateUrl: "https://axle.llc/download",
+    };
+    expect(resolveDesktopUpdateButtonAction(state)).toBe("manual");
+    expect(shouldShowDesktopUpdateButton(state)).toBe(false);
+    expect(getDesktopUpdateButtonTooltip(state)).toContain("axle.llc");
   });
 });
 
