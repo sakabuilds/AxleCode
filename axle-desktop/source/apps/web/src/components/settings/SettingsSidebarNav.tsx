@@ -7,6 +7,7 @@ import {
   SlidersHorizontalIcon,
   BrainIcon,
   KeyboardIcon,
+  CircleUserRoundIcon,
   PlugZapIcon,
   Settings2Icon,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import {
 } from "../ui/sidebar";
 
 export type SettingsSectionPath =
+  | "/settings/account"
   | "/settings/general"
   | "/settings/personalize"
   | "/settings/keybindings"
@@ -38,6 +40,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   to: SettingsSectionPath;
   icon: ComponentType<{ className?: string }>;
 }> = [
+  { label: "Account", to: "/settings/account", icon: CircleUserRoundIcon },
   { label: "General", to: "/settings/general", icon: Settings2Icon },
   { label: "Personalize", to: "/settings/personalize", icon: SlidersHorizontalIcon },
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },
