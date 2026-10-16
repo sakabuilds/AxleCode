@@ -4,13 +4,14 @@ This Worker owns persistent per-installation plugin authorization for Axle Deskt
 
 The desktop renderer receives an opaque, encrypted Axle plugin-session token. When no Axle account session exists, the Worker issues an anonymous session scoped to a stable, random installation ID; session creation and validation are stateless and do not use Cloudflare KV. Provider access/refresh tokens remain encrypted at rest in Cloudflare KV and are never returned to the renderer.
 
-The Worker also hosts `/v1/clerk/desktop`, the isolated cross-origin Clerk sign-in surface used by Axle Desktop.
+The Worker also hosts `/v1/auth/desktop`, the Axle-owned sign-in surface used by Axle Desktop. Older builds that still request the retired `/v1/clerk/desktop` are redirected there.
 
 ## Public client IDs
 
 OAuth client IDs are public values. Put them in `wrangler.toml` under `[vars]`; Wrangler injects them into the Worker deployment:
 
 - `GITHUB_CLIENT_ID`
+- `GOOGLE_CLIENT_ID` (desktop sign-in; separate from `GMAIL_CLIENT_ID`, which stays bound to the Gmail plugin)
 - `GMAIL_CLIENT_ID`
 - `OUTLOOK_CLIENT_ID`
 - `SLACK_CLIENT_ID`
@@ -31,6 +32,7 @@ Install provider client secrets directly into the Cloudflare Worker:
 
 ```sh
 wrangler secret put GITHUB_CLIENT_SECRET
+wrangler secret put GOOGLE_CLIENT_SECRET
 wrangler secret put GMAIL_CLIENT_SECRET
 wrangler secret put OUTLOOK_CLIENT_SECRET
 wrangler secret put SLACK_CLIENT_SECRET
@@ -51,6 +53,7 @@ wrangler secret put ANALYTICS_ADMIN_TOKEN
 Configure each provider application to allow the callback on the deployed Worker origin:
 
 ```text
+Google sign-in: https://axle-auth.axle-download-worker.workers.dev/v1/auth/callback/google
 Gmail:   https://auth.axle.llc/v1/plugins/gmail/callback
 Outlook: https://auth.axle.llc/v1/plugins/outlook/callback
 Slack:   https://auth.axle.llc/v1/plugins/slack/callback
@@ -59,6 +62,15 @@ Notion:  https://auth.axle.llc/v1/plugins/notion/callback
 Sentry:  https://auth.axle.llc/v1/plugins/sentry/callback
 Figma:   https://auth.axle.llc/v1/plugins/figma/callback
 ```
+
+Google is the desktop sign-in provider, and Google requires an exact redirect
+URI match. The URI must be `${PUBLIC_BASE_URL}/v1/auth/callback/google` for the
+deployment, so registering it under an `OAuth client` of type **Web
+application** is mandatory — adding the origin under *Authorized JavaScript
+origins* is not enough. Until it is registered, `/v1/auth/start?provider=google`
+reaches Google and comes back with `redirect_uri_mismatch`. `/v1/auth/providers`
+only reports `google` once both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+are set.
 
 GitHub intentionally stays on Axle's existing desktop OAuth flow. Its OAuth App should allow the loopback callback:
 
