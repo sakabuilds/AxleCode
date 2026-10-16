@@ -45,6 +45,14 @@ import {
 const AUTO_UPDATE_STARTUP_DELAY = "1 minute";
 const AUTO_UPDATE_POLL_INTERVAL = "5 minutes";
 
+/**
+ * macOS builds ship without a Developer ID signature, so Squirrel refuses to
+ * apply an update to them. Checks still run so the app can tell the user a new
+ * version exists, but every download/install affordance opens this page
+ * instead of driving the updater into a guaranteed failure.
+ */
+export const MANUAL_MACOS_UPDATE_URL = "https://axle.llc/download";
+
 const AppUpdateYmlConfig = Schema.Record(Schema.String, Schema.String);
 type AppUpdateYmlConfig = typeof AppUpdateYmlConfig.Type;
 
@@ -192,6 +200,9 @@ function createBaseUpdateState(
     ...createInitialDesktopUpdateState(environment.appVersion, environment.runtimeInfo, channel),
     enabled,
     status: enabled ? "idle" : "disabled",
+    // Enabled macOS builds cannot install updates from an unsigned bundle; the
+    // UI routes every update affordance to the download page instead.
+    manualUpdateUrl: enabled && environment.platform === "darwin" ? MANUAL_MACOS_UPDATE_URL : null,
   };
 }
 
