@@ -57,8 +57,18 @@ wrangler deploy
 ```
 
 `UPSTREAM_BASE_URL` defaults to `https://openrouter.ai/api/v1`; point it at any
-OpenAI-compatible endpoint. Then serve the worker at `api.axle.llc` and the
-desktop app reaches it through the runtime's default `--provider axle` base URL.
+OpenAI-compatible endpoint. This deployment lives at
+`https://axle-gateway.axle-download-worker.workers.dev`, which is the default
+`--provider axle` base URL, so the desktop app reaches it with no configuration.
+
+## Identity
+
+`Authorization: Bearer axl_...` is resolved against the account database the
+auth worker owns (`ACCOUNTS_DB`), so the balance follows the user's Axle account
+and revoking a key stops it on the next request. Any other bearer token is
+hashed into a stable id instead, which is what self-hosted deployments use.
+
+Users mint keys from the desktop app under **Settings → Account → API keys**.
 
 ## Tests
 
