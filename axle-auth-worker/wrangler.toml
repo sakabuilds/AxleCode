@@ -9,6 +9,9 @@ workers_dev = true
 # Never commit provider client secrets here.
 [vars]
 GITHUB_CLIENT_ID = "Ov23lis8MUy8pjCIAlXe"
+# Desktop sign-in runs on the Axle Google OAuth client. The Gmail plugin keeps
+# its own GMAIL_CLIENT_ID below, so the two never share credentials.
+GOOGLE_CLIENT_ID = "360016075036-n99emqetr8choe7nk204ov5mi8f79okf.apps.googleusercontent.com"
 GMAIL_CLIENT_ID = "885688340167-tig39cne089ljsddr470atomkskk8cv3.apps.googleusercontent.com"
 OUTLOOK_CLIENT_ID = "587ce709-1988-4cef-bbbb-17fc7a857e22"
 SLACK_CLIENT_ID = "11931438217766.11937099402708"
@@ -21,8 +24,18 @@ FIGMA_CLIENT_ID = "n5YVQ37BEBKnWIXaaq24H3"
 CLERK_PUBLISHABLE_KEY = "pk_live_Y2xlcmsuYXV0aC5zcGFya3kubGxjJA"
 # Set to the deployed Worker origin, e.g. https://auth.axle.llc.
 PUBLIC_BASE_URL = "https://axle-auth.axle-download-worker.workers.dev"
+# Value of the `iss` claim in Axle access tokens, and the base of the published
+# JWKS. Keep it pinned so rotating PUBLIC_BASE_URL never invalidates sessions.
+AUTH_ISSUER = "https://axle-auth.axle-download-worker.workers.dev"
 
 [[kv_namespaces]]
 binding = "PLUGIN_STORE"
 id = "f38addbc6f63456e8066f705855bca24"
 preview_id = "f38addbc6f63456e8066f705855bca24"
+
+# Tier 2 account store: Axle users, linked OAuth identities, sessions, devices,
+# and in-flight sign-in requests. See migrations/0001_accounts.sql.
+[[d1_databases]]
+binding = "ACCOUNTS_DB"
+database_name = "axle-accounts"
+database_id = "92573546-757a-4fc4-939c-2eb41015ff13"
