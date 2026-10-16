@@ -50,21 +50,52 @@ function ledgerFor(env) {
   return new CreditsLedger(storeFor(env), { now });
 }
 
+const AXLE_KEY_PATTERN = /^axl_[0-9a-f]{12}_[A-Za-z0-9_-]+$/u;
+
+/** Both encodings of the token's SHA-256: what the auth worker stores, and the legacy id. */
+async function tokenDigests(token) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  const bytes = new Uint8Array(digest);
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const base64url = btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+  return { base64url, hex };
+}
+
 /**
- * Identity for a request. The bearer token is hashed so raw keys never touch
- * storage. When Axle issues signed account tokens, verification slots in here
- * and everything downstream keeps working off the resulting user id.
+ * Identity for a request.
+ *
+ * An Axle-issued key (`axl_...`) is resolved against the account database, so
+ * its balance follows the user's account and a revocation takes effect on the
+ * very next request. Any other bearer token is hashed into a stable id, which
+ * is what self-hosted deployments and older clients still use — the raw token
+ * never touches storage either way.
  */
-export async function resolveUserId(request) {
+export async function resolveUserId(request, env, ctx) {
   const header = request.headers.get("authorization") ?? "";
   const match = /^Bearer\s+(.+)$/iu.exec(header.trim());
   const token = match?.[1]?.trim();
   if (!token) return undefined;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 32);
+  const digests = await tokenDigests(token);
+  if (AXLE_KEY_PATTERN.test(token) && env?.ACCOUNTS_DB?.prepare) {
+    const owner = await env.ACCOUNTS_DB.prepare(
+      "SELECT key_id, user_id, revoked_at FROM axle_api_keys WHERE token_hash = ?1",
+    )
+      .bind(digests.base64url)
+      .first();
+    // A revoked or unknown Axle key must fail closed rather than fall through
+    // to the hash, or revoking a key would not actually stop it being used.
+    if (!owner || owner.revoked_at) return undefined;
+    ctx?.waitUntil?.(
+      env.ACCOUNTS_DB.prepare("UPDATE axle_api_keys SET last_used_at = ?1 WHERE key_id = ?2")
+        .bind(new Date().toISOString(), owner.key_id)
+        .run()
+        .catch(() => undefined),
+    );
+    return owner.user_id;
+  }
+  return digests.hex.slice(0, 32);
 }
 
 function upstreamConfig(env) {
@@ -169,6 +200,29 @@ async function creditsResponse(ledger, userId) {
     daily_free_credits: DAILY_FREE_CREDITS,
     balance_usd: Number((balance * CREDIT_USD).toFixed(4)),
   });
+}
+
+/**
+ * The account's recent ledger, newest first. Powers the desktop usage view, so
+ * it reports the same numbers the balance does rather than re-deriving them.
+ */
+async function usageResponse(ledger, userId, limit) {
+  const entries = await ledger.history(userId, limit);
+  return json({
+    object: "axle.usage",
+    credit_usd: CREDIT_USD,
+    entries: entries.map((entry) => ({
+      kind: entry.kind,
+      credits: round6(entry.amount),
+      balance_after: round6(entry.balanceAfter),
+      model: typeof entry.meta?.model === "string" ? entry.meta.model : null,
+      created_at: entry.createdAt,
+    })),
+  });
+}
+
+function round6(value) {
+  return Math.round((Number(value) || 0) * 1e6) / 1e6;
 }
 
 async function chatCompletions(request, env, ctx, ledger, userId) {
@@ -318,16 +372,22 @@ export async function handleRequest(request, env = {}, ctx = {}) {
   }
 
   if (path === "/credits" && request.method === "GET") {
-    const userId = await resolveUserId(request);
+    const userId = await resolveUserId(request, env, ctx);
     if (!userId) return json({ error: { message: "Missing Axle API key." } }, 401);
     return creditsResponse(ledgerFor(env), userId);
+  }
+
+  if (path === "/usage" && request.method === "GET") {
+    const userId = await resolveUserId(request, env, ctx);
+    if (!userId) return json({ error: { message: "Missing Axle API key." } }, 401);
+    return usageResponse(ledgerFor(env), userId, url.searchParams.get("limit"));
   }
 
   if (path === "/chat/completions") {
     if (request.method !== "POST") {
       return json({ error: { message: "Use POST for /v1/chat/completions." } }, 405);
     }
-    const userId = await resolveUserId(request);
+    const userId = await resolveUserId(request, env, ctx);
     if (!userId) {
       return json(
         { error: { message: "Provide your Axle API key as `Authorization: Bearer <key>`.", type: "invalid_request_error" } },
