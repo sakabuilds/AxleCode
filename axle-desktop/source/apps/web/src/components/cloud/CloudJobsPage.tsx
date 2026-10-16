@@ -7,6 +7,7 @@ import {
   CheckIcon,
   CloudIcon,
   CloudOffIcon,
+  LogInIcon,
   LoaderCircleIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -22,6 +23,7 @@ import {
 } from "react";
 
 import { readClerkAccountToken } from "../../account/clerkRuntime";
+import { useAccountActions } from "../../account/AccountAuthProvider";
 import { resolveCloudPublicConfig } from "../../cloud/publicConfig";
 import { cn, randomUUID } from "../../lib/utils";
 import { formatRelativeTimeLabel, formatRelativeTimeUntilLabel } from "../../timestampFormat";
@@ -561,6 +563,7 @@ function CreateJobDialog({
   );
 }
 export function CloudJobsPage() {
+  const { signIn } = useAccountActions();
   const client = useMemo(() => {
     const { accountApiUrl } = resolveCloudPublicConfig();
     if (accountApiUrl === null) return null;
@@ -804,10 +807,16 @@ export function CloudJobsPage() {
               independent cloud runs.
             </EmptyDescription>
           </EmptyHeader>
-          <Button variant="outline" size="sm" onClick={() => void refreshJobs()}>
-            <RefreshCwIcon className={cn("size-3.5", jobsBusy && "animate-spin")} />
-            Check again
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => signIn()}>
+              <LogInIcon className="size-3.5" />
+              Sign in to Axle
+            </Button>
+            <Button variant="outline" size="sm" disabled={jobsBusy} onClick={() => void refreshJobs()}>
+              <RefreshCwIcon className={cn("size-3.5", jobsBusy && "animate-spin")} />
+              Check again
+            </Button>
+          </div>
         </Empty>
       </PageShell>
     );
