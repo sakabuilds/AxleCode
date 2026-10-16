@@ -9,7 +9,7 @@ gets working models without configuring a vendor key of their own.
 
 | Route | Method | Purpose |
 | --- | --- | --- |
-| `/v1/models` | `GET` | The five Axle models and their credit rates (the desktop picker) |
+| `/v1/models` | `GET` | The four Axle models and their credit rates (the desktop picker) |
 | `/v1/credits` | `GET` | Current balance; applies the free daily grant |
 | `/v1/chat/completions` | `POST` | Metered chat completion |
 | `/healthz` | `GET` | Liveness |
@@ -20,19 +20,19 @@ gets working models without configuring a vendor key of their own.
 credits ($0.50) per UTC day** for free, granted on their first request of the
 day. Top-ups add to the same balance; there is no separate "paid" bucket.
 
-The five models are priced by tier, so a Max turn drains a day's free credits
-far faster than a Nano turn:
+The four models are priced by tier, so an Axle-552b turn drains a day's free
+credits far faster than an Axle-20b turn:
 
 | Model | Tier | Credits / 1M input | Credits / 1M output |
 | --- | --- | --- | --- |
-| `axle-nano` | 1 | 40 | 160 |
-| `axle-flash` | 2 | 60 | 240 |
-| `axle-core` | 3 | 150 | 600 |
-| `axle-pro` | 4 | 300 | 1200 |
-| `axle-max` | 5 | 600 | 2400 |
+| `axle-20b` | 1 | 40 | 160 |
+| `axle-55b` | 2 | 60 | 240 |
+| `axle-320b` | 3 | 150 | 600 |
+| `axle-552b` | 4 | 300 | 1200 |
 
-Rates and upstream model ids live in `src/pricing.js`; the upstream ids are
-data, so the catalog can be re-pointed without touching the gateway logic.
+Rates and upstream model ids live in `src/pricing.js`; the upstream ids point
+at NVIDIA NIM (`https://integrate.api.nvidia.com/v1`) and are data, so the
+catalog can be re-pointed without touching the gateway logic.
 
 ### How a turn is metered
 
@@ -56,8 +56,10 @@ wrangler secret put UPSTREAM_API_KEY     # the shared upstream key Axle owns
 wrangler deploy
 ```
 
-`UPSTREAM_BASE_URL` defaults to `https://openrouter.ai/api/v1`; point it at any
-OpenAI-compatible endpoint. This deployment lives at
+`UPSTREAM_BASE_URL` defaults to NVIDIA NIM
+(`https://integrate.api.nvidia.com/v1`), the endpoint the Axle models are
+served from; point it at any OpenAI-compatible endpoint to re-host. This
+deployment lives at
 `https://axle-gateway.axle-download-worker.workers.dev`, which is the default
 `--provider axle` base URL, so the desktop app reaches it with no configuration.
 
