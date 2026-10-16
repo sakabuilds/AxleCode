@@ -1,6 +1,7 @@
 import {
   CheckIcon,
   LoaderCircleIcon,
+  LogInIcon,
   PlugIcon,
   RefreshCwIcon,
   SearchIcon,
@@ -8,7 +9,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { useAccountState } from "../../account/AccountAuthProvider";
+import { useAccountActions, useAccountState } from "../../account/AccountAuthProvider";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { PluginLogo } from "./PluginLogo";
@@ -75,6 +76,7 @@ function PluginRow({
 
 export function PluginsPage() {
   const account = useAccountState();
+  const { signIn } = useAccountActions();
   const hasPluginSession =
     loadPluginSessionToken() !== null ||
     ((account.status === "signed-in" || account.status === "signed-out") &&
@@ -183,15 +185,23 @@ export function PluginsPage() {
               Connect the tools your work depends on.
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Refresh plugin connections"
-            disabled={!hasPluginSession || loading || busyPluginId !== null}
-            onClick={() => void refresh({ forceRefresh: true })}
-          >
-            <RefreshCwIcon className={loading ? "size-4 animate-spin" : "size-4"} />
-          </Button>
+          <div className="flex items-center gap-2">
+            {account.status === "signed-out" ? (
+              <Button size="sm" onClick={() => signIn()}>
+                <LogInIcon className="size-4" />
+                Sign in
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Refresh plugin connections"
+              disabled={!hasPluginSession || loading || busyPluginId !== null}
+              onClick={() => void refresh({ forceRefresh: true })}
+            >
+              <RefreshCwIcon className={loading ? "size-4 animate-spin" : "size-4"} />
+            </Button>
+          </div>
         </header>
 
         <div className="relative mt-6">
