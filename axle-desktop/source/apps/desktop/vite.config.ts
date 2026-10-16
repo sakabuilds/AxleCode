@@ -8,7 +8,7 @@ const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
 const githubClientId =
   process.env.AXLE_GITHUB_CLIENT_ID?.trim() ||
   process.env.AXLE_GITHUB_OAUTH_CLIENT_ID?.trim() ||
-  "Ov23liBxKhYYRLs19Fs9";
+  "Ov23lis8MUy8pjCIAlXe";
 const githubAuthBrokerUrl =
   process.env.AXLE_GITHUB_AUTH_BROKER_URL?.trim() || "https://auth.axle.llc";
 const githubBuildDefine = {
