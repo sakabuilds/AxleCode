@@ -34,6 +34,7 @@ export function createInitialDesktopUpdateState(
     downloadPercent: null,
     checkedAt: null,
     message: null,
+    manualUpdateUrl: null,
     errorContext: null,
     canRetry: false,
   };
