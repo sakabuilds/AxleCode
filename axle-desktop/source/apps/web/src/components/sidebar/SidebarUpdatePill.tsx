@@ -75,6 +75,14 @@ export function SidebarUpdatePill() {
     if (!bridge || !state) return;
     if (disabled || action === "none") return;
 
+    if (action === "manual") {
+      const url = state.manualUpdateUrl;
+      if (url && typeof bridge.openExternal === "function") {
+        void bridge.openExternal(url);
+      }
+      return;
+    }
+
     if (action === "download") {
       void bridge
         .downloadUpdate()
