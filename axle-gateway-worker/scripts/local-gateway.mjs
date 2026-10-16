@@ -16,14 +16,14 @@ console.log(`  curl -s ${base}/v1/models`);
 console.log(`  curl -s -H 'Authorization: Bearer demo_key' ${base}/v1/credits`);
 console.log(
   `  curl -s -H 'Authorization: Bearer demo_key' -H 'Content-Type: application/json' \\\n` +
-    `    -d '{"model":"axle-core","messages":[{"role":"user","content":"hi"}]}' \\\n` +
+    `    -d '{"model":"axle-320b","messages":[{"role":"user","content":"hi"}]}' \\\n` +
     `    ${base}/v1/chat/completions`,
 );
 console.log("");
 console.log("Point the engine at it:");
 console.log(
   `  AXLE_BASE_URL=${base}/v1 AXLE_API_KEY=demo_key \\\n` +
-    `    ./target/release/axle --provider axle --model axle-nano --text-only -p "say hi"`,
+    `    ./target/release/axle --provider axle --model axle-20b --text-only -p "say hi"`,
 );
 console.log("");
 console.log("Point the desktop app at it:");
