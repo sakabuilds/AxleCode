@@ -1,3 +1,17 @@
+import {
+  base64UrlToBytes,
+  bestEffortDelete,
+  bytesToBase64Url,
+  encryptionKey,
+  openStateless,
+  randomToken,
+  requireEncryptionSecret,
+  requireStore,
+  sealStateless,
+  sha256,
+} from "./shared.js";
+import { verifyAccessToken } from "./identity.js";
+
 const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
 const GITHUB_API = "https://api.github.com";
 const GITHUB_API_VERSION = "2022-11-28";
@@ -98,25 +112,6 @@ function fail(message, status = 400, code = "bad_request") {
   return json({ error: message, code }, status);
 }
 
-function requireStore(env) {
-  if (!env.PLUGIN_STORE || typeof env.PLUGIN_STORE.get !== "function") {
-    throw new Error("PLUGIN_STORE KV binding is not configured.");
-  }
-  return env.PLUGIN_STORE;
-}
-
-async function bestEffortDelete(store, key) {
-  // KV deletion is cleanup only. A daily delete quota failure must not make
-  // status reads, OAuth callbacks, or a newly authorized connection fail.
-  await store.delete(key).catch(() => undefined);
-}
-
-function requireEncryptionSecret(env) {
-  const secret = env.PLUGIN_TOKEN_ENCRYPTION_KEY?.trim();
-  if (!secret) throw new Error("PLUGIN_TOKEN_ENCRYPTION_KEY is not configured.");
-  return secret;
-}
-
 function requireGitHubConfig(env) {
   const clientId = env.GITHUB_CLIENT_ID?.trim();
   const clientSecret = env.GITHUB_CLIENT_SECRET?.trim();
@@ -182,30 +177,6 @@ async function readJson(request) {
     throw new Error("Expected a JSON object.");
   }
   return parsed;
-}
-
-function bytesToBase64Url(bytes) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
-}
-
-function base64UrlToBytes(value) {
-  const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
-  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
-  const binary = atob(padded);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-}
-
-function randomToken(bytes = 32) {
-  const value = new Uint8Array(bytes);
-  crypto.getRandomValues(value);
-  return bytesToBase64Url(value);
-}
-
-async function sha256(value) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return bytesToBase64Url(new Uint8Array(digest));
 }
 
 function decodeJwtPart(value) {
@@ -276,12 +247,22 @@ async function verifyClerkJwt(token, env) {
   };
 }
 
+/**
+ * Accept an Axle-issued access token, falling back to Clerk so desktop installs
+ * created before the Axle sign-in migration keep working.
+ */
+async function verifySessionToken(token, env) {
+  const axle = await verifyAccessToken(env, token).catch(() => null);
+  if (axle) return axle;
+  return verifyClerkJwt(token, env);
+}
+
 async function createPluginSession(request, env) {
   const authorization = request.headers.get("authorization") || "";
   let identity;
   let anonymous = false;
   if (authorization.startsWith("Bearer ")) {
-    identity = await verifyClerkJwt(authorization.slice(7).trim(), env);
+    identity = await verifySessionToken(authorization.slice(7).trim(), env);
   } else {
     const body = await readJson(request);
     if (
@@ -408,42 +389,6 @@ async function revokePluginSession(request, env) {
     // KV is not configured; logout still succeeds.
   }
   return json({ revoked: true });
-}
-
-async function encryptionKey(env) {
-  const raw = requireEncryptionSecret(env);
-  const bytes = base64UrlToBytes(raw);
-  if (bytes.byteLength !== 32) {
-    throw new Error("PLUGIN_TOKEN_ENCRYPTION_KEY must be a base64url-encoded 32-byte key.");
-  }
-  return crypto.subtle.importKey("raw", bytes, "AES-GCM", false, ["encrypt", "decrypt"]);
-}
-
-async function sealStateless(value, env) {
-  const iv = new Uint8Array(12);
-  crypto.getRandomValues(iv);
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    await encryptionKey(env),
-    new TextEncoder().encode(JSON.stringify(value)),
-  );
-  return `s1.${bytesToBase64Url(iv)}.${bytesToBase64Url(new Uint8Array(ciphertext))}`;
-}
-
-async function openStateless(token, env) {
-  const parts = typeof token === "string" ? token.split(".") : [];
-  if (parts.length !== 3 || parts[0] !== "s1") return null;
-  try {
-    const cleartext = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: base64UrlToBytes(parts[1]) },
-      await encryptionKey(env),
-      base64UrlToBytes(parts[2]),
-    );
-    const value = JSON.parse(new TextDecoder().decode(cleartext));
-    return value && typeof value === "object" ? value : null;
-  } catch {
-    return null;
-  }
 }
 
 async function encryptRecord(value, env) {
@@ -1202,6 +1147,8 @@ export async function handleRequest(request, env) {
 }
 
 export {
+  base64UrlToBytes,
+  bytesToBase64Url,
   clerkIssuerFromPublishableKey,
   isLoopbackRedirect,
   isPkceVerifier,
