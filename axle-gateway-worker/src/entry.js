@@ -11,7 +11,9 @@ import {
 import { D1CreditsStore } from "./stores/d1.js";
 import { MemoryCreditsStore } from "./stores/memory.js";
 
-const DEFAULT_UPSTREAM_BASE_URL = "https://openrouter.ai/api/v1";
+// Axle's hosted upstream: NVIDIA NIM, reached with the shared key Axle
+// installs as the `UPSTREAM_API_KEY` secret.
+const DEFAULT_UPSTREAM_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const RESERVE_MIN_OUTPUT_TOKENS = 256;
 const RESERVE_DEFAULT_OUTPUT_TOKENS = 4096;
 const CHARS_PER_TOKEN = 4;
