@@ -50,14 +50,15 @@ function sseBody(chunks) {
   });
 }
 
-test("catalog exposes five tiered models resolvable by Axle or upstream id", () => {
-  assert.equal(AXLE_MODELS.length, 5);
-  assert.equal(findModel("axle-pro").upstream, "anthropic/claude-sonnet-4");
-  assert.equal(findModel("anthropic/claude-sonnet-4").id, "axle-pro");
+test("catalog exposes four tiered models resolvable by Axle or upstream id", () => {
+  assert.equal(AXLE_MODELS.length, 4);
+  assert.equal(findModel("axle-320b").upstream, "z-ai/glm-5.3");
+  assert.equal(findModel("z-ai/glm-5.3").id, "axle-320b");
+  assert.equal(findModel("openai/gpt-oss-20b").id, "axle-20b");
   assert.equal(findModel("nope"), undefined);
 
   const tiers = AXLE_MODELS.map((model) => model.tier);
-  assert.deepEqual(tiers, [1, 2, 3, 4, 5]);
+  assert.deepEqual(tiers, [1, 2, 3, 4]);
   for (let index = 1; index < AXLE_MODELS.length; index += 1) {
     assert.ok(
       AXLE_MODELS[index].creditsPerMillionOutput >
@@ -68,18 +69,18 @@ test("catalog exposes five tiered models resolvable by Axle or upstream id", () 
 });
 
 test("creditsForTokens prices input and output at the model rate", () => {
-  // axle-nano: 40 credits / 1M input, 160 credits / 1M output.
-  assert.equal(creditsForTokens("axle-nano", 1_000_000, 1_000_000), 200);
-  assert.equal(creditsForTokens("axle-nano", 0, 0), 0);
+  // axle-20b: 40 credits / 1M input, 160 credits / 1M output.
+  assert.equal(creditsForTokens("axle-20b", 1_000_000, 1_000_000), 200);
+  assert.equal(creditsForTokens("axle-20b", 0, 0), 0);
   // Unknown models fail closed rather than billing a guessed rate.
   assert.equal(creditsForTokens("axle-ghost", 100, 100), undefined);
 });
 
 test("creditsForUsage accepts OpenAI and Anthropic token spellings", () => {
-  const openai = creditsForUsage("axle-nano", { prompt_tokens: 1000, completion_tokens: 500 });
-  const anthropic = creditsForUsage("axle-nano", { input_tokens: 1000, output_tokens: 500 });
+  const openai = creditsForUsage("axle-20b", { prompt_tokens: 1000, completion_tokens: 500 });
+  const anthropic = creditsForUsage("axle-20b", { input_tokens: 1000, output_tokens: 500 });
   assert.equal(openai, anthropic);
-  assert.equal(openai, creditsForTokens("axle-nano", 1000, 500));
+  assert.equal(openai, creditsForTokens("axle-20b", 1000, 500));
 });
 
 test("the daily grant lands exactly once per UTC day", async () => {
@@ -116,11 +117,11 @@ test("a charge never overdraws the balance", async () => {
   assert.equal(await ledger.balance("user-1"), 40);
 });
 
-test("GET /v1/models lists the five Axle models", async () => {
+test("GET /v1/models lists the four Axle models", async () => {
   const response = await handleRequest(request("/models", { method: "GET" }), environment());
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.data.length, 5);
+  assert.equal(body.data.length, 4);
   assert.equal(body.data[0].owned_by, "axle");
 });
 
@@ -146,8 +147,8 @@ test("GET /v1/usage reports the ledger behind the balance, newest first", async 
   // A grant, then a spend whose real cost was refunded down.
   const ledger = new CreditsLedger(store, { now: () => FIXED_NOW });
   await ledger.ensureDailyGrant(userId);
-  await ledger.charge(userId, 12.5, { model: "axle-nano", reserved: true });
-  await ledger.credit(userId, 4, { model: "axle-nano", kind: "refund" });
+  await ledger.charge(userId, 12.5, { model: "axle-20b", reserved: true });
+  await ledger.credit(userId, 4, { model: "axle-20b", kind: "refund" });
 
   const response = await handleRequest(request("/usage", { method: "GET" }), env);
   assert.equal(response.status, 200);
@@ -163,7 +164,7 @@ test("GET /v1/usage reports the ledger behind the balance, newest first", async 
       ["daily_grant", 100],
     ],
   );
-  assert.equal(body.entries[1].model, "axle-nano");
+  assert.equal(body.entries[1].model, "axle-20b");
   assert.equal(body.entries[0].balance_after, 91.5);
   assert.equal(body.entries[0].created_at, FIXED_NOW);
 });
@@ -207,7 +208,7 @@ test("a completed turn charges actual usage and refunds the reservation", async 
   await withStubbedFetch(
     async (url, init) => {
       upstreamBody = JSON.parse(init.body);
-      assert.match(String(url), /openrouter\.ai\/api\/v1\/chat\/completions$/u);
+      assert.match(String(url), /integrate\.api\.nvidia\.com\/v1\/chat\/completions$/u);
       return Response.json({
         id: "chatcmpl-1",
         model: upstreamBody.model,
@@ -219,20 +220,20 @@ test("a completed turn charges actual usage and refunds the reservation", async 
       const response = await handleRequest(
         request("/chat/completions", {
           method: "POST",
-          body: JSON.stringify({ model: "axle-nano", messages: [{ role: "user", content: "hi" }] }),
+          body: JSON.stringify({ model: "axle-20b", messages: [{ role: "user", content: "hi" }] }),
         }),
         env,
       );
       assert.equal(response.status, 200);
-      const actual = creditsForUsage("axle-nano", { prompt_tokens: 1000, completion_tokens: 500 });
+      const actual = creditsForUsage("axle-20b", { prompt_tokens: 1000, completion_tokens: 500 });
       assert.equal(response.headers.get("x-axle-credits-charged"), String(actual));
       assert.equal(Number(response.headers.get("x-axle-credits-remaining")), DAILY_FREE_CREDITS - actual);
     },
   );
 
-  assert.equal(upstreamBody.model, "openai/gpt-4o-mini");
+  assert.equal(upstreamBody.model, "openai/gpt-oss-20b");
   const userId = await resolveUserId(request("/chat/completions"));
-  assert.equal(await new CreditsLedger(store, { now: () => FIXED_NOW }).balance(userId), DAILY_FREE_CREDITS - creditsForUsage("axle-nano", { prompt_tokens: 1000, completion_tokens: 500 }));
+  assert.equal(await new CreditsLedger(store, { now: () => FIXED_NOW }).balance(userId), DAILY_FREE_CREDITS - creditsForUsage("axle-20b", { prompt_tokens: 1000, completion_tokens: 500 }));
 });
 
 test("a request reserves more than the balance is refused with 402", async () => {
@@ -246,7 +247,7 @@ test("a request reserves more than the balance is refused with 402", async () =>
     request("/chat/completions", {
       method: "POST",
       body: JSON.stringify({
-        model: "axle-max",
+        model: "axle-552b",
         max_tokens: 16384,
         messages: [{ role: "user", content: "hello" }],
       }),
@@ -260,8 +261,8 @@ test("a request reserves more than the balance is refused with 402", async () =>
 });
 
 test("reserveCredits uses max_tokens when present", () => {
-  const small = reserveCredits("axle-core", { messages: [], max_tokens: 256 });
-  const large = reserveCredits("axle-core", { messages: [], max_tokens: 4096 });
+  const small = reserveCredits("axle-320b", { messages: [], max_tokens: 256 });
+  const large = reserveCredits("axle-320b", { messages: [], max_tokens: 4096 });
   assert.ok(large > small);
   assert.equal(reserveCredits("axle-ghost", { messages: [] }), undefined);
 });
@@ -287,7 +288,7 @@ test("streaming turns are charged from the usage chunk after the stream ends", a
         request("/chat/completions", {
           method: "POST",
           body: JSON.stringify({
-            model: "axle-nano",
+            model: "axle-20b",
             stream: true,
             messages: [{ role: "user", content: "hi" }],
           }),
@@ -303,7 +304,7 @@ test("streaming turns are charged from the usage chunk after the stream ends", a
   );
 
   const userId = await resolveUserId(request("/chat/completions"));
-  const expected = DAILY_FREE_CREDITS - creditsForUsage("axle-nano", { prompt_tokens: 1000, completion_tokens: 500 });
+  const expected = DAILY_FREE_CREDITS - creditsForUsage("axle-20b", { prompt_tokens: 1000, completion_tokens: 500 });
   assert.equal(await new CreditsLedger(store, { now: () => FIXED_NOW }).balance(userId), expected);
 });
 
