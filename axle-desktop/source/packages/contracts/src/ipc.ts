@@ -223,6 +223,12 @@ export interface DesktopUpdateState {
   downloadPercent: number | null;
   checkedAt: string | null;
   message: string | null;
+  /**
+   * When set, this platform installs updates by hand: every download/install
+   * affordance must open this URL instead of driving the updater. macOS builds
+   * point at the download page because their bundles are not notarized.
+   */
+  manualUpdateUrl: string | null;
   errorContext: "check" | "download" | "install" | null;
   canRetry: boolean;
 }
@@ -251,6 +257,7 @@ export const DesktopUpdateStateSchema = Schema.Struct({
   downloadPercent: Schema.NullOr(Schema.Number),
   checkedAt: Schema.NullOr(Schema.String),
   message: Schema.NullOr(Schema.String),
+  manualUpdateUrl: Schema.NullOr(Schema.String),
   errorContext: Schema.NullOr(Schema.Literals(["check", "download", "install"])),
   canRetry: Schema.Boolean,
 });
