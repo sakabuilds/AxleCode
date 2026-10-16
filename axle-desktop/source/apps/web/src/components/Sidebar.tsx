@@ -30,6 +30,7 @@ import {
   ThreadWorktreeIndicator,
 } from "./ThreadStatusIndicators";
 import { AxleLogo } from "./AxleLogo";
+import { SidebarAccountMenu } from "./account/SidebarAccountMenu";
 import { PluginsSidebarEntry } from "./plugins/PluginsSidebarEntry";
 import { CloudJobsSidebarEntry } from "./cloud/CloudJobsSidebarEntry";
 import { PullRequestsSidebarEntry } from "./pullRequests/PullRequestsSidebarEntry";
@@ -2955,6 +2956,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
+        <SidebarAccountMenu />
         <SidebarMenuItem>
           <SidebarMenuButton
             size="sm"
