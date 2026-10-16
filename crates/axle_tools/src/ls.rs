@@ -32,7 +32,8 @@ impl Tool for LsTool {
                     "type": "boolean",
                     "description": "Whether to list recursively (default: false)"
                 }
-            }
+            },
+            "required": []
         })
     }
 

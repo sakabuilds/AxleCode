@@ -69,6 +69,17 @@ impl SseDecoder {
     }
 }
 
+/// Reasoning text a thinking-capable OpenAI-compatible endpoint streams
+/// alongside `content`. DeepSeek-style endpoints use `reasoning_content`;
+/// OpenRouter-style relays use `reasoning`. Capturing it here is what lets
+/// later requests pass the assistant turn's thinking back to such endpoints.
+fn openai_reasoning_delta(delta: &Value) -> Option<&str> {
+    delta
+        .get("reasoning_content")
+        .and_then(Value::as_str)
+        .or_else(|| delta.get("reasoning").and_then(Value::as_str))
+}
+
 pub(crate) fn openai(response: Response) -> EventStream {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut byte_stream = response.bytes_stream();
@@ -103,6 +114,9 @@ pub(crate) fn openai(response: Response) -> EventStream {
                 }
                 if let Some(text) = delta["content"].as_str() {
                     let _ = tx.send(AssistantMessageEvent::TextDelta(text.to_string()));
+                }
+                if let Some(reasoning) = openai_reasoning_delta(delta) {
+                    let _ = tx.send(AssistantMessageEvent::ThinkingDelta(reasoning.to_string()));
                 }
                 if let Some(calls) = delta["tool_calls"].as_array() {
                     for call in calls {
@@ -343,6 +357,28 @@ mod tests {
             .unwrap()
             .total_tokens,
             37
+        );
+    }
+
+    #[test]
+    fn openai_reasoning_deltas_cover_deepseek_and_openrouter_field_names() {
+        assert_eq!(
+            openai_reasoning_delta(&serde_json::json!({ "reasoning_content": "think" })),
+            Some("think")
+        );
+        assert_eq!(
+            openai_reasoning_delta(&serde_json::json!({ "reasoning": "plan" })),
+            Some("plan")
+        );
+        assert_eq!(
+            openai_reasoning_delta(&serde_json::json!({ "content": "text" })),
+            None
+        );
+        // `reasoning` as a structured object (some relays) is not text and
+        // must be ignored rather than coerced.
+        assert_eq!(
+            openai_reasoning_delta(&serde_json::json!({ "reasoning": { "text": "x" } })),
+            None
         );
     }
 }

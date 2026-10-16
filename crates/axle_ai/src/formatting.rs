@@ -77,6 +77,22 @@ pub fn openai_messages(messages: &[Message]) -> Vec<Value> {
                             .collect::<Vec<_>>());
                     }
                 }
+                // Thinking-capable endpoints (DeepSeek-style reasoning models
+                // behind OpenRouter/AgentRouter-style relays) reject follow-up
+                // requests that drop the assistant turn's reasoning with
+                // "content[].thinking ... must be passed back". Replay recorded
+                // thinking exactly once, under the field those APIs stream.
+                let reasoning: Vec<&str> = message
+                    .content
+                    .iter()
+                    .filter_map(|part| match part {
+                        ContentPart::Thinking { thinking, .. } => Some(thinking.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                if !reasoning.is_empty() {
+                    value["reasoning_content"] = json!(reasoning.join("\n\n"));
+                }
                 Some(value)
             }
             Role::Tool => message.tool_result.as_ref().map(|result| {
@@ -99,11 +115,48 @@ pub fn openai_tools(tools: &[ToolParamSchema]) -> Vec<Value> {
                 "function": {
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.parameters,
+                    "parameters": sanitize_tool_parameters(&tool.parameters),
                 }
             })
         })
         .collect()
+}
+
+/// Normalize a tool parameter schema so strict OpenAI-compatible validators
+/// accept it.
+///
+/// Some endpoints (notably relays that validate against the stricter Codex
+/// schema rules) reject object schemas whose `required` field is absent and
+/// fail the whole request with `Invalid schema for function 'ls': null is not
+/// of type "array"`. Fill in the missing `required` array and recurse into
+/// nested object schemas so MCP-provided tools are covered too.
+pub fn sanitize_tool_parameters(parameters: &Value) -> Value {
+    let Value::Object(map) = parameters else {
+        return parameters.clone();
+    };
+    let mut sanitized = map.clone();
+    let is_object_schema = sanitized.contains_key("properties")
+        || sanitized.get("type").and_then(Value::as_str) == Some("object");
+    if is_object_schema {
+        match sanitized.get("required") {
+            Some(Value::Array(_)) => {}
+            _ => {
+                sanitized.insert("required".to_string(), Value::Array(Vec::new()));
+            }
+        }
+        if let Some(Value::Object(properties)) = sanitized.get("properties") {
+            let properties: serde_json::Map<String, Value> = properties
+                .iter()
+                .map(|(name, schema)| (name.clone(), sanitize_tool_parameters(schema)))
+                .collect();
+            sanitized.insert("properties".to_string(), Value::Object(properties));
+        }
+    }
+    if let Some(items) = sanitized.get("items") {
+        let items = sanitize_tool_parameters(items);
+        sanitized.insert("items".to_string(), items);
+    }
+    Value::Object(sanitized)
 }
 
 pub fn anthropic_messages(messages: &[Message]) -> (String, Vec<Value>) {
@@ -399,5 +452,85 @@ mod tests {
         assert_eq!(formatted[0]["role"], "user");
         assert_eq!(formatted[1]["role"], "assistant");
         assert_eq!(formatted[1]["content"][0]["text"], "hi there");
+    }
+
+    #[test]
+    fn openai_replays_recorded_thinking_as_reasoning_content() {
+        let mut assistant = Message::assistant("done", None);
+        assistant.content.push(ContentPart::Thinking {
+            thinking: "step one".to_string(),
+            signature: None,
+        });
+        let messages = vec![Message::user("go"), assistant];
+
+        let formatted = openai_messages(&messages);
+
+        assert_eq!(formatted[1]["reasoning_content"], "step one");
+        assert_eq!(formatted[1]["content"], "done");
+    }
+
+    #[test]
+    fn assistant_messages_without_thinking_gain_no_reasoning_field() {
+        let messages = vec![Message::user("go"), Message::assistant("done", None)];
+
+        let formatted = openai_messages(&messages);
+
+        assert!(formatted[1].get("reasoning_content").is_none());
+    }
+
+    #[test]
+    fn tool_schemas_gain_a_required_array_before_strict_validation() {
+        let tools = vec![ToolParamSchema {
+            name: "ls".to_string(),
+            description: "List files".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "nested": {
+                        "type": "object",
+                        "properties": { "deep": { "type": "boolean" } }
+                    }
+                }
+            }),
+        }];
+
+        let formatted = openai_tools(&tools);
+
+        assert_eq!(formatted[0]["function"]["parameters"]["required"], json!([]));
+        assert_eq!(
+            formatted[0]["function"]["parameters"]["properties"]["nested"]["required"],
+            json!([])
+        );
+        assert_eq!(
+            formatted[0]["function"]["parameters"]["properties"]["path"],
+            json!({ "type": "string" })
+        );
+    }
+
+    #[test]
+    fn sanitizer_preserves_declared_required_arrays_and_array_items() {
+        let parameters = json!({
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": { "summary": { "type": "string" } },
+                        "required": ["summary"]
+                    }
+                }
+            },
+            "required": ["steps"]
+        });
+
+        let sanitized = sanitize_tool_parameters(&parameters);
+
+        assert_eq!(sanitized["required"], json!(["steps"]));
+        assert_eq!(
+            sanitized["properties"]["steps"]["items"]["required"],
+            json!(["summary"])
+        );
     }
 }
