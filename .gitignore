@@ -21,3 +21,4 @@
 /axle-download-worker/.wrangler/
 /axle-auth-worker/.wrangler/
 /axle-gateway-worker/.wrangler/
+/axle-landing/.wrangler/
