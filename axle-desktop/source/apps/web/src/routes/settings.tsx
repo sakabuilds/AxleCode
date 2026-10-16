@@ -40,8 +40,12 @@ function SettingsContentLayout() {
   const canGoBack = useCanGoBack();
   const [restoreSignal, setRestoreSignal] = useState(0);
   const showRestoreDefaults = location.pathname === "/settings/general";
+  // Longest-prefix match so a nested page like /settings/account/profile still
+  // names its section in the header instead of falling back.
   const currentSection =
-    SETTINGS_NAV_ITEMS.find((item) => item.to === location.pathname)?.label ?? "Instructions";
+    SETTINGS_NAV_ITEMS.filter(
+      (item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`),
+    ).sort((left, right) => right.to.length - left.to.length)[0]?.label ?? "Instructions";
   const handleRestored = () => setRestoreSignal((value) => value + 1);
   const navigateBackWithinApp = useCallback(() => {
     if (canGoBack) {
