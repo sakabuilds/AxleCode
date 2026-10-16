@@ -1967,6 +1967,40 @@ mod tests {
         drop(session);
         remove_temporary_workspace(workspace).await;
     }
+
+    #[test]
+    fn detects_thinking_replay_errors() {
+        assert!(is_thinking_replay_error(
+            "The `content[].thinking` in the thinking mode must be passed back to the API."
+        ));
+        assert!(is_thinking_replay_error(
+            "thinking must be passed back to the API"
+        ));
+        assert!(is_thinking_replay_error(
+            "reasoning_content must be passed back"
+        ));
+        assert!(!is_thinking_replay_error(
+            "Invalid schema for function 'ls'"
+        ));
+        assert!(!is_thinking_replay_error("invalid api key"));
+    }
+
+    #[test]
+    fn detects_transient_provider_errors_with_capped_backoff() {
+        assert!(is_transient_provider_error("HTTP 503 Service Unavailable"));
+        assert!(is_transient_provider_error("429 Too Many Requests"));
+        assert!(is_transient_provider_error("stream ended unexpectedly"));
+        assert!(is_transient_provider_error("connection reset by peer"));
+        assert!(is_transient_provider_error("request timed out"));
+        assert!(!is_transient_provider_error(
+            "Invalid schema for function 'ls'"
+        ));
+        assert!(!is_transient_provider_error("invalid api key"));
+
+        assert_eq!(stream_retry_delay(1), Duration::from_millis(750));
+        assert_eq!(stream_retry_delay(2), Duration::from_millis(1_500));
+        assert_eq!(stream_retry_delay(3), Duration::from_millis(3_000));
+    }
 }
 
 impl Default for AgentLoopOptions {
@@ -2004,6 +2038,50 @@ fn is_context_window_error(message: &str) -> bool {
         || message.contains("context window")
         || message.contains("contextwindowexceeded")
         || message.contains("maximum context")
+}
+
+const MAX_STREAM_RETRIES: u32 = 3;
+
+fn is_thinking_replay_error(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("content[].thinking")
+        || (message.contains("thinking") && message.contains("must be passed back"))
+        || (message.contains("reasoning_content") && message.contains("passed back"))
+}
+
+fn stream_retry_delay(retry_index: u32) -> Duration {
+    Duration::from_millis(750 * 2u64.saturating_pow(retry_index.saturating_sub(1)))
+}
+
+fn is_transient_provider_error(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    [
+        "429",
+        "rate limit",
+        "rate_limit",
+        "too many requests",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+        "internal server error",
+        "bad gateway",
+        "service unavailable",
+        "gateway timeout",
+        "overloaded",
+        "temporarily unavailable",
+        "timed out",
+        "timeout",
+        "connection reset",
+        "connection closed",
+        "connection refused",
+        "connection error",
+        "econnreset",
+        "etimedout",
+        "stream ended unexpectedly",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle))
 }
 
 fn end_task_summary(tool_call: &ToolCall) -> Option<String> {
@@ -2183,7 +2261,9 @@ impl AgentLoop {
             };
 
             let mut context_recovery_attempted = false;
-            let (text_output, tool_call_parts, provider_state, attempt_usage) = 'completion: loop {
+            let mut thinking_replay_recovery_attempted = false;
+            let mut stream_retry_attempts: u32 = 0;
+            let (text_output, tool_call_parts, provider_state, thinking_output, attempt_usage) = 'completion: loop {
                 if let Some(context_window) = self.options.context_window_tokens {
                     self.compaction
                         .compact(
@@ -2204,13 +2284,38 @@ impl AgentLoop {
                 {
                     Ok(stream) => stream,
                     Err(error) => {
-                        if !context_recovery_attempted
-                            && is_context_window_error(&error.to_string())
-                        {
+                        let error_text = error.to_string();
+                        if !context_recovery_attempted && is_context_window_error(&error_text) {
                             context_recovery_attempted = true;
                             if self.compact_session_now(session).await? {
                                 continue 'completion;
                             }
+                        }
+                        if !thinking_replay_recovery_attempted
+                            && is_thinking_replay_error(&error_text)
+                            && session.repair_missing_thinking_for_replay() > 0
+                        {
+                            thinking_replay_recovery_attempted = true;
+                            session.rewrite_session_file().await?;
+                            tracing::warn!(
+                                "LLM rejected replayed history without thinking parts; repaired session and retrying"
+                            );
+                            continue 'completion;
+                        }
+                        if stream_retry_attempts < MAX_STREAM_RETRIES
+                            && is_transient_provider_error(&error_text)
+                        {
+                            stream_retry_attempts += 1;
+                            let delay = stream_retry_delay(stream_retry_attempts);
+                            tracing::warn!(
+                                "Transient provider error on stream start (attempt {}/{}): {}; retrying in {:?}",
+                                stream_retry_attempts,
+                                MAX_STREAM_RETRIES,
+                                error_text,
+                                delay
+                            );
+                            sleep(delay).await;
+                            continue 'completion;
                         }
                         tracing::error!("LLM stream failed: {}", error);
                         return Err(error);
@@ -2218,6 +2323,7 @@ impl AgentLoop {
                 };
 
                 let mut text_output = String::new();
+                let mut thinking_output = String::new();
                 let mut tool_call_parts: Vec<(String, String, String)> = Vec::new();
                 let mut provider_state = Vec::new();
                 let mut attempt_usage = UsageStats {
@@ -2262,6 +2368,22 @@ impl AgentLoop {
                                     continue 'completion;
                                 }
                             }
+                            if !saw_partial_output
+                                && stream_retry_attempts < MAX_STREAM_RETRIES
+                                && is_transient_provider_error(&message)
+                            {
+                                stream_retry_attempts += 1;
+                                let delay = stream_retry_delay(stream_retry_attempts);
+                                tracing::warn!(
+                                    "Transient provider error mid-stream (attempt {}/{}): {}; retrying in {:?}",
+                                    stream_retry_attempts,
+                                    MAX_STREAM_RETRIES,
+                                    message,
+                                    delay
+                                );
+                                sleep(delay).await;
+                                continue 'completion;
+                            }
                             anyhow::bail!(message)
                         }
                         AssistantMessageEvent::Done { usage: Some(usage) } => {
@@ -2272,7 +2394,9 @@ impl AgentLoop {
                         AssistantMessageEvent::ProviderState(state) => {
                             provider_state.push(state);
                         }
-                        AssistantMessageEvent::ThinkingDelta(_) => {}
+                        AssistantMessageEvent::ThinkingDelta(delta) => {
+                            thinking_output.push_str(&delta);
+                        }
                         AssistantMessageEvent::Done { usage: None } => {
                             saw_completion = true;
                             break;
@@ -2284,7 +2408,13 @@ impl AgentLoop {
                         "LLM stream ended before a completion event; refusing to treat partial output as a completed turn"
                     );
                 }
-                break (text_output, tool_call_parts, provider_state, attempt_usage);
+                break (
+                    text_output,
+                    tool_call_parts,
+                    provider_state,
+                    thinking_output,
+                    attempt_usage,
+                );
             };
             self.record_usage(&mut cumulative_usage, &attempt_usage);
 
@@ -2330,6 +2460,12 @@ impl AgentLoop {
             assistant_msg.provider = Some(self.provider.provider_name().to_string());
             assistant_msg.model = Some(self.options.model_name.clone());
             assistant_msg.content.extend(provider_state);
+            if self.provider.provider_name() != "openai-codex" && !thinking_output.is_empty() {
+                assistant_msg.content.push(ContentPart::Thinking {
+                    thinking: thinking_output,
+                    signature: None,
+                });
+            }
 
             let tool_calls = assistant_msg.tool_calls.clone().unwrap_or_default();
             let end_task_call_index = tool_calls.iter().position(|call| {
