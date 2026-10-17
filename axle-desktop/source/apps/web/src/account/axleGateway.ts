@@ -3,14 +3,18 @@
  *
  * The gateway is the `--provider axle` endpoint: it holds Axle's own upstream
  * key, so a user reaches every Axle model with an Axle API key and no vendor
- * account of their own. Credits are the unit it meters in — 100 credits is
- * $0.50, and every account gets 100 credits each UTC day for free.
+ * account of their own. Credits are the unit it meters in — every account gets
+ * a fresh daily grant of them for free.
+ *
+ * Balance and usage are read through the local server (`/api/axle/*`), because
+ * the gateway identifies a caller by key and provider secrets only ever exist
+ * server-side. The model catalog is public and is fetched directly.
  */
 
-const DEFAULT_GATEWAY_URL = "https://axle-gateway.axle-download-worker.workers.dev/v1";
+import { fetchPrimaryEnvironment } from "../environments/primary/httpLayer";
+import { resolvePrimaryEnvironmentHttpUrl } from "../environments/primary/target";
 
-/** USD value of one Axle credit, mirrored from the gateway's `credit_usd`. */
-export const CREDIT_USD = 0.005;
+const DEFAULT_GATEWAY_URL = "https://axle-gateway.axle-download-worker.workers.dev/v1";
 
 export function axleGatewayBaseUrl(): string {
   const configured = import.meta.env.VITE_AXLE_GATEWAY_URL?.trim() || DEFAULT_GATEWAY_URL;
@@ -23,9 +27,7 @@ export function axleGatewayBaseUrl(): string {
 
 export interface AxleCredits {
   readonly credits: number;
-  readonly creditUsd: number;
   readonly dailyFreeCredits: number;
-  readonly balanceUsd: number;
 }
 
 export interface AxleUsageEntry {
@@ -66,18 +68,16 @@ function messageFrom(value: unknown, fallback: string): string {
   return fallback;
 }
 
-async function gatewayGet(path: string, secret: string | null): Promise<unknown> {
-  const response = await fetch(`${axleGatewayBaseUrl()}${path}`, {
-    headers: {
-      Accept: "application/json",
-      ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
-    },
-    credentials: "omit",
+async function environmentGet(path: string): Promise<unknown> {
+  const requestUrl = resolvePrimaryEnvironmentHttpUrl(path);
+  const response = await fetchPrimaryEnvironment(requestUrl, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(20_000),
   });
   const value = (await response.json().catch(() => null)) as unknown;
   if (!response.ok) {
     throw new AxleGatewayError(
-      messageFrom(value, `The Axle gateway refused the request (${response.status}).`),
+      messageFrom(value, `Credits could not be loaded (HTTP ${response.status}).`),
       response.status,
     );
   }
@@ -88,27 +88,30 @@ function asNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-/** The account's balance, applying today's free grant on the way through. */
-export async function fetchAxleCredits(secret: string): Promise<AxleCredits> {
-  const value = (await gatewayGet("/credits", secret)) as Record<string, unknown> | null;
-  const credits = asNumber(value?.credits);
+/**
+ * The connected account's balance, applying today's free grant on the way
+ * through. `null` means this app has no account key connected to the Axle
+ * provider yet, so there is no account balance to show.
+ */
+export async function fetchAxleCredits(): Promise<AxleCredits | null> {
+  const value = (await environmentGet("/api/axle/credits")) as Record<string, unknown> | null;
+  if (value?.connected !== true) return null;
   return {
-    credits,
-    creditUsd: asNumber(value?.credit_usd, CREDIT_USD),
-    dailyFreeCredits: asNumber(value?.daily_free_credits),
-    balanceUsd: asNumber(value?.balance_usd, credits * CREDIT_USD),
+    credits: asNumber(value.credits),
+    dailyFreeCredits: asNumber(value.daily_free_credits),
   };
 }
 
-/** Recent grants and spends, newest first. */
-export async function fetchAxleUsage(
-  secret: string,
-  limit = 25,
-): Promise<ReadonlyArray<AxleUsageEntry>> {
-  const value = (await gatewayGet(`/usage?limit=${encodeURIComponent(String(limit))}`, secret)) as {
+/** Recent grants and spends, newest first. Empty when no account key is connected. */
+export async function fetchAxleUsage(limit = 25): Promise<ReadonlyArray<AxleUsageEntry>> {
+  const value = (await environmentGet(
+    `/api/axle/usage?limit=${encodeURIComponent(String(limit))}`,
+  )) as {
+    connected?: unknown;
     entries?: unknown;
   } | null;
-  const entries = Array.isArray(value?.entries) ? value.entries : [];
+  if (value?.connected !== true) return [];
+  const entries = Array.isArray(value.entries) ? value.entries : [];
   return entries.map((entry) => {
     const row = entry as Record<string, unknown>;
     return {
@@ -123,7 +126,17 @@ export async function fetchAxleUsage(
 
 /** The Axle model catalog and its credit rates. Public: no key required. */
 export async function fetchAxleModelRates(): Promise<ReadonlyArray<AxleModelRate>> {
-  const value = (await gatewayGet("/models", null)) as { data?: unknown } | null;
+  const response = await fetch(`${axleGatewayBaseUrl()}/models`, {
+    headers: { Accept: "application/json" },
+    credentials: "omit",
+  });
+  const value = (await response.json().catch(() => null)) as { data?: unknown } | null;
+  if (!response.ok) {
+    throw new AxleGatewayError(
+      messageFrom(value, `The Axle gateway refused the request (${response.status}).`),
+      response.status,
+    );
+  }
   const data = Array.isArray(value?.data) ? value.data : [];
   return data.map((entry) => {
     const row = entry as Record<string, unknown>;
@@ -144,8 +157,4 @@ export function formatCredits(value: number): string {
   return Number.isInteger(value)
     ? String(value)
     : value.toFixed(4).replace(/0+$/u, "").replace(/\.$/u, "");
-}
-
-export function formatUsd(value: number): string {
-  return `$${value.toFixed(2)}`;
 }
