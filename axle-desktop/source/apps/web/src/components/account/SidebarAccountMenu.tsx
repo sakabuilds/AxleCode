@@ -5,6 +5,7 @@ import {
   LogInIcon,
   LogOutIcon,
   LoaderCircleIcon,
+  SparklesIcon,
   UserRoundIcon,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -13,6 +14,10 @@ import { useCallback, useState } from "react";
 import { useAccountActions, useAccountState } from "../../account/AccountAuthProvider";
 import { signOutAccount } from "../../account/accountClient";
 import { useAccountSnapshot } from "../../account/useAccountSnapshot";
+import { openUpgradeDialog } from "../billing/UpgradeDialog";
+import { PLAN_DISPLAY, planTierFromId } from "../../entitlements/planCatalog";
+import { useEntitlements, resolvedEntitlements } from "../../entitlements/useEntitlements";
+import { Badge } from "../ui/badge";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from "../ui/sidebar";
 import { AccountAvatar } from "./AccountAvatar";
@@ -28,6 +33,9 @@ export function SidebarAccountMenu() {
   const account = useAccountState();
   const { signIn, signOut } = useAccountActions();
   const { state } = useAccountSnapshot();
+  const entitlements = resolvedEntitlements(useEntitlements());
+  const planTier = planTierFromId(entitlements?.planId ?? null);
+  const showUpgrade = entitlements !== null && planTier !== "team";
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
   const [signingOut, setSigningOut] = useState(false);
@@ -97,7 +105,14 @@ export function SidebarAccountMenu() {
         >
           <AccountAvatar url={profile?.avatarUrl ?? null} name={label} email={email} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] leading-4.5">{label}</span>
+            <span className="flex items-center gap-1.5">
+              <span className="min-w-0 truncate text-[13px] leading-4.5">{label}</span>
+              {planTier === "pro" || planTier === "team" ? (
+                <Badge variant="secondary" size="sm">
+                  {PLAN_DISPLAY[planTier].name}
+                </Badge>
+              ) : null}
+            </span>
             {email ? (
               <span className="block truncate text-[11px] leading-4 text-sidebar-foreground/55">
                 {email}
@@ -134,6 +149,17 @@ export function SidebarAccountMenu() {
             <KeyRoundIcon className="size-3.5" />
             API keys
           </MenuItem>
+          {showUpgrade ? (
+            <MenuItem
+              onClick={() => {
+                closeMobileSidebar();
+                openUpgradeDialog("account-menu");
+              }}
+            >
+              <SparklesIcon className="size-3.5" />
+              Upgrade plan
+            </MenuItem>
+          ) : null}
           <MenuSeparator />
           <MenuItem disabled={signingOut} onClick={() => void handleSignOut()}>
             {signingOut ? (
