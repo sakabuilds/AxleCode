@@ -47,6 +47,19 @@ jobs:
     defaults:
       run:
         working-directory: axle-desktop/source
+    env:
+      # A stored Developer ID certificate is the only switch for the whole Apple
+      # signing path, so a repository without one still publishes an unsigned
+      # artifact instead of failing the release.
+      T3CODE_DESKTOP_SIGNED: ${{ secrets.CSC_LINK != '' && 'true' || 'false' }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      T3CODE_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
 
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +104,28 @@ jobs:
         run: node scripts/verify-github-oauth-build.mjs
         working-directory: axle-desktop/source
 
+      - name: Prepare Apple signing material
+        if: env.CSC_LINK != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          material_dir="${RUNNER_TEMP}/axle-apple-signing"
+          mkdir -p "$material_dir"
+          # electron-builder expects a path to the notarization key rather than
+          # its contents, so the secret only becomes a file for this job.
+          if [[ -n "${APPLE_API_KEY_CONTENT:-}" ]]; then
+            key_path="${material_dir}/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY_CONTENT" > "$key_path"
+            echo "APPLE_API_KEY=${key_path}" >> "$GITHUB_ENV"
+          fi
+          # Passkey builds need a real provisioning profile on disk.
+          if [[ -n "${MACOS_PROVISIONING_PROFILE:-}" ]]; then
+            profile_path="${material_dir}/axle.provisionprofile"
+            printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 --decode > "$profile_path"
+            security cms -D -i "$profile_path" > /dev/null
+            echo "T3CODE_MACOS_PROVISIONING_PROFILE=${profile_path}" >> "$GITHUB_ENV"
+          fi
+
       - run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:x64
         working-directory: axle-desktop/source
         env:
@@ -98,9 +133,6 @@ jobs:
           AXLE_UPDATE_URL: ${{ vars.AXLE_UPDATE_SITE_URL || 'https://axle-download.axle-download-worker.workers.dev/get' }}/updates/macos/x64
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
       - name: Verify macOS x64 updater artifacts
         shell: bash
@@ -142,6 +174,18 @@ jobs:
     defaults:
       run:
         working-directory: axle-desktop/source
+    env:
+      # Mirrors the x64 job: signing stays off until a Developer ID certificate
+      # is stored, and the same Apple material feeds both architectures.
+      T3CODE_DESKTOP_SIGNED: ${{ secrets.CSC_LINK != '' && 'true' || 'false' }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      T3CODE_APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
 
     steps:
       - uses: actions/checkout@v4
@@ -186,6 +230,25 @@ jobs:
         run: node scripts/verify-github-oauth-build.mjs
         working-directory: axle-desktop/source
 
+      - name: Prepare Apple signing material
+        if: env.CSC_LINK != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          material_dir="${RUNNER_TEMP}/axle-apple-signing"
+          mkdir -p "$material_dir"
+          if [[ -n "${APPLE_API_KEY_CONTENT:-}" ]]; then
+            key_path="${material_dir}/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY_CONTENT" > "$key_path"
+            echo "APPLE_API_KEY=${key_path}" >> "$GITHUB_ENV"
+          fi
+          if [[ -n "${MACOS_PROVISIONING_PROFILE:-}" ]]; then
+            profile_path="${material_dir}/axle.provisionprofile"
+            printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 --decode > "$profile_path"
+            security cms -D -i "$profile_path" > /dev/null
+            echo "T3CODE_MACOS_PROVISIONING_PROFILE=${profile_path}" >> "$GITHUB_ENV"
+          fi
+
       - run: pnpm --config.verify-deps-before-run=false dist:desktop:dmg:arm64
         working-directory: axle-desktop/source
         env:
@@ -193,9 +256,6 @@ jobs:
           AXLE_UPDATE_URL: ${{ vars.AXLE_UPDATE_SITE_URL || 'https://axle-download.axle-download-worker.workers.dev/get' }}/updates/macos/arm64
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
       - name: Verify macOS arm64 updater artifacts
         shell: bash
