@@ -1,9 +1,12 @@
+// @effect-diagnostics nodeBuiltinImport:off - Desktop main-process startup probes the on-disk macOS bundle for its code signature before an Effect filesystem service is available.
 import type {
   DesktopAppBranding,
   DesktopAppStageLabel,
   DesktopRuntimeArch,
   DesktopRuntimeInfo,
 } from "@axle/contracts";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -25,6 +28,11 @@ export interface MakeDesktopEnvironmentInput {
   readonly isPackaged: boolean;
   readonly resourcesPath: string;
   readonly runningUnderArm64Translation: boolean;
+  /**
+   * Override for `macBundleSigned`; tests use it to describe a build without
+   * a real macOS bundle on disk. Production reads the bundle itself.
+   */
+  readonly macBundleSigned?: boolean;
 }
 
 export class DesktopEnvironment extends Context.Service<
@@ -39,6 +47,11 @@ export class DesktopEnvironment extends Context.Service<
     readonly appVersion: string;
     readonly appPath: string;
     readonly resourcesPath: string;
+    /**
+     * True when this is not macOS, or when the macOS bundle is signed. An
+     * unsigned macOS bundle can never install an update.
+     */
+    readonly macBundleSigned: boolean;
     readonly homeDirectory: string;
     readonly appDataDirectory: string;
     readonly baseDir: string;
@@ -101,6 +114,19 @@ function resolveDesktopAppBranding(input: {
   };
 }
 
+/**
+ * Whether a packaged macOS bundle carries a code signature.
+ *
+ * Electron hands macOS updates to Squirrel, which refuses to apply them to an
+ * unsigned bundle. Such an install can check for an update and even download
+ * it, then fail at install, which is worse than saying so up front. Every
+ * `codesign` pass writes `_CodeSignature/CodeResources` and nothing else does,
+ * so its presence is a cheap and reliable startup signal.
+ */
+export function isMacBundleCodeSigned(resourcesPath: string): boolean {
+  return NodeFS.existsSync(NodePath.join(resourcesPath, "..", "_CodeSignature", "CodeResources"));
+}
+
 function normalizeDesktopArch(arch: string): DesktopRuntimeArch {
   if (arch === "arm64") return "arm64";
   if (arch === "x64") return "x64";
@@ -150,7 +176,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
         ? path.join(homeDirectory, "Library", "Application Support")
         : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
   const configuredBaseDir = config.t3Home;
-  const baseDir = Option.getOrElse(configuredBaseDir, () => path.join(homeDirectory, ".axle-desktop"));
+  const baseDir = Option.getOrElse(configuredBaseDir, () =>
+    path.join(homeDirectory, ".axle-desktop"),
+  );
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged
     ? input.appPath
@@ -172,6 +200,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
     ? ["rivet-dev", "Sparky (Dev)"]
     : ["rivet", "Sparky (Alpha)"];
   const resourcesPath = input.resourcesPath;
+  const macBundleSigned =
+    input.macBundleSigned ??
+    (input.platform !== "darwin" || isMacBundleCodeSigned(input.resourcesPath));
 
   return DesktopEnvironment.of({
     path,
@@ -183,6 +214,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     appVersion: input.appVersion,
     appPath: input.appPath,
     resourcesPath,
+    macBundleSigned,
     homeDirectory,
     appDataDirectory,
     baseDir,
