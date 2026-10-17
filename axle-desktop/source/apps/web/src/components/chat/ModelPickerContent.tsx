@@ -11,10 +11,9 @@ import { ModelListRow } from "./ModelListRow";
 import {
   ModelPickerSidebar,
   type ModelCatalogSection,
-  type ModelCatalogSectionId,
   type ModelPickerRailSelection,
 } from "./ModelPickerSidebar";
-import { ClaudeAI, FireworksAI, Gemini, Ollama, OpenAI } from "../Icons";
+import { AxleIcon, ClaudeAI, FireworksAI, Gemini, Ollama, OpenAI } from "../Icons";
 import { isModelPickerNewModel } from "./modelPickerModelHighlights";
 import { buildModelPickerSearchText, scoreModelPickerSearch } from "./modelPickerSearch";
 import { Combobox, ComboboxEmpty, ComboboxInput, ComboboxListVirtualized } from "../ui/combobox";
@@ -34,7 +33,7 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
-import { isModelInAxleCatalog } from "./axleModelCatalog";
+import { catalogSectionForModel, isModelInAxleCatalog } from "./axleModelCatalog";
 
 type ModelPickerItem = {
   slug: string;
@@ -51,6 +50,9 @@ type ModelPickerItem = {
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 
 const AXLE_MODEL_CATALOGS: ReadonlyArray<ModelCatalogSection> = [
+  // Axle's own hosted models come first: they are the provider Axle ships,
+  // so they are the ones a new user can reach without connecting anything.
+  { id: "catalog:Axle", label: "Axle", Icon: AxleIcon },
   { id: "catalog:Claude", label: "Claude", Icon: ClaudeAI },
   { id: "catalog:OpenAI", label: "OpenAI", Icon: OpenAI },
   { id: "catalog:Google", label: "Google", Icon: Gemini },
@@ -58,15 +60,6 @@ const AXLE_MODEL_CATALOGS: ReadonlyArray<ModelCatalogSection> = [
   { id: "catalog:Ollama Cloud", label: "Ollama Cloud", Icon: Ollama },
   { id: "catalog:OpenRouter", label: "OpenRouter", Icon: OpenRouterLogo },
 ];
-
-function catalogSectionForModel(model: string): ModelCatalogSectionId {
-  if (model.startsWith("anthropic/")) return "catalog:Claude";
-  if (model.startsWith("google/")) return "catalog:Google";
-  if (model.startsWith("fireworks/")) return "catalog:Fireworks";
-  if (model.startsWith("ollama-cloud/")) return "catalog:Ollama Cloud";
-  if (model.startsWith("openrouter/")) return "catalog:OpenRouter";
-  return "catalog:OpenAI";
-}
 
 // Split a `${instanceId}:${slug}` combobox key back into its pieces. Slugs
 // can contain colons (e.g. some vendor model ids), so we only split on the
@@ -372,9 +365,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       result = result.filter((m) => favoritesSet.has(providerModelKey(m.instanceId, m.slug)));
     } else if (selectedInstanceId.startsWith("catalog:")) {
       const section = AXLE_MODEL_CATALOGS.find((item) => item.id === selectedInstanceId);
-      result = section
-        ? result.filter((m) => isModelInAxleCatalog(section.id, m.subProvider))
-        : [];
+      result = section ? result.filter((m) => isModelInAxleCatalog(section.id, m.subProvider)) : [];
     } else {
       result = result.filter((m) => m.instanceId === selectedInstanceId);
     }
