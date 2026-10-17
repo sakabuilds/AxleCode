@@ -13,17 +13,13 @@ import {
   RefreshCwIcon,
   ShieldAlertIcon,
 } from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { readClerkAccountToken } from "../../account/clerkRuntime";
 import { useAccountActions } from "../../account/AccountAuthProvider";
+import { openUpgradeDialog } from "../billing/UpgradeDialog";
+import { cloudJobsLocked } from "../../entitlements/gates";
+import { useEntitlements, resolvedEntitlements } from "../../entitlements/useEntitlements";
 import { resolveCloudPublicConfig } from "../../cloud/publicConfig";
 import { cn, randomUUID } from "../../lib/utils";
 import { formatRelativeTimeLabel, formatRelativeTimeUntilLabel } from "../../timestampFormat";
@@ -45,11 +41,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Spinner } from "../ui/spinner";
 import { Textarea } from "../ui/textarea";
 
-const TERMINAL_JOB_STATES: ReadonlySet<CloudJob["state"]> = new Set(["completed", "failed", "cancelled"]);
+const TERMINAL_JOB_STATES: ReadonlySet<CloudJob["state"]> = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+]);
 
 const JOB_STATE_PRESENTATION: Record<
   CloudJob["state"],
-  { readonly label: string; readonly variant: "outline" | "info" | "warning" | "success" | "error" | "secondary" }
+  {
+    readonly label: string;
+    readonly variant: "outline" | "info" | "warning" | "success" | "error" | "secondary";
+  }
 > = {
   queued: { label: "Queued", variant: "outline" },
   provisioning: { label: "Provisioning", variant: "info" },
@@ -87,6 +90,8 @@ function describeError(error: unknown): string {
         return "Could not reach the account service. Check your connection and retry.";
       case "cloud_not_configured":
         return "Cloud execution is not configured for this deployment.";
+      case "cloud_not_entitled":
+        return "Cloud jobs are included with Axle Pro. Upgrade to start cloud runs.";
       case "cloud_access_denied":
       case "forbidden":
         return "Your account does not have access to cloud execution.";
@@ -235,7 +240,11 @@ function PendingRequestCard({
             data-testid="cloud-job-approve"
             onClick={() => onRespond(request, { decision: "allow" })}
           >
-            {busy ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : <CheckIcon className="size-3.5" />}
+            {busy ? (
+              <LoaderCircleIcon className="size-3.5 animate-spin" />
+            ) : (
+              <CheckIcon className="size-3.5" />
+            )}
             Approve
           </Button>
           <Button
@@ -309,7 +318,10 @@ function EventsList({ events }: { readonly events: ReadonlyArray<CloudJobEvent> 
 function ArtifactsSection({ job }: { readonly job: CloudJob }) {
   if (job.result === null) return null;
   return (
-    <section aria-label="Result artifacts" className="rounded-lg border border-border bg-muted/15 px-4 py-3">
+    <section
+      aria-label="Result artifacts"
+      className="rounded-lg border border-border bg-muted/15 px-4 py-3"
+    >
       <h2 className="text-sm font-semibold text-foreground">Result</h2>
       <p className="mt-1 text-xs text-muted-foreground">
         <span className="font-mono">{shortRevision(job.result.sourceRevision)}</span>
@@ -331,7 +343,9 @@ function ArtifactsSection({ job }: { readonly job: CloudJob }) {
               <span className="min-w-0 flex-1 truncate font-mono text-foreground/80">
                 {artifact.storageKey}
               </span>
-              <span className="shrink-0 text-muted-foreground">{formatBytes(artifact.sizeBytes)}</span>
+              <span className="shrink-0 text-muted-foreground">
+                {formatBytes(artifact.sizeBytes)}
+              </span>
             </li>
           ))}
         </ul>
@@ -410,7 +424,9 @@ function CreateJobDialog({
         interactionMode,
       });
     } catch {
-      setSubmitError("Some values are invalid. Check the revision, environment id, and provider instance id.");
+      setSubmitError(
+        "Some values are invalid. Check the revision, environment id, and provider instance id.",
+      );
       setSubmitting(false);
       return;
     }
@@ -544,7 +560,12 @@ function CreateJobDialog({
           ) : null}
         </DialogPanel>
         <DialogFooter>
-          <Button variant="ghost" size="sm" disabled={submitting} onClick={() => onOpenChange(false)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={submitting}
+            onClick={() => onOpenChange(false)}
+          >
             Cancel
           </Button>
           <Button
@@ -554,7 +575,11 @@ function CreateJobDialog({
             disabled={submitting || validationError !== null}
             onClick={() => void handleSubmit()}
           >
-            {submitting ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : <PlusIcon className="size-3.5" />}
+            {submitting ? (
+              <LoaderCircleIcon className="size-3.5 animate-spin" />
+            ) : (
+              <PlusIcon className="size-3.5" />
+            )}
             Start cloud job
           </Button>
         </DialogFooter>
@@ -564,6 +589,8 @@ function CreateJobDialog({
 }
 export function CloudJobsPage() {
   const { signIn } = useAccountActions();
+  const entitlements = resolvedEntitlements(useEntitlements());
+  const jobsLocked = cloudJobsLocked(entitlements);
   const client = useMemo(() => {
     const { accountApiUrl } = resolveCloudPublicConfig();
     if (accountApiUrl === null) return null;
@@ -584,6 +611,14 @@ export function CloudJobsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [inputDraft, setInputDraft] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+
+  const openCreateFlow = useCallback(() => {
+    if (jobsLocked) {
+      openUpgradeDialog("cloud-jobs");
+      return;
+    }
+    setCreateOpen(true);
+  }, [jobsLocked]);
 
   const listRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
@@ -768,7 +803,10 @@ export function CloudJobsPage() {
     (created: CloudJob) => {
       setPhase("ready");
       setSelectedJobId(created.jobId);
-      setJobs((previous) => [created, ...previous.filter((candidate) => candidate.jobId !== created.jobId)]);
+      setJobs((previous) => [
+        created,
+        ...previous.filter((candidate) => candidate.jobId !== created.jobId),
+      ]);
       void refreshJobs();
     },
     [refreshJobs],
@@ -812,7 +850,12 @@ export function CloudJobsPage() {
               <LogInIcon className="size-3.5" />
               Sign in to Axle
             </Button>
-            <Button variant="outline" size="sm" disabled={jobsBusy} onClick={() => void refreshJobs()}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={jobsBusy}
+              onClick={() => void refreshJobs()}
+            >
               <RefreshCwIcon className={cn("size-3.5", jobsBusy && "animate-spin")} />
               Check again
             </Button>
@@ -832,6 +875,11 @@ export function CloudJobsPage() {
               <CloudIcon className="size-3" />
               Cloud
             </Badge>
+            {jobsLocked ? (
+              <Badge variant="secondary" size="sm">
+                Pro
+              </Badge>
+            ) : null}
             <div className="ml-auto flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -847,7 +895,7 @@ export function CloudJobsPage() {
                 size="sm"
                 className="h-7 px-2 text-xs"
                 data-testid="cloud-job-create-open"
-                onClick={() => setCreateOpen(true)}
+                onClick={openCreateFlow}
               >
                 <PlusIcon className="size-3.5" />
                 New job
@@ -858,6 +906,18 @@ export function CloudJobsPage() {
             Independent cloud runners. Jobs keep executing when your computer is offline. Local
             sessions are not listed here.
           </p>
+          {jobsLocked ? (
+            <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+              Cloud jobs are included with Axle Pro.{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2 transition-colors hover:text-foreground"
+                onClick={() => openUpgradeDialog("cloud-jobs")}
+              >
+                Upgrade
+              </button>
+            </p>
+          ) : null}
           {loadError !== null ? (
             <p role="alert" className="mt-2 text-xs leading-5 text-muted-foreground">
               {loadError}
@@ -888,7 +948,10 @@ export function CloudJobsPage() {
           )}
         </div>
       </JobsAsideShell>
-      <section aria-label="Cloud job detail" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <section
+        aria-label="Cloud job detail"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
         <JobDetailPanel
           job={job}
           selectedJobId={selectedJobId}
@@ -901,10 +964,15 @@ export function CloudJobsPage() {
           onRespond={handleRespond}
           onCancel={handleCancel}
           onRetry={() => void refreshJobs()}
-          onCreate={() => setCreateOpen(true)}
+          onCreate={openCreateFlow}
         />
       </section>
-      <CreateJobDialog client={client} open={createOpen} onOpenChange={setCreateOpen} onCreated={handleCreated} />
+      <CreateJobDialog
+        client={client}
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={handleCreated}
+      />
     </PageShell>
   );
 }
@@ -1000,7 +1068,10 @@ function JobDetailPanel({
         <header className="space-y-2">
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-sm font-semibold tracking-tight" title={job.input.prompt}>
+              <h1
+                className="truncate text-sm font-semibold tracking-tight"
+                title={job.input.prompt}
+              >
                 {title}
               </h1>
               <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
@@ -1023,18 +1094,28 @@ function JobDetailPanel({
                 data-testid="cloud-job-cancel"
                 onClick={onCancel}
               >
-                {actionBusy ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : <BanIcon className="size-3.5" />}
+                {actionBusy ? (
+                  <LoaderCircleIcon className="size-3.5 animate-spin" />
+                ) : (
+                  <BanIcon className="size-3.5" />
+                )}
                 {job.cancelRequestedAt !== null ? "Cancelling…" : "Cancel"}
               </Button>
             ) : null}
           </div>
           {job.failureCode !== null ? (
-            <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-xs text-destructive-foreground">
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-xs text-destructive-foreground"
+            >
               Cloud job failed: {job.failureCode.replaceAll("_", " ")}.
             </p>
           ) : null}
           {actionError !== null ? (
-            <p role="alert" className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <p
+              role="alert"
+              className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+            >
               {actionError}
             </p>
           ) : null}
@@ -1050,16 +1131,27 @@ function JobDetailPanel({
           />
         ) : null}
 
-        <section aria-label="Job details" className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted/15 px-4 py-3 text-xs sm:grid-cols-4">
+        <section
+          aria-label="Job details"
+          className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted/15 px-4 py-3 text-xs sm:grid-cols-4"
+        >
           <div>
             <div className="text-muted-foreground">Created</div>
-            <time dateTime={job.createdAt} title={job.createdAt} className="mt-0.5 block text-foreground/90">
+            <time
+              dateTime={job.createdAt}
+              title={job.createdAt}
+              className="mt-0.5 block text-foreground/90"
+            >
               {formatRelativeTimeLabel(job.createdAt)}
             </time>
           </div>
           <div>
             <div className="text-muted-foreground">Deadline</div>
-            <time dateTime={job.deadlineAt} title={job.deadlineAt} className="mt-0.5 block text-foreground/90">
+            <time
+              dateTime={job.deadlineAt}
+              title={job.deadlineAt}
+              className="mt-0.5 block text-foreground/90"
+            >
               {formatRelativeTimeUntilLabel(job.deadlineAt)}
             </time>
           </div>
@@ -1077,7 +1169,10 @@ function JobDetailPanel({
           </div>
         </section>
 
-        <section aria-label="Task" className="rounded-lg border border-border bg-muted/15 px-4 py-3">
+        <section
+          aria-label="Task"
+          className="rounded-lg border border-border bg-muted/15 px-4 py-3"
+        >
           <h2 className="text-sm font-semibold text-foreground">Task</h2>
           <p className="mt-1.5 whitespace-pre-wrap break-words text-xs leading-5 text-foreground/85">
             {job.input.prompt}
