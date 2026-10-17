@@ -113,20 +113,16 @@ mod tests {
         let counted = attempts.clone();
         // Port 9 on the loopback interface refuses instantly, which yields a
         // real transport error without touching the network.
-        let result = send_with_retry_backoff(
-            "test",
-            Duration::from_millis(1),
-            &mut move || {
-                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                async {
-                    Err(reqwest::Client::new()
-                        .get("http://127.0.0.1:9/")
-                        .send()
-                        .await
-                        .unwrap_err())
-                }
-            },
-        )
+        let result = send_with_retry_backoff("test", Duration::from_millis(1), &mut move || {
+            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async {
+                Err(reqwest::Client::new()
+                    .get("http://127.0.0.1:9/")
+                    .send()
+                    .await
+                    .unwrap_err())
+            }
+        })
         .await;
 
         assert!(result.is_err());
