@@ -11,18 +11,18 @@ import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  CREDIT_USD,
   fetchAxleCredits,
   fetchAxleModelRates,
   fetchAxleUsage,
   formatCredits,
-  formatUsd,
   type AxleCredits,
   type AxleModelRate,
   type AxleUsageEntry,
 } from "../../account/axleGateway";
-import { useAccountApiKeys } from "../../account/useAccountApiKeys";
 import { SettingsSection, useRelativeTimeTick } from "../settings/settingsLayout";
+import { openUpgradeDialog } from "../billing/UpgradeDialog";
+import { premiumModelsLocked } from "../../entitlements/gates";
+import { useEntitlements, resolvedEntitlements } from "../../entitlements/useEntitlements";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
@@ -37,6 +37,9 @@ const ENTRY_LABELS: Record<string, string> = {
   refund: "Usage adjustment",
 };
 
+/** Gateway tiers at or above this one are Pro-only. */
+const PREMIUM_MODEL_TIER = 2;
+
 function entryLabel(kind: string): string {
   return ENTRY_LABELS[kind] ?? kind.replaceAll("_", " ");
 }
@@ -50,33 +53,27 @@ function formatContextWindow(tokens: number): string {
 
 interface CreditsLoad {
   readonly credits: AxleCredits | null;
+  /** `false` when the app is not connected to an Axle account yet. */
+  readonly connected: boolean | null;
   readonly usage: ReadonlyArray<AxleUsageEntry>;
   readonly error: string | null;
   readonly loading: boolean;
 }
 
-function useAxleCredits(
-  secret: string | null,
-): CreditsLoad & { readonly reload: () => Promise<void> } {
+function useAxleCredits(): CreditsLoad & { readonly reload: () => Promise<void> } {
   const [state, setState] = useState<CreditsLoad>({
     credits: null,
+    connected: null,
     usage: [],
     error: null,
     loading: true,
   });
 
   const reload = useCallback(async () => {
-    if (!secret) {
-      setState({ credits: null, usage: [], error: null, loading: false });
-      return;
-    }
     setState((previous) => ({ ...previous, loading: true, error: null }));
     try {
-      const [credits, usage] = await Promise.all([
-        fetchAxleCredits(secret),
-        fetchAxleUsage(secret),
-      ]);
-      setState({ credits, usage, error: null, loading: false });
+      const [credits, usage] = await Promise.all([fetchAxleCredits(), fetchAxleUsage()]);
+      setState({ credits, connected: credits !== null, usage, error: null, loading: false });
     } catch (error: unknown) {
       setState((previous) => ({
         ...previous,
@@ -84,7 +81,7 @@ function useAxleCredits(
         error: error instanceof Error ? error.message : "Credits could not be loaded.",
       }));
     }
-  }, [secret]);
+  }, []);
 
   useEffect(() => {
     void reload();
@@ -114,7 +111,6 @@ function BalanceCard({
             <span className="text-3xl leading-9 font-semibold tracking-tight text-foreground">
               {formatCredits(credits.credits)}
             </span>
-            <span className="text-sm text-muted-foreground">≈ {formatUsd(credits.balanceUsd)}</span>
           </div>
         </div>
         <Button
@@ -129,10 +125,9 @@ function BalanceCard({
         </Button>
       </div>
       <p className="mt-3 text-xs leading-5 text-muted-foreground">
-        Every account gets {formatCredits(credits.dailyFreeCredits)} credits (
-        {formatUsd(credits.dailyFreeCredits * credits.creditUsd)}) each UTC day for free, applied
-        the first time you use the hosted provider that day. Unused credits roll over; there is no
-        separate paid balance.
+        Every account gets {formatCredits(credits.dailyFreeCredits)} credits each UTC day for free,
+        applied the first time you use the hosted provider that day. Unused credits roll over; there
+        is no separate paid balance.
       </p>
     </div>
   );
@@ -141,6 +136,8 @@ function BalanceCard({
 /** Model rates only change with a deploy, so they load once and stay put. */
 function ModelRatesSection() {
   const [models, setModels] = useState<ReadonlyArray<AxleModelRate> | null>(null);
+  const entitlements = resolvedEntitlements(useEntitlements());
+  const premiumLocked = premiumModelsLocked(entitlements);
 
   useEffect(() => {
     let active = true;
@@ -187,9 +184,16 @@ function ModelRatesSection() {
               <TableRow key={model.id}>
                 <TableCell className="font-medium text-foreground">{model.label}</TableCell>
                 <TableCell>
-                  <Badge variant="outline" size="sm">
-                    Tier {model.tier}
-                  </Badge>
+                  <span className="flex items-center gap-1.5">
+                    <Badge variant="outline" size="sm">
+                      Tier {model.tier}
+                    </Badge>
+                    {premiumLocked && model.tier >= PREMIUM_MODEL_TIER ? (
+                      <Badge variant="secondary" size="sm">
+                        Pro
+                      </Badge>
+                    ) : null}
+                  </span>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {formatContextWindow(model.contextWindow)}
@@ -206,10 +210,21 @@ function ModelRatesSection() {
         </Table>
       )}
       <p className="px-1 pt-3 text-xs leading-5 text-muted-foreground">
-        One credit is {formatUsd(CREDIT_USD)}. A turn is reserved at its worst case before it runs
-        and the unused part is refunded from the provider's own token report, so a long reply never
-        costs more than it used.
+        A turn is reserved at its worst case before it runs and the unused part is refunded from the
+        provider's own token report, so a long reply never costs more than it used.
       </p>
+      {premiumLocked ? (
+        <p className="px-1 pt-1.5 text-xs leading-5 text-muted-foreground">
+          Premium models (tier {PREMIUM_MODEL_TIER} and up) are included with Axle Pro.{" "}
+          <button
+            type="button"
+            className="underline underline-offset-2 transition-colors hover:text-foreground"
+            onClick={() => openUpgradeDialog("premium-models")}
+          >
+            Upgrade
+          </button>
+        </p>
+      ) : null}
     </SettingsSection>
   );
 }
@@ -281,13 +296,17 @@ function UsageSection({
   );
 }
 
-function NoKeyNotice() {
+function NotConnectedNotice() {
   return (
-    <SettingsSection title="No API key yet" icon={<KeyRoundIcon />}>
+    <SettingsSection title="Not connected yet" icon={<KeyRoundIcon />}>
       <div className="flex flex-wrap items-center justify-between gap-3 px-1 py-4">
         <p className="max-w-prose text-[13px] leading-6 text-muted-foreground">
-          Credits are spent through an Axle API key. Create one and your balance and usage will
-          appear here.
+          This app is not spending from your Axle account yet. Create an API key here and it is
+          connected automatically, or add{" "}
+          <code className="rounded bg-muted/60 px-1 py-0.5 font-mono text-[11px]">
+            AXLE_API_KEY
+          </code>{" "}
+          in Settings → Providers.
         </p>
         <Button size="sm" render={<Link to="/settings/account/api-keys" />}>
           Create an API key
@@ -297,47 +316,68 @@ function NoKeyNotice() {
   );
 }
 
+function CreditsLoadingPanel({ text }: { readonly text: string }) {
+  return (
+    <div className="flex items-center gap-2 px-1 py-6 text-[13px] text-muted-foreground">
+      <LoaderCircleIcon className="size-4 animate-spin" />
+      {text}
+    </div>
+  );
+}
+
+function CreditsErrorPanel({
+  error,
+  onRetry,
+}: {
+  readonly error: string;
+  readonly onRetry: () => Promise<void>;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-card/40 px-4 py-3">
+      <span className="text-xs text-muted-foreground">{error}</span>
+      <Button size="sm" variant="outline" className="h-8" onClick={() => void onRetry()}>
+        Try again
+      </Button>
+    </div>
+  );
+}
+
 /**
  * Balance, rates, and activity for the hosted provider. The balance is read
- * through one of the account's own keys, because the gateway identifies a
- * caller by key — which is exactly what keeps the balance tied to the account
- * rather than to a rotating session token.
+ * through the local server, which resolves the account key the Axle provider
+ * itself chats with; an app without that connection shows how to make one
+ * instead of a balance that is not really the account's.
  */
 export function CreditsSection() {
-  const { keys, loading: keysLoading } = useAccountApiKeys();
-  const activeKey = keys.find((key) => key.revokedAt === null) ?? null;
-  const { credits, usage, error, loading, reload } = useAxleCredits(activeKey?.id ?? null);
+  const { credits, connected, usage, error, loading, reload } = useAxleCredits();
 
-  if (keysLoading && keys.length === 0) {
+  if (connected === false) {
     return (
-      <div className="flex items-center gap-2 px-1 py-6 text-[13px] text-muted-foreground">
-        <LoaderCircleIcon className="size-4 animate-spin" />
-        Checking your API keys…
-      </div>
+      <>
+        <NotConnectedNotice />
+        <ModelRatesSection />
+      </>
     );
   }
 
-  if (activeKey === null) return <NoKeyNotice />;
+  if (credits === null) {
+    return (
+      <>
+        {error !== null ? (
+          <CreditsErrorPanel error={error} onRetry={reload} />
+        ) : (
+          <CreditsLoadingPanel text="Loading your credits…" />
+        )}
+        <ModelRatesSection />
+      </>
+    );
+  }
 
   return (
     <>
-      {credits ? (
-        <BalanceCard credits={credits} onRefresh={reload} refreshing={loading} />
-      ) : (
-        <div className="flex items-center gap-2 px-1 py-6 text-[13px] text-muted-foreground">
-          <LoaderCircleIcon className="size-4 animate-spin" />
-          Loading your credits…
-        </div>
-      )}
+      <BalanceCard credits={credits} onRefresh={reload} refreshing={loading} />
 
-      {error !== null ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-card/40 px-4 py-3">
-          <span className="text-xs text-muted-foreground">{error}</span>
-          <Button size="sm" variant="outline" className="h-8" onClick={() => void reload()}>
-            Try again
-          </Button>
-        </div>
-      ) : null}
+      {error !== null ? <CreditsErrorPanel error={error} onRetry={reload} /> : null}
 
       <ModelRatesSection />
       <UsageSection usage={usage} loading={loading} />
