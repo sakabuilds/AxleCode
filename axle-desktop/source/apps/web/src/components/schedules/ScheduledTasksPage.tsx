@@ -28,6 +28,9 @@ import { ThreadId, type ScheduledTaskList, type ServerScheduledTask } from "@axl
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { cn } from "../../lib/utils";
+import { openUpgradeDialog } from "../billing/UpgradeDialog";
+import { scheduledTasksLimit } from "../../entitlements/gates";
+import { useEntitlements, resolvedEntitlements } from "../../entitlements/useEntitlements";
 import {
   DEFAULT_SCHEDULED_TASKS,
   formatScheduleSummary,
@@ -465,6 +468,8 @@ export function ScheduledTasksPage() {
   );
   const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const entitlements = resolvedEntitlements(useEntitlements());
+  const taskLimit = scheduledTasksLimit(entitlements);
   const [tasks, setTasks] = useState<readonly ServerScheduledTask[]>([]);
   const [targets, setTargets] = useState<ScheduledTaskList["targets"]>([]);
   const [loading, setLoading] = useState(true);
@@ -578,6 +583,10 @@ export function ScheduledTasksPage() {
   };
 
   const openCreateDialog = (suggestionDraft?: ScheduleDraft) => {
+    if (taskLimit !== null && tasks.length >= taskLimit) {
+      openUpgradeDialog("schedules");
+      return;
+    }
     setEditingTaskId(null);
     setImportingTaskId(null);
     setTargetThreadId(targets[0]?.threadId ?? "");
@@ -723,6 +732,21 @@ export function ScheduledTasksPage() {
             Tasks run while this Axle environment is online. Missed recurring runs resume once when
             it reconnects.
           </p>
+
+          {taskLimit !== null ? (
+            <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+              {tasks.length >= taskLimit
+                ? `You have reached the Free limit of ${taskLimit} scheduled tasks. `
+                : `Free includes up to ${taskLimit} scheduled tasks. `}
+              <button
+                type="button"
+                className="underline underline-offset-2 transition-colors hover:text-foreground"
+                onClick={() => openUpgradeDialog("schedules")}
+              >
+                {tasks.length >= taskLimit ? "Upgrade for more" : "See plans"}
+              </button>
+            </p>
+          ) : null}
 
           {pageError ? (
             <div
