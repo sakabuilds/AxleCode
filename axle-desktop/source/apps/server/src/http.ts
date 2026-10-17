@@ -1,10 +1,11 @@
-// @effect-diagnostics nodeBuiltinImport:off globalTimers:off
+// @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetchInEffect:off
 import Mime from "@effect/platform-node/Mime";
 import * as NodeChildProcess from "node:child_process";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  ProviderInstanceId,
 } from "@axle/contracts";
 import { decodeOtlpTraceRecords } from "@axle/shared/observability";
 import * as Data from "effect/Data";
@@ -27,7 +28,9 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { OtlpTracer } from "effect/unstable/observability";
 
 import * as ServerConfig from "./config.ts";
+import * as ServerSettings from "./serverSettings.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
+import { AXLE_HOSTED_BASE_URL } from "./provider/Drivers/AxleModelCatalog.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { traceRelayRequest } from "./cloud/traceRelayRequest.ts";
@@ -215,6 +218,169 @@ export const axleCodexAuthRouteLayer = Layer.mergeAll(
     Effect.gen(function* () {
       yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
       return yield* axleCodexAuthResponse("--codex-logout");
+    }),
+  ),
+);
+
+const AXLE_CREDITS_ROUTE = "/api/axle/credits";
+const AXLE_USAGE_ROUTE = "/api/axle/usage";
+const AXLE_GATEWAY_TIMEOUT_MS = 20_000;
+const AXLE_USAGE_DEFAULT_LIMIT = 25;
+const AXLE_USAGE_MAX_LIMIT = 100;
+const AXLE_INSTANCE_ID = ProviderInstanceId.make("axle");
+
+class AxleGatewayRequestError extends Data.TaggedError("AxleGatewayRequestError")<{
+  readonly detail: string;
+  readonly cause?: unknown;
+}> {}
+
+function axleGatewayBaseUrl(): string {
+  const configured = process.env.AXLE_BASE_URL?.trim() || AXLE_HOSTED_BASE_URL;
+  return configured.replace(/\/+$/u, "");
+}
+
+export function messageFromAxleGatewayBody(body: unknown, fallback: string): string {
+  if (typeof body !== "object" || body === null) return fallback;
+  const error = (body as { error?: unknown }).error;
+  if (typeof error === "string" && error.trim().length > 0) return error;
+  if (typeof error === "object" && error !== null) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim().length > 0) return message;
+  }
+  return fallback;
+}
+
+/** Clamps the requested activity-page size into something the gateway accepts. */
+export function axleUsageLimit(raw: string | null): number {
+  const parsed = raw === null || raw.trim().length === 0 ? Number.NaN : Number(raw);
+  return Number.isFinite(parsed)
+    ? Math.min(Math.max(Math.trunc(parsed), 1), AXLE_USAGE_MAX_LIMIT)
+    : AXLE_USAGE_DEFAULT_LIMIT;
+}
+
+/** Structural slice of the settings the Axle provider reads its variables from. */
+type AxleProviderSettingsView = {
+  readonly providerInstances: Readonly<
+    Record<
+      string,
+      | {
+          readonly environment?: ReadonlyArray<{ readonly name: string; readonly value: string }>;
+        }
+      | undefined
+    >
+  >;
+};
+
+function axleProviderVariable(settings: AxleProviderSettingsView, name: string): string | null {
+  const variable = settings.providerInstances[AXLE_INSTANCE_ID]?.environment?.find(
+    (entry) => entry.name === name,
+  );
+  const value = variable?.value.trim() ?? "";
+  return value.length > 0 ? value : null;
+}
+
+/** The account key the Axle provider itself chats with, or null when unconnected. */
+export function axleCredentialFromSettings(settings: AxleProviderSettingsView): string | null {
+  return axleProviderVariable(settings, "AXLE_API_KEY");
+}
+
+/** A user-set gateway override on the provider instance, when one exists. */
+export function axleBaseUrlFromSettings(settings: AxleProviderSettingsView): string | null {
+  return axleProviderVariable(settings, "AXLE_BASE_URL")?.replace(/\/+$/u, "") ?? null;
+}
+
+const resolveAxleProviderSettings = Effect.gen(function* () {
+  const settingsService = yield* ServerSettings.ServerSettingsService;
+  const settings = yield* settingsService.getSettings;
+  return {
+    apiKey: axleCredentialFromSettings(settings),
+    baseUrl: axleBaseUrlFromSettings(settings),
+  };
+});
+
+const requestAxleGateway = (path: string, apiKey: string, baseUrl: string | null) =>
+  Effect.tryPromise({
+    try: async () => {
+      const response = await fetch(`${baseUrl ?? axleGatewayBaseUrl()}${path}`, {
+        headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(AXLE_GATEWAY_TIMEOUT_MS),
+      });
+      const body: unknown = await response.json().catch(() => null);
+      return { ok: response.ok, status: response.status, body };
+    },
+    catch: (cause) =>
+      new AxleGatewayRequestError({
+        detail: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      }),
+  });
+
+/**
+ * Credits and recent activity as the gateway sees them, resolved server-side
+ * because settings only ever carry provider secrets server-side. An app that
+ * has not been connected to an Axle account reports `{ connected: false }`
+ * instead of querying with the shared built-in token, which no account is
+ * behind.
+ */
+const axleCreditsProxyResponse = (path: string) =>
+  Effect.gen(function* () {
+    const { apiKey, baseUrl } = yield* resolveAxleProviderSettings;
+    if (apiKey === null) {
+      return HttpServerResponse.jsonUnsafe({ connected: false });
+    }
+    const result = yield* requestAxleGateway(path, apiKey, baseUrl).pipe(
+      Effect.catch((error) =>
+        Effect.succeed({
+          ok: false,
+          status: 502,
+          body: { error: `The Axle gateway could not be reached (${error.detail}).` },
+        }),
+      ),
+    );
+    if (!result.ok) {
+      return HttpServerResponse.jsonUnsafe(
+        {
+          connected: true,
+          error: messageFromAxleGatewayBody(
+            result.body,
+            `The Axle gateway refused the request (HTTP ${result.status}).`,
+          ),
+        },
+        { status: result.status },
+      );
+    }
+    const body =
+      typeof result.body === "object" && result.body !== null
+        ? (result.body as Record<string, unknown>)
+        : {};
+    return HttpServerResponse.jsonUnsafe({ connected: true, ...body });
+  }).pipe(
+    Effect.orElseSucceed(() =>
+      HttpServerResponse.jsonUnsafe(
+        { connected: true, error: "Credits could not be loaded from the local server." },
+        { status: 500 },
+      ),
+    ),
+  );
+
+export const axleCreditsRouteLayer = Layer.mergeAll(
+  HttpRouter.add(
+    "GET",
+    AXLE_CREDITS_ROUTE,
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+      return yield* axleCreditsProxyResponse("/credits");
+    }),
+  ),
+  HttpRouter.add(
+    "GET",
+    AXLE_USAGE_ROUTE,
+    Effect.gen(function* () {
+      yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const url = HttpServerRequest.toURL(request);
+      const limit = axleUsageLimit(Option.isNone(url) ? null : url.value.searchParams.get("limit"));
+      return yield* axleCreditsProxyResponse(`/usage?limit=${limit}`);
     }),
   ),
 );
