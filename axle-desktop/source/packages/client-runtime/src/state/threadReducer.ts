@@ -418,7 +418,11 @@ export function applyThreadDetailEvent(
       );
 
       const retainedTurnIds = new Set(Arr.map(checkpoints, (entry) => entry.turnId));
-      const messages = retainMessagesAfterRevert(thread.messages, retainedTurnIds);
+      const messages = retainMessagesAfterRevert(
+        thread.messages,
+        retainedTurnIds,
+        event.payload.turnCount,
+      );
       const proposedPlans = pipe(
         thread.proposedPlans,
         Arr.filter((plan) => plan.turnId === null || retainedTurnIds.has(plan.turnId)),
@@ -532,16 +536,49 @@ function rebindCheckpointAssistantMessage(
 function retainMessagesAfterRevert(
   messages: ReadonlyArray<OrchestrationMessage>,
   retainedTurnIds: ReadonlySet<string>,
+  turnCount: number,
 ): OrchestrationMessage[] {
-  // Keep messages that belong to a retained turn, plus system messages and
-  // messages without a turn binding (pre-turn-0 user messages).
-  return Arr.filter(messages, (message) => {
+  // Mirrors the server read model (projector.ts): keep messages bound to a
+  // retained turn, then keep the earliest remaining user/assistant messages
+  // until the timeline holds `turnCount` of each. User messages carry no
+  // turnId, so the count fallback is what removes them after a revert.
+  const retainedMessageIds = new Set<string>();
+  for (const message of messages) {
     if (message.role === "system") {
-      return true;
+      retainedMessageIds.add(message.id);
+      continue;
     }
-    if (message.turnId === null) {
-      return true;
+    if (message.turnId !== null && retainedTurnIds.has(message.turnId)) {
+      retainedMessageIds.add(message.id);
     }
-    return retainedTurnIds.has(message.turnId);
-  });
+  }
+
+  const retainEarliestUnretained = (role: "user" | "assistant"): void => {
+    const retainedCount = messages.filter(
+      (message) => message.role === role && retainedMessageIds.has(message.id),
+    ).length;
+    const missingCount = Math.max(0, turnCount - retainedCount);
+    if (missingCount === 0) {
+      return;
+    }
+    const fallbackMessages = messages
+      .filter(
+        (message) =>
+          message.role === role &&
+          !retainedMessageIds.has(message.id) &&
+          (message.turnId === null || retainedTurnIds.has(message.turnId)),
+      )
+      .toSorted(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
+      )
+      .slice(0, missingCount);
+    for (const message of fallbackMessages) {
+      retainedMessageIds.add(message.id);
+    }
+  };
+  retainEarliestUnretained("user");
+  retainEarliestUnretained("assistant");
+
+  return messages.filter((message) => retainedMessageIds.has(message.id));
 }
