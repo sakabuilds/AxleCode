@@ -44,7 +44,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   { label: "General", to: "/settings/general", icon: Settings2Icon },
   { label: "Personalize", to: "/settings/personalize", icon: SlidersHorizontalIcon },
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },
-  { label: "Models", to: "/settings/models", icon: BoxesIcon },
+  { label: "Providers", to: "/settings/models", icon: BoxesIcon },
   { label: "Plugins", to: "/settings/plugins", icon: PlugZapIcon },
   { label: "Memory", to: "/settings/memory", icon: BrainIcon },
   { label: "Archive", to: "/settings/archived", icon: ArchiveIcon },
