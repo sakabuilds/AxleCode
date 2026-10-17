@@ -1,4 +1,5 @@
 import {
+  CloudBillingView,
   CloudJob,
   CloudJobCreateInput,
   CloudJobEvent,
@@ -47,6 +48,9 @@ const decodeCreatedJob = Schema.decodeUnknownSync(
 const decodeEventList = Schema.decodeUnknownSync(
   Schema.Struct({ events: Schema.Array(CloudJobEvent), lastSequence: Schema.Number }),
 );
+const decodeBilling = Schema.decodeUnknownSync(CloudBillingView);
+
+export type CloudBilling = CloudBillingView;
 
 export interface CloudJobsEventPage {
   readonly events: ReadonlyArray<CloudJobEvent>;
@@ -135,6 +139,18 @@ export class CloudJobsClient {
       method: "POST",
       path: `/v1/cloud/jobs/${encodeURIComponent(jobId)}/cancel`,
       decode: decodeJob,
+    });
+  }
+
+  /**
+   * `GET /v1/cloud/billing` — the caller's plan, credit balance, and resolved
+   * entitlements. `account.entitlements` is null on unmetered deployments.
+   */
+  async getBilling(): Promise<CloudBilling> {
+    return this.request({
+      method: "GET",
+      path: "/v1/cloud/billing",
+      decode: decodeBilling,
     });
   }
 
