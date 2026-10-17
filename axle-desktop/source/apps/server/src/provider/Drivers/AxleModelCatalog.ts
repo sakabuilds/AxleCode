@@ -690,7 +690,20 @@ async function loadModelsDevCatalog(
  * The Axle hosted provider's default endpoint. Matches the Rust runtime's
  * `DEFAULT_AXLE_BASE_URL`, so discovery and generation hit the same gateway.
  */
-const AXLE_HOSTED_BASE_URL = "https://axle-gateway.axle-download-worker.workers.dev/v1";
+export const AXLE_HOSTED_BASE_URL = "https://axle-gateway.axle-download-worker.workers.dev/v1";
+
+/**
+ * The credential Axle's own provider falls back to.
+ *
+ * Axle's hosted gateway is part of the product rather than a vendor the user
+ * brings, so the provider is preconfigured and always available. The gateway
+ * derives a stable anonymous identity from any bearer token, and that identity
+ * is what the free daily credit grant is attached to; an `axl_...` key from the
+ * account page takes precedence and moves the spend onto the signed-in account.
+ * The token is deliberately not `axl_`-shaped so it can never be mistaken for,
+ * or collide with, a real account key.
+ */
+export const AXLE_BUILT_IN_API_KEY = "axle-desktop-free";
 
 const withoutTrailingSlashes = (value: string): string => value.replace(/\/+$/u, "");
 
@@ -1010,6 +1023,10 @@ const loadCodexModelsForDiscovery: CodexModelLoader = (environment) =>
   loadCodexModels("authenticated", globalThis.fetch, environment);
 
 const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
+  // Axle's own provider. It is configured by the app, not by the user: the
+  // gateway, the model catalog, and the free daily credits are all part of the
+  // product, so it is present without an `AXLE_API_KEY` and an account key is
+  // only an override that ties the spend to the signed-in account.
   {
     env: "AXLE_API_KEY",
     prefix: "axle",
@@ -1152,6 +1169,48 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
   },
 ];
 
+/**
+ * Whether a built-in provider can be probed with the current environment.
+ *
+ * Most providers exist only once the user supplies a credential. Axle's own
+ * provider is the exception: it is part of the product, so it is always
+ * available and the built-in credential stands in until an account key is set.
+ */
+function isProviderAvailable(
+  provider: ProviderDefinition,
+  environment: NodeJS.ProcessEnv,
+): boolean {
+  if (provider.prefix === "ollama-cloud") {
+    return environment.OLLAMA_CLOUD_CONFIGURED === "true";
+  }
+  if (provider.env === undefined) {
+    return hasCodexOAuthAuthentication(environment);
+  }
+  if (provider.prefix === "axle") {
+    return true;
+  }
+  return Boolean(environment[provider.env]?.trim());
+}
+
+/**
+ * The credential a provider authenticates its probe with: the user's own
+ * variable when they set one, Axle's built-in token for the preconfigured
+ * provider, and the OAuth session for Codex.
+ */
+function providerCredential(
+  provider: ProviderDefinition,
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  if (provider.env === undefined) {
+    return "authenticated";
+  }
+  const configured = environment[provider.env]?.trim();
+  if (configured) {
+    return configured;
+  }
+  return provider.prefix === "axle" ? AXLE_BUILT_IN_API_KEY : undefined;
+}
+
 export async function discoverAxleModels(
   environment: NodeJS.ProcessEnv,
   fetchImplementation: FetchImplementation = globalThis.fetch,
@@ -1162,19 +1221,12 @@ export async function discoverAxleModels(
     readonly provider: RuntimeProviderDefinition;
     readonly apiKey: string;
   }> = [
-    ...PROVIDERS.flatMap((provider): ReadonlyArray<RuntimeProviderDefinition> => {
-      if (provider.prefix === "ollama-cloud" && environment.OLLAMA_CLOUD_CONFIGURED !== "true") {
-        return [];
-      }
-      if (!provider.env) {
-        return hasCodexOAuthAuthentication(environment) ? [provider] : [];
-      }
-      return environment[provider.env]?.trim() ? [provider] : [];
-    }).map((provider) => ({
-      provider,
-      apiKey:
-        provider.env === undefined ? "authenticated" : (environment[provider.env]?.trim() ?? ""),
-    })),
+    ...PROVIDERS.filter((provider) => isProviderAvailable(provider, environment)).map(
+      (provider) => ({
+        provider,
+        apiKey: providerCredential(provider, environment) ?? "",
+      }),
+    ),
     ...custom.map((provider) => ({
       provider: {
         env: `${provider.envPrefix}_API_KEY`,
