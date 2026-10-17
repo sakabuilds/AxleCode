@@ -60,13 +60,11 @@ function makeSnapshot(input: {
   const hasDiscoveryErrors = discovery.errors.length > 0;
   const message = !input.binaryInstalled
     ? `Axle runtime was not found at ${input.binaryPath}.`
-    : discovery.configuredProviderCount === 0
-      ? "Add an Axle, OpenAI, Anthropic, Google, Fireworks, Ollama Cloud, Cerebras, Groq, or OpenRouter API key in Models."
-      : hasDiscoveryErrors
-        ? `Model refresh failed for ${discovery.errors.join("; ")}. Check the API key and your connection.`
-        : !hasModels
-          ? "The configured providers returned no compatible models."
-          : undefined;
+    : hasDiscoveryErrors
+      ? `Model refresh failed for ${discovery.errors.join("; ")}. Check the API key and your connection.`
+      : !hasModels
+        ? "The configured providers returned no compatible models."
+        : undefined;
 
   return {
     instanceId: input.instanceId,
@@ -89,7 +87,7 @@ function makeSnapshot(input: {
     auth: {
       status: hasModels ? "authenticated" : "unauthenticated",
       type: "apiKey",
-      label: hasModels ? "Provider API keys connected" : "Add or verify an API key in Models",
+      label: hasModels ? "Provider API keys connected" : "Add or verify an API key in Providers",
     },
     checkedAt: new Date().toISOString(),
     availability: "available",
