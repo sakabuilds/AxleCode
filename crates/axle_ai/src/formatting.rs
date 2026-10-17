@@ -497,7 +497,10 @@ mod tests {
 
         let formatted = openai_tools(&tools);
 
-        assert_eq!(formatted[0]["function"]["parameters"]["required"], json!([]));
+        assert_eq!(
+            formatted[0]["function"]["parameters"]["required"],
+            json!([])
+        );
         assert_eq!(
             formatted[0]["function"]["parameters"]["properties"]["nested"]["required"],
             json!([])
