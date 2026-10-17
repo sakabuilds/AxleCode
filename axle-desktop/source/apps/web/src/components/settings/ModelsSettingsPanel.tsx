@@ -152,16 +152,6 @@ const MODEL_APIS: ReadonlyArray<{
   readonly Logo: Logo;
 }> = [
   {
-    id: "axle",
-    name: "Axle",
-    envName: "AXLE_API_KEY",
-    baseUrlEnvName: "AXLE_BASE_URL",
-    placeholder: "ax-...",
-    description:
-      "Axle's hosted gateway, or any OpenAI-compatible endpoint you set as the base URL.",
-    Logo: AxleIcon,
-  },
-  {
     id: "openai",
     name: "OpenAI",
     envName: "OPENAI_API_KEY",
@@ -624,94 +614,9 @@ export function ModelsSettingsPanel() {
 
   return (
     <SettingsPageContainer
-      title="Models"
-      description="Connect your providers and choose the models available in your workspace."
+      title="Providers"
+      description="Axle is included. Connect your own providers to bring their models into the picker."
     >
-      <SettingsSection
-        title="Model visibility"
-        icon={<BoxesIcon className="size-3.5" />}
-        headerAction={
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {searchableModels.length} models
-          </span>
-        }
-      >
-        <div className="space-y-3 px-4 py-4 sm:px-5">
-          <p className="text-xs leading-5 text-muted-foreground">
-            Enabled models appear in the model picker. Your selection is saved automatically.
-          </p>
-          <label className="flex h-9 items-center gap-2.5 rounded-lg border border-input bg-background px-3 transition-[border-color,box-shadow] duration-150 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
-            <SearchIcon className="size-4 shrink-0 text-muted-foreground/65" aria-hidden />
-            <input
-              type="search"
-              value={modelQuery}
-              onChange={(event) => setModelQuery(event.target.value)}
-              placeholder="Search models…"
-              aria-label="Search models"
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
-            />
-          </label>
-        </div>
-
-        <div className="max-h-[28rem] overflow-y-auto overscroll-contain rounded-b-xl border-t border-border/70">
-          {searchableModels.length === 0 ? (
-            <div
-              role="status"
-              className="space-y-1 px-5 py-8 text-center text-sm text-muted-foreground"
-            >
-              {providerEntries.length === 0
-                ? "Connect a provider below to make its models available."
-                : "No models match your search."}
-            </div>
-          ) : (
-            searchableModels.map(({ entry, model }) => {
-              const preferences = modelPreferences[entry.instanceId] ?? {
-                hiddenModels: [],
-                modelOrder: [],
-              };
-              const enabled = !preferences.hiddenModels.includes(model.slug);
-              const providerPresentation = getModelProviderPresentation(model);
-              const ModelProviderIcon = providerPresentation?.Icon ?? AxleIcon;
-              const modelDisplayName = getDisplayModelName(model, { preferShortName: true });
-              const providerDisplayName = providerPresentation?.label ?? entry.displayName;
-              return (
-                <div
-                  key={`${entry.instanceId}:${model.slug}`}
-                  data-model-enabled={enabled ? "true" : "false"}
-                  className="group flex items-center justify-between gap-4 border-b border-border/60 px-5 py-3 transition-colors last:border-b-0 hover:bg-muted/30 data-[model-enabled=false]:bg-muted/15"
-                >
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span
-                      className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background/70"
-                      title={providerDisplayName}
-                    >
-                      <ModelProviderIcon className="size-4 grayscale" aria-hidden />
-                    </span>
-                    <div className="min-w-0">
-                      <div className="truncate text-[13px] font-medium text-foreground">
-                        {modelDisplayName}
-                      </div>
-                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {providerDisplayName}
-                      </div>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={enabled}
-                    disabled={!clientSettingsHydrated}
-                    className="shrink-0"
-                    onCheckedChange={(checked) =>
-                      setModelEnabled(entry.instanceId, model.slug, Boolean(checked))
-                    }
-                    aria-label={`${modelDisplayName} in model picker`}
-                  />
-                </div>
-              );
-            })
-          )}
-        </div>
-      </SettingsSection>
-
       <SettingsSection title="Provider configuration">
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-5 py-4 text-[13px] font-medium text-foreground outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
@@ -1024,6 +929,91 @@ export function ModelsSettingsPanel() {
             ))}
           </div>
         ) : null}
+      </SettingsSection>
+
+      <SettingsSection
+        title="Model visibility"
+        icon={<BoxesIcon className="size-3.5" />}
+        headerAction={
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {searchableModels.length} models
+          </span>
+        }
+      >
+        <div className="space-y-3 px-4 py-4 sm:px-5">
+          <p className="text-xs leading-5 text-muted-foreground">
+            Enabled models appear in the model picker. Your selection is saved automatically.
+          </p>
+          <label className="flex h-9 items-center gap-2.5 rounded-lg border border-input bg-background px-3 transition-[border-color,box-shadow] duration-150 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+            <SearchIcon className="size-4 shrink-0 text-muted-foreground/65" aria-hidden />
+            <input
+              type="search"
+              value={modelQuery}
+              onChange={(event) => setModelQuery(event.target.value)}
+              placeholder="Search models…"
+              aria-label="Search models"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
+            />
+          </label>
+        </div>
+
+        <div className="max-h-[28rem] overflow-y-auto overscroll-contain rounded-b-xl border-t border-border/70">
+          {searchableModels.length === 0 ? (
+            <div
+              role="status"
+              className="space-y-1 px-5 py-8 text-center text-sm text-muted-foreground"
+            >
+              {providerEntries.length === 0
+                ? "Connect a provider to make its models available."
+                : "No models match your search."}
+            </div>
+          ) : (
+            searchableModels.map(({ entry, model }) => {
+              const preferences = modelPreferences[entry.instanceId] ?? {
+                hiddenModels: [],
+                modelOrder: [],
+              };
+              const enabled = !preferences.hiddenModels.includes(model.slug);
+              const providerPresentation = getModelProviderPresentation(model);
+              const ModelProviderIcon = providerPresentation?.Icon ?? AxleIcon;
+              const modelDisplayName = getDisplayModelName(model, { preferShortName: true });
+              const providerDisplayName = providerPresentation?.label ?? entry.displayName;
+              return (
+                <div
+                  key={`${entry.instanceId}:${model.slug}`}
+                  data-model-enabled={enabled ? "true" : "false"}
+                  className="group flex items-center justify-between gap-4 border-b border-border/60 px-5 py-3 transition-colors last:border-b-0 hover:bg-muted/30 data-[model-enabled=false]:bg-muted/15"
+                >
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span
+                      className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-background/70"
+                      title={providerDisplayName}
+                    >
+                      <ModelProviderIcon className="size-4 grayscale" aria-hidden />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-[13px] font-medium text-foreground">
+                        {modelDisplayName}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {providerDisplayName}
+                      </div>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={enabled}
+                    disabled={!clientSettingsHydrated}
+                    className="shrink-0"
+                    onCheckedChange={(checked) =>
+                      setModelEnabled(entry.instanceId, model.slug, Boolean(checked))
+                    }
+                    aria-label={`${modelDisplayName} in model picker`}
+                  />
+                </div>
+              );
+            })
+          )}
+        </div>
       </SettingsSection>
     </SettingsPageContainer>
   );
