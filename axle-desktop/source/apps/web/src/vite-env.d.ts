@@ -11,6 +11,7 @@ interface ImportMetaEnv {
   readonly VITE_NEON_AUTH_OAUTH_AUTHORIZE_URL: string;
   readonly VITE_NEON_AUTH_CLI_OAUTH_CLIENT_ID: string;
   readonly VITE_ACCOUNT_API_URL: string;
+  readonly VITE_PRICING_URL: string;
   readonly VITE_AXLE_ANALYTICS_ENDPOINT: string;
   readonly VITE_RELAY_OTLP_TRACES_URL: string;
   readonly VITE_RELAY_OTLP_TRACES_DATASET: string;
