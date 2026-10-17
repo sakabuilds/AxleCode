@@ -2199,7 +2199,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           <div
             className={cn(
               "relative px-4 pb-3 sm:px-5",
-              hasComposerHeader ? "pt-3 sm:pt-4" : "pt-4 sm:pt-5",
+              hasComposerHeader ? "pt-2.5 sm:pt-3" : "pt-3 sm:pt-3.5",
               isComposerCollapsedMobile && "hidden",
             )}
           >
@@ -2365,7 +2365,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }
                 skills={selectedProviderStatus?.skills ?? []}
                 className={cn(
-                  "min-h-16 sm:text-[15px]",
+                  "min-h-6 sm:text-[15px]",
                   showMobilePendingAnswerActions && "max-sm:pb-11",
                 )}
                 onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
