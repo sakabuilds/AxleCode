@@ -4,7 +4,18 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import { discoverAxleModels, loadCodexModels } from "./AxleModelCatalog.ts";
+import { AXLE_BUILT_IN_API_KEY, discoverAxleModels, loadCodexModels } from "./AxleModelCatalog.ts";
+
+/** Where the built-in Axle provider probes, with no `<PREFIX>_BASE_URL` set. */
+const AXLE_GATEWAY_MODELS_URL = "https://axle-gateway.axle-download-worker.workers.dev/v1/models";
+
+/**
+ * Axle's own provider is built in, so it is always part of the configured set
+ * and every discovery counts one provider more than the environment sets.
+ */
+function withBuiltInAxleProvider(configured: number): number {
+  return configured + 1;
+}
 
 function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
@@ -63,7 +74,7 @@ describe("discoverAxleModels", () => {
         ],
       );
 
-      expect(result.configuredProviderCount).toBe(1);
+      expect(result.configuredProviderCount).toBe(withBuiltInAxleProvider(1));
       expect(result.errors).toEqual([]);
       expect(result.models.map((model) => model.slug)).toEqual(["openai-codex/gpt-5.6-sol"]);
       expect(result.models.every((model) => model.subProvider === "OpenAI Codex")).toBe(true);
@@ -160,7 +171,7 @@ describe("discoverAxleModels", () => {
         async () => [],
       );
 
-      expect(result.configuredProviderCount).toBe(1);
+      expect(result.configuredProviderCount).toBe(withBuiltInAxleProvider(1));
       expect(result.errors).toEqual([]);
       expect(result.models).toEqual([]);
     } finally {
@@ -481,7 +492,7 @@ describe("discoverAxleModels", () => {
       fetchImplementation,
     );
 
-    expect(result.configuredProviderCount).toBe(3);
+    expect(result.configuredProviderCount).toBe(withBuiltInAxleProvider(3));
     expect(result.errors).toEqual([]);
     expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
       ["openai/gpt-test", "OpenAI"],
@@ -552,10 +563,13 @@ describe("discoverAxleModels", () => {
   });
 
   it("keeps successful catalogs when another provider rejects its key", async () => {
-    const fetchImplementation = (async (input: string | URL | Request) =>
-      String(input).includes("openai.com")
+    const fetchImplementation = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === AXLE_GATEWAY_MODELS_URL) return jsonResponse({ data: [] });
+      return url.includes("openai.com")
         ? jsonResponse({ message: "invalid key" }, 401)
-        : jsonResponse({ data: [{ id: "zen-test" }] })) as typeof fetch;
+        : jsonResponse({ data: [{ id: "zen-test" }] });
+    }) as typeof fetch;
 
     const result = await discoverAxleModels(
       { OPENAI_API_KEY: "bad", ANTHROPIC_API_KEY: "valid" },
@@ -571,7 +585,10 @@ describe("discoverAxleModels", () => {
     const fetchImplementation = (async (input: string | URL | Request) => {
       const url = String(input);
       requests.push(url);
-      if (new URL(url).pathname.endsWith("/v1/models")) {
+      if (
+        url.startsWith("https://api.anthropic.com/") &&
+        new URL(url).pathname.endsWith("/v1/models")
+      ) {
         return jsonResponse({
           data: [{ id: "claude-capabilities-test", display_name: "Claude Capabilities Test" }],
           has_more: false,
@@ -680,6 +697,7 @@ describe("discoverAxleModels", () => {
           ],
         });
       }
+      if (url === AXLE_GATEWAY_MODELS_URL) return jsonResponse({ data: [] });
       return jsonResponse({ data: [{ id: "zen-no-metadata" }] });
     }) as typeof fetch;
 
@@ -739,6 +757,7 @@ describe("discoverAxleModels", () => {
           ],
         });
       }
+      if (url === AXLE_GATEWAY_MODELS_URL) return jsonResponse({ data: [] });
       return jsonResponse({ data: [{ id: "zen-without-metadata" }] });
     }) as typeof fetch;
 
@@ -862,6 +881,47 @@ describe("discoverAxleModels", () => {
     expect(result.models.map((model) => model.slug)).toContain("openrouter/custom-model");
   });
 
+  it("always probes Axle's hosted gateway with the built-in credential", async () => {
+    const requests: Array<{ readonly url: string; readonly authorization: string | null }> = [];
+    const fetchImplementation = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, authorization: new Headers(init?.headers).get("authorization") });
+      return url === AXLE_GATEWAY_MODELS_URL
+        ? jsonResponse({ data: [{ id: "axle-20b", name: "Axle-20b" }] })
+        : jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverAxleModels({}, fetchImplementation);
+
+    // Axle's provider is configured by the app, so the gateway is probed even
+    // with no AXLE_API_KEY and no AXLE_BASE_URL in the environment.
+    const probe = requests.find((request) => request.url === AXLE_GATEWAY_MODELS_URL);
+    expect(probe?.authorization).toBe(`Bearer ${AXLE_BUILT_IN_API_KEY}`);
+    expect(result.models.map((model) => [model.slug, model.subProvider])).toContainEqual([
+      "axle/axle-20b",
+      "Axle",
+    ]);
+  });
+
+  it("prefers an Axle account key over the built-in credential", async () => {
+    const authorizations: Array<string | null> = [];
+    const fetchImplementation = (async (input: string | URL | Request, init?: RequestInit) => {
+      authorizations.push(new Headers(init?.headers).get("authorization"));
+      return String(input) === AXLE_GATEWAY_MODELS_URL
+        ? jsonResponse({ data: [{ id: "axle-55b" }] })
+        : jsonResponse({});
+    }) as typeof fetch;
+
+    const result = await discoverAxleModels(
+      { AXLE_API_KEY: "axl_account_key" },
+      fetchImplementation,
+    );
+
+    expect(authorizations).toContain("Bearer axl_account_key");
+    // The key replaces the credential; it never adds a second Axle provider.
+    expect(result.models.filter((model) => model.subProvider === "Axle")).toHaveLength(1);
+  });
+
   it("discovers the Axle gateway through AXLE_BASE_URL", async () => {
     const requests: string[] = [];
     const fetchImplementation = (async (input: string | URL | Request) => {
@@ -916,7 +976,7 @@ describe("discoverAxleModels", () => {
     expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
       ["nvidia-nim/meta/llama-3.1-70b-instruct", "NVIDIA NIM"],
     ]);
-    expect(result.configuredProviderCount).toBe(1);
+    expect(result.configuredProviderCount).toBe(withBuiltInAxleProvider(1));
   });
 
   it("sends the headers a known endpoint fingerprints on, detected from its base URL", async () => {
@@ -1016,7 +1076,7 @@ describe("discoverAxleModels", () => {
     expect(requests).toContain("https://api.mistral.ai/v1/models");
     expect(requests).toContain("https://api.deepseek.com/v1/models");
     expect(requests).toContain("https://api.x.ai/v1/models");
-    expect(result.configuredProviderCount).toBe(3);
+    expect(result.configuredProviderCount).toBe(withBuiltInAxleProvider(3));
     expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
       ["mistral/mistral-large-latest", "Mistral"],
       ["deepseek/deepseek-chat", "DeepSeek"],
@@ -1041,7 +1101,7 @@ describe("discoverAxleModels", () => {
     );
 
     expect(requests).toContain("https://proxy.example/v1/models");
-    expect(result.configuredProviderCount).toBe(1);
+    expect(result.configuredProviderCount).toBe(withBuiltInAxleProvider(1));
     expect(result.models.map((model) => model.slug)).toEqual(["mistral/mistral-large-latest"]);
   });
 
@@ -1086,7 +1146,7 @@ describe("discoverAxleModels", () => {
 
     expect(requests).toContain("https://proxy.example/v1/models");
     // Still the built-in OpenAI provider, not a second "openai" provider.
-    expect(result.configuredProviderCount).toBe(1);
+    expect(result.configuredProviderCount).toBe(withBuiltInAxleProvider(1));
     expect(result.models.map((model) => [model.slug, model.subProvider])).toEqual([
       ["openai/gpt-5.6-sol", "OpenAI"],
     ]);
