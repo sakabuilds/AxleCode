@@ -15,6 +15,7 @@ import {
 } from "../../account/accountClient";
 import { axleGatewayBaseUrl } from "../../account/axleGateway";
 import { useAccountApiKeys } from "../../account/useAccountApiKeys";
+import { useAxleProviderConnection } from "../../account/useAxleProviderConnection";
 import { SettingsSection } from "../settings/settingsLayout";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
@@ -59,9 +60,13 @@ function CopyButton({ value, label }: { readonly value: string; readonly label: 
  */
 function NewKeyCallout({
   secret,
+  connected,
+  onConnect,
   onDismiss,
 }: {
   readonly secret: string;
+  readonly connected: boolean;
+  readonly onConnect: () => void;
   readonly onDismiss: () => void;
 }) {
   return (
@@ -80,6 +85,16 @@ function NewKeyCallout({
             {secret}
           </code>
           <CopyButton value={secret} label="Copy the new API key" />
+          {connected ? (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CheckIcon className="size-3.5 text-success-foreground" />
+              Connected to Axle
+            </span>
+          ) : (
+            <Button size="sm" variant="outline" className="h-8" onClick={onConnect}>
+              Connect to Axle
+            </Button>
+          )}
           <Button size="sm" variant="ghost" className="h-8" onClick={onDismiss}>
             Done
           </Button>
@@ -91,6 +106,7 @@ function NewKeyCallout({
 
 function useApiKeyTable() {
   const { keys, loading, error, reload } = useAccountApiKeys();
+  const { connected, canConnect, connect } = useAxleProviderConnection();
   const [busy, setBusy] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [freshSecret, setFreshSecret] = useState<string | null>(null);
@@ -101,6 +117,22 @@ function useApiKeyTable() {
       try {
         const { secret } = await createAccountApiKey(name.trim().length > 0 ? name.trim() : null);
         setFreshSecret(secret);
+        if (canConnect) {
+          // A new key replaces the one the Axle provider chats with, so
+          // rotating keys takes effect on the very next request.
+          connect(secret);
+          toastManager.add({
+            type: "success",
+            title: "API key created",
+            description: "The Axle provider now chats with this account key.",
+          });
+        } else {
+          toastManager.add({
+            type: "success",
+            title: "API key created",
+            description: "Add it in Settings → Providers to spend from your account.",
+          });
+        }
         await reload();
       } catch (createError: unknown) {
         toastManager.add({
@@ -112,7 +144,7 @@ function useApiKeyTable() {
         setCreating(false);
       }
     },
-    [reload],
+    [reload, canConnect, connect],
   );
 
   const revoke = useCallback(
@@ -142,6 +174,9 @@ function useApiKeyTable() {
     busy,
     creating,
     freshSecret,
+    connected,
+    canConnect,
+    connect,
     create,
     revoke,
     reload,
@@ -165,10 +200,15 @@ export function ApiKeysSection() {
           </span>
         }
       >
-        {table.freshSecret ? (
+        {table.freshSecret !== null ? (
           <div className="px-1 pt-3.5">
             <NewKeyCallout
               secret={table.freshSecret}
+              connected={table.connected}
+              onConnect={() => {
+                const secret = table.freshSecret;
+                if (secret !== null) table.connect(secret);
+              }}
               onDismiss={() => table.setFreshSecret(null)}
             />
           </div>
@@ -260,6 +300,23 @@ export function ApiKeysSection() {
 
       <SettingsSection title="Using a key" icon={<KeyRoundIcon />}>
         <div className="divide-y divide-border/60">
+          <AccountRow
+            title="This device"
+            description={
+              table.connected
+                ? "Keys created here are connected to the Axle provider automatically, so chats spend from your account."
+                : "Create a key to connect this device's Axle provider to your account."
+            }
+          >
+            {table.connected ? (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <CheckIcon className="size-3.5 text-success-foreground" />
+                Connected
+              </span>
+            ) : (
+              <span className="text-xs text-muted-foreground">Not connected</span>
+            )}
+          </AccountRow>
           <AccountRow title="Base URL" description="Point any OpenAI-compatible client here.">
             <code className="truncate rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
               {axleGatewayBaseUrl()}
