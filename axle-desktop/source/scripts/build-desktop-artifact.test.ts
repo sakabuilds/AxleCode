@@ -18,6 +18,7 @@ import {
   InvalidMacPasskeyAuthUrlError,
   InvalidMockUpdateServerPortError,
   isMacPasskeySigningConfigurationError,
+  isMacPasskeySigningConfigured,
   LinuxIconResizeError,
   MacPasskeySigningConfigurationResolutionError,
   MissingMacPasskeyProvisioningProfileError,
@@ -30,6 +31,7 @@ import {
   resolveDesktopProductName,
   resolveDesktopUpdateChannel,
   resolveDesktopWebAssetBrand,
+  resolveDefaultAxleUpdateUrl,
   resolveDesktopPublishConfig,
   resolveServerRuntimeDependencies,
   resolveMockUpdateServerPort,
@@ -150,6 +152,78 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       const config = yield* resolveDesktopPublishConfig("latest").pipe(
         Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
       );
+
+      assert.isUndefined(config);
+    }),
+  );
+
+  it("derives the platform fallback feed the download worker serves", () => {
+    assert.equal(
+      resolveDefaultAxleUpdateUrl({ platform: "linux", arch: "x64" }),
+      "https://axle-download.axle-download-worker.workers.dev/get/updates/linux",
+    );
+    assert.equal(
+      resolveDefaultAxleUpdateUrl({ platform: "win", arch: "x64" }),
+      "https://axle-download.axle-download-worker.workers.dev/get/updates/windows",
+    );
+    assert.equal(
+      resolveDefaultAxleUpdateUrl({ platform: "mac", arch: "x64" }),
+      "https://axle-download.axle-download-worker.workers.dev/get/updates/macos/x64",
+    );
+    assert.equal(
+      resolveDefaultAxleUpdateUrl({ platform: "mac", arch: "arm64" }),
+      "https://axle-download.axle-download-worker.workers.dev/get/updates/macos/arm64",
+    );
+    // The worker resolves a bare `latest-mac.yml` to the arm64 build, so a
+    // universal mac target must still ask for an architecture-qualified feed.
+    assert.equal(
+      resolveDefaultAxleUpdateUrl({ platform: "mac", arch: "universal" }),
+      "https://axle-download.axle-download-worker.workers.dev/get/updates/macos/arm64",
+    );
+  });
+
+  it.effect("falls back to the deployed feed so a local build can still self-update", () =>
+    Effect.gen(function* () {
+      const config = yield* resolveDesktopPublishConfig(
+        "latest",
+        "https://fallback.example.test/updates/linux",
+      ).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))));
+
+      assert.deepStrictEqual(config, {
+        provider: "generic",
+        url: "https://fallback.example.test/updates/linux",
+      });
+    }),
+  );
+
+  it.effect("still prefers an explicit AXLE_UPDATE_URL over the fallback", () =>
+    Effect.gen(function* () {
+      const config = yield* resolveDesktopPublishConfig(
+        "latest",
+        "https://fallback.example.test/updates/linux",
+      ).pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: { AXLE_UPDATE_URL: "https://explicit.example.test/updates/windows" },
+            }),
+          ),
+        ),
+      );
+
+      assert.deepStrictEqual(config, {
+        provider: "generic",
+        url: "https://explicit.example.test/updates/windows",
+      });
+    }),
+  );
+
+  it.effect("never lets a nightly build inherit the stable fallback feed", () =>
+    Effect.gen(function* () {
+      const config = yield* resolveDesktopPublishConfig(
+        "nightly",
+        "https://fallback.example.test/updates/linux",
+      ).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))));
 
       assert.isUndefined(config);
     }),
@@ -373,6 +447,25 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
   });
 
+  it("keeps macOS passkeys opt-in so a plain Developer ID build can still sign", () => {
+    assert.isFalse(isMacPasskeySigningConfigured({}));
+    assert.isFalse(isMacPasskeySigningConfigured({ T3CODE_APPLE_TEAM_ID: "ABC1234567" }));
+    assert.isFalse(isMacPasskeySigningConfigured({ T3CODE_MACOS_PROVISIONING_PROFILE: "   " }));
+    assert.isTrue(
+      isMacPasskeySigningConfigured({
+        T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/axle.provisionprofile",
+      }),
+    );
+    assert.isTrue(
+      isMacPasskeySigningConfigured({ T3CODE_NEON_AUTH_URL: "https://auth.example.test" }),
+    );
+    assert.isTrue(
+      isMacPasskeySigningConfigured({
+        T3CODE_NEON_AUTH_PASSKEY_RP_DOMAINS: "auth.example.test",
+      }),
+    );
+  });
+
   it("derives macOS passkey signing configuration from the Neon Auth URL", () => {
     const configuration = resolveMacPasskeySigningConfiguration({
       T3CODE_APPLE_TEAM_ID: "abc1234567",
@@ -392,8 +485,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     const configuration = resolveMacPasskeySigningConfiguration({
       T3CODE_APPLE_TEAM_ID: "ABC1234567",
       T3CODE_MACOS_PROVISIONING_PROFILE: "/tmp/t3code.provisionprofile",
-      T3CODE_NEON_AUTH_PASSKEY_RP_DOMAINS:
-        " Auth.Example.com,auth.example.test,login.example.com ",
+      T3CODE_NEON_AUTH_PASSKEY_RP_DOMAINS: " Auth.Example.com,auth.example.test,login.example.com ",
     });
     const entitlements = renderMacPasskeyEntitlements(configuration);
 
@@ -492,18 +584,25 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it.effect("adds passkey entitlements and both renderer protocols to signed macOS builds", () =>
     Effect.gen(function* () {
-      const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
-        entitlementsPath: "/tmp/entitlements.mac.plist",
-        provisioningProfilePath: "/tmp/t3code.provisionprofile",
-      });
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "x64",
+        "1.2.3",
+        true,
+        false,
+        undefined,
+        {
+          entitlementsPath: "/tmp/entitlements.mac.plist",
+          provisioningProfilePath: "/tmp/t3code.provisionprofile",
+        },
+      );
 
       const mac = config.mac as Record<string, unknown>;
       assert.equal(config.appId, "com.axle.desktop");
       assert.equal(mac.entitlements, "/tmp/entitlements.mac.plist");
       assert.equal(mac.provisioningProfile, "/tmp/t3code.provisionprofile");
-      assert.deepStrictEqual(mac.protocols, [
-        { name: "Axle", schemes: ["axle", "axle-dev"] },
-      ]);
+      assert.deepStrictEqual(mac.protocols, [{ name: "Axle", schemes: ["axle", "axle-dev"] }]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
@@ -512,6 +611,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       const config = yield* createBuildConfig(
         "win",
         "nsis",
+        "x64",
         "1.2.3",
         false,
         false,
