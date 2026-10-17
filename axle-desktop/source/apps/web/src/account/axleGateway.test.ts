@@ -2,14 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   AxleGatewayError,
-  CREDIT_USD,
   axleGatewayBaseUrl,
   fetchAxleCredits,
   fetchAxleModelRates,
   fetchAxleUsage,
   formatCredits,
-  formatUsd,
 } from "./axleGateway";
+
+vi.mock("../environments/primary/httpLayer", () => ({
+  fetchPrimaryEnvironment: (input: RequestInfo | URL, init: RequestInit = {}) =>
+    globalThis.fetch(input, init),
+}));
+
+vi.mock("../environments/primary/target", () => ({
+  resolvePrimaryEnvironmentHttpUrl: (path: string) => `http://127.0.0.1:41999${path}`,
+}));
 
 const originalFetch = globalThis.fetch;
 
@@ -30,46 +37,42 @@ describe("gateway base URL", () => {
 });
 
 describe("credits", () => {
-  it("maps the gateway payload onto the account view", async () => {
-    respondWith({
+  it("reads the balance through the local server", async () => {
+    const fetchMock = respondWith({
+      connected: true,
       object: "axle.credits",
       credits: 91.5,
       credit_usd: 0.005,
       daily_free_credits: 100,
       balance_usd: 0.4575,
     });
-    expect(await fetchAxleCredits("axl_test")).toEqual({
-      credits: 91.5,
-      creditUsd: 0.005,
-      dailyFreeCredits: 100,
-      balanceUsd: 0.4575,
-    });
+    expect(await fetchAxleCredits()).toEqual({ credits: 91.5, dailyFreeCredits: 100 });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("/api/axle/credits");
+    expect(url).not.toContain("axl_");
+    expect(init.headers).not.toHaveProperty("Authorization");
   });
 
-  it("sends the key as a bearer token", async () => {
-    const fetchMock = respondWith({ credits: 1 });
-    await fetchAxleCredits("axl_secret");
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(String(url)).toContain("/v1/credits");
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer axl_secret");
+  it("reports no balance when the server has no connected account", async () => {
+    respondWith({ connected: false });
+    expect(await fetchAxleCredits()).toBeNull();
   });
 
   it("falls back to zeroes rather than NaN when fields are missing", async () => {
-    respondWith({});
-    const credits = await fetchAxleCredits("axl_test");
-    expect(credits.credits).toBe(0);
-    expect(credits.balanceUsd).toBe(0);
-    expect(Number.isNaN(credits.balanceUsd)).toBe(false);
+    respondWith({ connected: true });
+    const credits = await fetchAxleCredits();
+    expect(credits?.credits).toBe(0);
+    expect(credits?.dailyFreeCredits).toBe(0);
   });
 
-  it("surfaces the gateway's own error message on a 401", async () => {
-    respondWith({ error: { message: "Missing Axle API key." } }, 401);
-    await expect(fetchAxleCredits("axl_test")).rejects.toThrow("Missing Axle API key.");
+  it("surfaces the server's own error message on a 401", async () => {
+    respondWith({ connected: true, error: "Missing Axle API key." }, 401);
+    await expect(fetchAxleCredits()).rejects.toThrow("Missing Axle API key.");
   });
 
   it("accepts a plain string error body too", async () => {
-    respondWith({ error: "Revoked." }, 401);
-    const error = await fetchAxleCredits("axl_test").catch((thrown: unknown) => thrown);
+    respondWith({ connected: true, error: "Revoked." }, 401);
+    const error = await fetchAxleCredits().catch((thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(AxleGatewayError);
     expect((error as AxleGatewayError).message).toBe("Revoked.");
     expect((error as AxleGatewayError).status).toBe(401);
@@ -79,28 +82,37 @@ describe("credits", () => {
 describe("usage", () => {
   it("maps ledger rows and drops nothing it can explain", async () => {
     respondWith({
+      connected: true,
       object: "axle.usage",
       entries: [
         { kind: "daily_grant", credits: 100, balance_after: 100, model: null, created_at: 1 },
         { kind: "spend", credits: -12.5, balance_after: 87.5, model: "axle-nano", created_at: 2 },
       ],
     });
-    expect(await fetchAxleUsage("axl_test")).toEqual([
+    expect(await fetchAxleUsage()).toEqual([
       { kind: "daily_grant", credits: 100, balanceAfter: 100, model: null, createdAt: 1 },
       { kind: "spend", credits: -12.5, balanceAfter: 87.5, model: "axle-nano", createdAt: 2 },
     ]);
   });
 
   it("returns an empty list when the payload has no entries array", async () => {
-    respondWith({ object: "axle.usage" });
-    expect(await fetchAxleUsage("axl_test")).toEqual([]);
+    respondWith({ connected: true, object: "axle.usage" });
+    expect(await fetchAxleUsage()).toEqual([]);
   });
 
   it("keeps a row whose optional fields are the wrong type", async () => {
-    respondWith({ entries: [{ kind: "spend", credits: "12", balance_after: null, model: 7 }] });
-    expect(await fetchAxleUsage("axl_test")).toEqual([
+    respondWith({
+      connected: true,
+      entries: [{ kind: "spend", credits: "12", balance_after: null, model: 7 }],
+    });
+    expect(await fetchAxleUsage()).toEqual([
       { kind: "spend", credits: 0, balanceAfter: 0, model: null, createdAt: 0 },
     ]);
+  });
+
+  it("returns an empty list when no account is connected", async () => {
+    respondWith({ connected: false, entries: null });
+    expect(await fetchAxleUsage()).toEqual([]);
   });
 });
 
@@ -151,10 +163,5 @@ describe("credit formatting", () => {
     expect(formatCredits(12.5)).toBe("12.5");
     expect(formatCredits(91.5)).toBe("91.5");
     expect(formatCredits(0.5)).toBe("0.5");
-  });
-
-  it("formats USD to cents", () => {
-    expect(formatUsd(0.5)).toBe("$0.50");
-    expect(formatUsd(CREDIT_USD)).toBe("$0.01");
   });
 });
