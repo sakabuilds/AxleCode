@@ -16,7 +16,6 @@ import {
   PlusIcon,
   PinIcon,
   SearchIcon,
-  SettingsIcon,
   SquarePenIcon,
   TerminalIcon,
   TriangleAlertIcon,
@@ -2942,31 +2941,12 @@ function AxleWordmark() {
 }
 
 const SidebarChromeFooter = memo(function SidebarChromeFooter() {
-  const navigate = useNavigate();
-  const { isMobile, setOpenMobile } = useSidebar();
-  const handleSettingsClick = useCallback(() => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/settings" });
-  }, [isMobile, navigate, setOpenMobile]);
-
   return (
     <SidebarFooter className="gap-2 px-3 pt-3 pb-4">
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
         <SidebarAccountMenu />
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            size="sm"
-            className="h-9 gap-2.5 px-2.5 rounded-2xl text-sidebar-foreground/75 hover:bg-sidebar-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-            onClick={handleSettingsClick}
-          >
-            <SettingsIcon className="size-4" />
-            <span className="text-[13px]">Settings</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
       </SidebarMenu>
     </SidebarFooter>
   );
