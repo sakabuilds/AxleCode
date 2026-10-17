@@ -159,7 +159,18 @@ Provider credentials live only in the worker host environment (e.g. `ANTHROPIC_A
 {
   "plans": [
     { "planId": "free", "cloudJobsEnabled": false, "monthlyCredits": 20, "maxConcurrentJobs": 1 },
-    { "planId": "pro", "cloudJobsEnabled": true, "monthlyCredits": 500, "maxConcurrentJobs": 4 }
+    {
+      "planId": "pro",
+      "cloudJobsEnabled": true,
+      "monthlyCredits": 500,
+      "maxConcurrentJobs": 4,
+      "features": {
+        "scheduledTasksMax": 50,
+        "pullRequestReviews": true,
+        "premiumModels": true,
+        "teamSharing": false
+      }
+    }
   ],
   "defaultPlanId": "free",
   "userPlans": { "user-1": "pro" },
@@ -169,6 +180,7 @@ Provider credentials live only in the worker host environment (e.g. `ANTHROPIC_A
 ```
 
 - `plans[]`: unique plan ids. `cloudJobsEnabled` gates job creation (`cloud_not_entitled`); `monthlyCredits` is granted once per calendar month on first use; `maxConcurrentJobs` caps concurrent work per user (combined with `maxActiveJobsPerUser`, whichever is lower wins).
+- `features` (optional per plan): advisory gates for client surfaces, resolved server-side and exposed through `GET /v1/cloud/billing` as `account.entitlements`. Plans that omit `features` fall back to the closed baseline `{ scheduledTasksMax: 2, pullRequestReviews: false, premiumModels: false, teamSharing: false }`. `entitlements` is `null` on unmetered deployments, which clients treat as everything unlocked — only a positively resolved plan may gate a feature.
 - `defaultPlanId`: plan for users without an explicit assignment.
 - `userPlans`: optional per-user overrides; values must reference a configured plan.
 - `creditsPerMinute`: reservation and settlement rate. Set 0 to keep plans and accounting while charging nothing.
@@ -181,7 +193,7 @@ Ledger policy — accounting runs in the same database transaction as the job st
 3. **Settle** — on a terminal state the charge is `ceil(runtimeMinutes) * creditsPerMinute`, capped by the reservation, and the remainder is released. Jobs cancelled before any worker claimed them are released in full. Settlement is idempotent.
 4. **Grants** — `POST /v1/cloud/credits/grant` with the `x-axle-admin` header requires the configured `adminToken` (403 otherwise) and a body `{ userId, entryId, amount, note? }`; `entryId` makes retries idempotent.
 
-Routes: `GET /v1/cloud/billing` returns the caller's `{ account: { planId, balance, updatedAt }, entries[] }` with the 50 most recent ledger entries.
+Routes: `GET /v1/cloud/billing` returns the caller's `{ account: { planId, balance, updatedAt, entitlements }, entries[] }` with the 50 most recent ledger entries.
 
 ## Agent process contract
 
