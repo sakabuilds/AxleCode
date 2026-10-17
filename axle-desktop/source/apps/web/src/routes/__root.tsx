@@ -13,6 +13,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "../branding";
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
+import { UpgradeDialogHost } from "../components/billing/UpgradeDialog";
 import { CommandPalette } from "../components/CommandPalette";
 import { OnboardingGate } from "../components/OnboardingGate";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -118,6 +119,7 @@ function RootRouteView() {
         <DocumentTitleSync />
         {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
         <SshPasswordPromptDialog />
+        <UpgradeDialogHost />
         <HostedStaticEnvironmentBootstrap />
         {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
         {appShell}
