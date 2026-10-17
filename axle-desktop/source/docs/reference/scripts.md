@@ -27,9 +27,13 @@
 - Your tester can still open it on macOS by right-clicking the app and choosing **Open** on first launch.
 - To keep staging files for debugging package contents, run: `vp run dist:desktop:dmg -- --keep-stage`
 - To allow code-signing/notarization when configured in CI/secrets, add: `--signed`.
-- Signed macOS builds also require `T3CODE_APPLE_TEAM_ID` and
-  `T3CODE_MACOS_PROVISIONING_PROFILE`. The passkey RP domain is derived from
-  `T3CODE_CLERK_PUBLISHABLE_KEY` unless `T3CODE_CLERK_PASSKEY_RP_DOMAINS` overrides it.
+- Signed macOS builds need only the Developer ID certificate (`CSC_LINK` plus
+  `CSC_KEY_PASSWORD`) and, optionally, notarization credentials. Passkeys are
+  opt-in: set `T3CODE_APPLE_TEAM_ID` together with
+  `T3CODE_MACOS_PROVISIONING_PROFILE` and `T3CODE_NEON_AUTH_PASSKEY_RP_DOMAINS`
+  (or `T3CODE_NEON_AUTH_URL`) to add the Associated Domains entitlements. A
+  partially configured passkey setup fails the build instead of shipping an app
+  that cannot use passkeys.
 - Windows `--signed` uses Azure Trusted Signing and expects:
   `AZURE_TRUSTED_SIGNING_ENDPOINT`, `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME`,
   `AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME`, and `AZURE_TRUSTED_SIGNING_PUBLISHER_NAME`.
