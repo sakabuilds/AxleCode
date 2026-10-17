@@ -119,7 +119,9 @@ describe("CloudJobsClient", () => {
     const page = await client.listEvents("job-1", { after: 0, limit: 50 });
     expect(page.events).toHaveLength(1);
     expect(page.lastSequence).toBe(1);
-    expect(calls[0]?.url).toBe("https://accounts.example.com/v1/cloud/jobs/job-1/events?after=0&limit=50");
+    expect(calls[0]?.url).toBe(
+      "https://accounts.example.com/v1/cloud/jobs/job-1/events?after=0&limit=50",
+    );
   });
 
   it("responds to a pending request and cancels jobs", async () => {
@@ -144,6 +146,63 @@ describe("CloudJobsClient", () => {
     });
     expect(seen[1]?.url).toBe("https://accounts.example.com/v1/cloud/jobs/job-1/cancel");
     expect(seen[1]?.init?.method).toBe("POST");
+  });
+
+  it("reads billing with resolved entitlements", async () => {
+    const { client, calls } = createClient({
+      handle: () =>
+        jsonResponse(200, {
+          account: {
+            planId: "pro",
+            balance: 480,
+            updatedAt: "2026-10-14T09:00:00.000Z",
+            entitlements: {
+              planId: "pro",
+              cloudJobsEnabled: true,
+              monthlyCredits: 500,
+              maxConcurrentJobs: 4,
+              features: {
+                scheduledTasksMax: 50,
+                pullRequestReviews: true,
+                premiumModels: true,
+                teamSharing: false,
+              },
+            },
+          },
+          entries: [
+            {
+              entryId: 2,
+              kind: "reservation",
+              amount: -20,
+              jobId: "job-1",
+              note: null,
+              createdAt: "2026-10-14T09:00:00.000Z",
+            },
+          ],
+        }),
+    });
+    const billing = await client.getBilling();
+    expect(calls[0]?.url).toBe("https://accounts.example.com/v1/cloud/billing");
+    expect(billing.account.entitlements?.planId).toBe("pro");
+    expect(billing.account.entitlements?.features.pullRequestReviews).toBe(true);
+    expect(billing.entries).toHaveLength(1);
+  });
+
+  it("accepts unmetered billing views with null entitlements", async () => {
+    const { client } = createClient({
+      handle: () =>
+        jsonResponse(200, {
+          account: {
+            planId: "operator",
+            balance: 0,
+            updatedAt: "2026-10-14T09:00:00.000Z",
+            entitlements: null,
+          },
+          entries: [],
+        }),
+    });
+    const billing = await client.getBilling();
+    expect(billing.account.entitlements).toBeNull();
   });
 
   it("maps documented error envelopes to typed errors", async () => {
@@ -171,7 +230,9 @@ describe("CloudJobsClient", () => {
   });
 
   it("rejects responses that do not decode as contracts", async () => {
-    const { client } = createClient({ handle: () => jsonResponse(200, { jobs: [{ jobId: "job-1" }] }) });
+    const { client } = createClient({
+      handle: () => jsonResponse(200, { jobs: [{ jobId: "job-1" }] }),
+    });
     const failure = (await client.listJobs().catch((error: unknown) => error)) as CloudJobsApiError;
     expect(failure.code).toBe("unexpected_response");
   });
