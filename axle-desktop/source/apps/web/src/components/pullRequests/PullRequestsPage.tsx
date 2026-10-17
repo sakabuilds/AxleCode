@@ -38,7 +38,11 @@ import { gitEnvironment } from "../../state/git";
 import { primaryServerProvidersAtom } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { openUpgradeDialog } from "../billing/UpgradeDialog";
+import { pullRequestReviewsLocked } from "../../entitlements/gates";
+import { useEntitlements, resolvedEntitlements } from "../../entitlements/useEntitlements";
 import { GitHubIcon } from "../Icons";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
@@ -451,6 +455,8 @@ export function PullRequestsPage() {
     reportFailure: false,
     reportDefect: false,
   });
+  const entitlements = resolvedEntitlements(useEntitlements());
+  const reviewsLocked = pullRequestReviewsLocked(entitlements);
   const pullRequestReviewSnapshot = useSyncExternalStore(
     subscribeToPullRequestReviewProgress,
     getPullRequestReviewProgressSnapshot,
@@ -1095,6 +1101,10 @@ export function PullRequestsPage() {
   );
 
   const handlePullRequestReview = useCallback(() => {
+    if (reviewsLocked) {
+      openUpgradeDialog("pull-request-reviews");
+      return;
+    }
     const bridge = getGitHubBridge();
     const postGitHubPullRequestReview = bridge?.postGitHubPullRequestReview?.bind(bridge);
     const currentPullRequest =
@@ -1306,6 +1316,7 @@ export function PullRequestsPage() {
     reviewModelSelection,
     reviewProject,
     reviewPullRequestCommand,
+    reviewsLocked,
     selectedNumber,
     selectedPullRequest,
     selectedRepository,
@@ -1687,15 +1698,17 @@ export function PullRequestsPage() {
                             size="sm"
                             disabled={
                               activePullRequestActionBusy !== null ||
-                              reviewProject === null ||
-                              !canPostPullRequestReview
+                              (!reviewsLocked &&
+                                (reviewProject === null || !canPostPullRequestReview))
                             }
                             title={
-                              reviewProject === null
-                                ? "Open a workspace in the primary environment to enable AI reviews."
-                                : !canPostPullRequestReview
-                                  ? "Update Axle to enable AI pull request reviews."
-                                  : undefined
+                              reviewsLocked
+                                ? "AI pull request reviews are included with Axle Pro."
+                                : reviewProject === null
+                                  ? "Open a workspace in the primary environment to enable AI reviews."
+                                  : !canPostPullRequestReview
+                                    ? "Update Axle to enable AI pull request reviews."
+                                    : undefined
                             }
                             onClick={() => void handlePullRequestReview()}
                           >
@@ -1705,6 +1718,11 @@ export function PullRequestsPage() {
                               <GitPullRequestIcon className="size-3.5" />
                             )}
                             Review PR
+                            {reviewsLocked ? (
+                              <Badge variant="secondary" size="sm">
+                                Pro
+                              </Badge>
+                            ) : null}
                           </Button>
                           <Button
                             size="sm"
