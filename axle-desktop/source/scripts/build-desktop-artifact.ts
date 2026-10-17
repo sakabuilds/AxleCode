@@ -716,6 +716,27 @@ function normalizePasskeyRpDomain(value: string): string {
   return parsed.hostname;
 }
 
+/**
+ * Whether this environment opts into macOS passkey signing.
+ *
+ * Passkeys need an Associated Domains provisioning profile and a relying-party
+ * domain, and neither belongs to an ordinary Developer ID build: signing and
+ * notarization on their own only need the certificate. Passkeys are therefore
+ * opt-in. An environment that asks for them still fails loudly on a partial or
+ * malformed configuration, while one that does not gets a plain signed build
+ * instead of the hard requirement that used to make signing impossible without
+ * App Store Connect work.
+ */
+export function isMacPasskeySigningConfigured(
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  return Boolean(
+    env.T3CODE_MACOS_PROVISIONING_PROFILE?.trim() ||
+    env.T3CODE_NEON_AUTH_URL?.trim() ||
+    env.T3CODE_NEON_AUTH_PASSKEY_RP_DOMAINS?.trim(),
+  );
+}
+
 export function resolveMacPasskeySigningConfiguration(
   env: Readonly<Record<string, string | undefined>>,
 ): MacPasskeySigningConfiguration {
@@ -1308,14 +1329,51 @@ export function resolveServerRuntimeDependencies(
   return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/server");
 }
 
+/**
+ * The feed Axle's own installers fall back to when `AXLE_UPDATE_URL` is unset.
+ *
+ * CI sets the variable per platform, so the fallback only ever applies to a
+ * build made by hand. Without it a local build ships no `app-update.yml`, which
+ * Electron surfaces as "no update feed is configured" and which leaves the
+ * Check for Updates button disabled for the life of that install.
+ */
+const DEFAULT_AXLE_UPDATE_BASE_URL = "https://axle-download.axle-download-worker.workers.dev/get";
+
+/**
+ * The feed path for a build, mirroring the download worker's routes:
+ * `updates/linux`, `updates/windows`, and `updates/macos/<arch>`.
+ *
+ * macOS is architecture-qualified on purpose: the worker resolves a bare
+ * `latest-mac.yml` to the arm64 build, so an Intel install that asked for the
+ * generic feed would be offered an arm64 update it cannot run.
+ */
+export function resolveDefaultAxleUpdateUrl(input: {
+  readonly platform: typeof BuildPlatform.Type;
+  readonly arch: typeof BuildArch.Type;
+}): string {
+  if (input.platform === "mac") {
+    return `${DEFAULT_AXLE_UPDATE_BASE_URL}/updates/macos/${
+      input.arch === "universal" ? "arm64" : input.arch
+    }`;
+  }
+  if (input.platform === "win") return `${DEFAULT_AXLE_UPDATE_BASE_URL}/updates/windows`;
+  return `${DEFAULT_AXLE_UPDATE_BASE_URL}/updates/linux`;
+}
+
 export const resolveDesktopPublishConfig = Effect.fn("resolveDesktopPublishConfig")(function* (
   updateChannel: "latest" | "nightly",
+  defaultUrl?: string,
 ) {
   const env = yield* Config.all({
     axleUpdateUrl: Config.string("AXLE_UPDATE_URL").pipe(Config.option),
   });
-  const axleUpdateUrl = Option.getOrUndefined(env.axleUpdateUrl)?.trim();
-  if (!axleUpdateUrl || !/^https:\/\//u.test(axleUpdateUrl)) return undefined;
+  // A nightly build must never inherit the stable channel's feed, so the
+  // fallback is limited to the release channel. An explicit variable wins.
+  const axleUpdateUrl =
+    Option.getOrUndefined(env.axleUpdateUrl)?.trim() ||
+    (updateChannel === "latest" ? defaultUrl?.trim() : undefined) ||
+    "";
+  if (!axleUpdateUrl || !axleUpdateUrl.startsWith("https://")) return undefined;
   return {
     provider: "generic" as const,
     url: axleUpdateUrl.replace(/\/+$/u, ""),
@@ -1373,6 +1431,7 @@ export function resolveDesktopProductName(version: string): string {
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   platform: typeof BuildPlatform.Type,
   target: string,
+  arch: typeof BuildArch.Type,
   version: string,
   signed: boolean,
   mockUpdates: boolean,
@@ -1407,13 +1466,14 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     asarUnpack: [...DESKTOP_ASAR_UNPACK, "apps/server/dist/**", "**/node_modules/**"],
     extraResources: [
       { from: "apps/desktop/resources/axle", to: "axle" },
-      ...(platform === "win"
-        ? [{ from: "apps/desktop/resources/icon.ico", to: "icon.ico" }]
-        : []),
+      ...(platform === "win" ? [{ from: "apps/desktop/resources/icon.ico", to: "icon.ico" }] : []),
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  const publishConfig = yield* resolveDesktopPublishConfig(updateChannel);
+  const publishConfig = yield* resolveDesktopPublishConfig(
+    updateChannel,
+    resolveDefaultAxleUpdateUrl({ platform, arch }),
+  );
   if (publishConfig) {
     buildConfig.publish = [publishConfig];
   } else if (mockUpdates) {
@@ -1730,14 +1790,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     yield* fs.copyFile(axleBinary, path.join(stagedAxleDir, "axle.exe"));
   } else if (options.platform === "mac") {
     const rustTarget = options.arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
-    const targetedBinary = path.resolve(
-      repoRoot,
-      "../..",
-      "target",
-      rustTarget,
-      "release",
-      "axle",
-    );
+    const targetedBinary = path.resolve(repoRoot, "../..", "target", rustTarget, "release", "axle");
     const hostBinary = path.resolve(repoRoot, "../..", "target", "release", "axle");
     const axleBinary = (yield* fs.exists(targetedBinary)) ? targetedBinary : hostBinary;
     const stagedAxleDir = path.join(stageResourcesDir, "axle");
@@ -1772,7 +1825,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const configuredMacPasskeySigning =
     options.platform === "mac" && options.signed
       ? yield* Effect.try({
-          try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
+          try: () => {
+            const signingEnv = loadRepoEnv({ repoRoot });
+            return isMacPasskeySigningConfigured(signingEnv)
+              ? resolveMacPasskeySigningConfiguration(signingEnv)
+              : undefined;
+          },
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
         })
       : undefined;
@@ -1838,6 +1896,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     build: yield* createBuildConfig(
       options.platform,
       options.target,
+      options.arch,
       appVersion,
       options.signed,
       options.mockUpdates,
