@@ -22,8 +22,16 @@ export const AgentExecutionTarget = Schema.Union([
 export type AgentExecutionTarget = typeof AgentExecutionTarget.Type;
 
 export const CloudJobState = Schema.Literals([
-  "queued", "provisioning", "running", "waiting_for_approval", "waiting_for_input",
-  "finalizing", "completed", "failed", "cancelled", "interrupted",
+  "queued",
+  "provisioning",
+  "running",
+  "waiting_for_approval",
+  "waiting_for_input",
+  "finalizing",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
 ]);
 export type CloudJobState = typeof CloudJobState.Type;
 
@@ -62,12 +70,14 @@ export type CloudJobPendingRequest = typeof CloudJobPendingRequest.Type;
 export const CloudJobResult = Schema.Struct({
   sourceRevision: CloudSourceRevision,
   headRevision: CloudSourceRevision,
-  artifacts: Schema.Array(Schema.Struct({
-    kind: Schema.Literals(["diff", "git-bundle", "log"]),
-    storageKey: TrimmedNonEmptyString.check(Schema.isMaxLength(512)),
-    sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
-    sizeBytes: NonNegativeInt,
-  })).check(Schema.isMaxLength(32)),
+  artifacts: Schema.Array(
+    Schema.Struct({
+      kind: Schema.Literals(["diff", "git-bundle", "log"]),
+      storageKey: TrimmedNonEmptyString.check(Schema.isMaxLength(512)),
+      sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+      sizeBytes: NonNegativeInt,
+    }),
+  ).check(Schema.isMaxLength(32)),
 });
 export type CloudJobResult = typeof CloudJobResult.Type;
 
@@ -105,7 +115,10 @@ export const CloudJobLease = Schema.Struct({
 });
 export type CloudJobLease = typeof CloudJobLease.Type;
 
-export const CloudWorkerClaimInput = Schema.Struct({ workerId: Identifier, environmentId: CloudEnvironmentId });
+export const CloudWorkerClaimInput = Schema.Struct({
+  workerId: Identifier,
+  environmentId: CloudEnvironmentId,
+});
 export const CloudWorkerLeaseInput = Schema.Struct({
   workerId: Identifier,
   leaseToken: TrimmedNonEmptyString.check(Schema.isMaxLength(128)),
@@ -120,7 +133,9 @@ export const CloudWorkerUpdateInput = Schema.Struct({
   event: Schema.optionalKey(Schema.Unknown),
   pendingRequest: Schema.optionalKey(CloudJobPendingRequest),
   result: Schema.optionalKey(CloudJobResult),
-  failureCode: Schema.optionalKey(Schema.Literals(["provisioning_failed", "runtime_failed", "artifact_failed"])),
+  failureCode: Schema.optionalKey(
+    Schema.Literals(["provisioning_failed", "runtime_failed", "artifact_failed"]),
+  ),
 });
 export type CloudWorkerUpdateInput = typeof CloudWorkerUpdateInput.Type;
 
@@ -130,3 +145,53 @@ export const CloudJobResponseInput = Schema.Struct({
   payload: Schema.Unknown,
 });
 export type CloudJobResponseInput = typeof CloudJobResponseInput.Type;
+
+/**
+ * Plan feature switches resolved server-side from the operator's billing
+ * configuration. `cloudJobsEnabled` and the credit limits are enforced by the
+ * account API; the remaining switches are advisory gates for client surfaces
+ * that run on the user's own machine.
+ */
+export const CloudPlanFeatures = Schema.Struct({
+  /** Maximum saved scheduled tasks; use a high value (1000) for effectively unlimited. */
+  scheduledTasksMax: NonNegativeInt,
+  pullRequestReviews: Schema.Boolean,
+  premiumModels: Schema.Boolean,
+  teamSharing: Schema.Boolean,
+});
+export type CloudPlanFeatures = typeof CloudPlanFeatures.Type;
+
+export const CloudEntitlements = Schema.Struct({
+  planId: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(64)),
+  cloudJobsEnabled: Schema.Boolean,
+  monthlyCredits: NonNegativeInt,
+  maxConcurrentJobs: PositiveInt,
+  features: CloudPlanFeatures,
+});
+export type CloudEntitlements = typeof CloudEntitlements.Type;
+
+export const CloudCreditLedgerEntry = Schema.Struct({
+  entryId: Schema.Number,
+  kind: Schema.Literals(["monthly_grant", "reservation", "settlement", "adjustment"]),
+  amount: Schema.Number,
+  jobId: Schema.NullOr(Schema.String),
+  note: Schema.Unknown,
+  createdAt: Schema.String,
+});
+export type CloudCreditLedgerEntry = typeof CloudCreditLedgerEntry.Type;
+
+/**
+ * `GET /v1/cloud/billing`. `account.entitlements` is null when the deployment
+ * has no billing configuration (unmetered operator mode), which clients treat
+ * as every feature unlocked.
+ */
+export const CloudBillingView = Schema.Struct({
+  account: Schema.Struct({
+    planId: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(64)),
+    balance: NonNegativeInt,
+    updatedAt: Schema.String,
+    entitlements: Schema.NullOr(CloudEntitlements),
+  }),
+  entries: Schema.Array(CloudCreditLedgerEntry),
+});
+export type CloudBillingView = typeof CloudBillingView.Type;
