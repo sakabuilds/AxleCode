@@ -8,6 +8,52 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::{json, Value};
 
+/// The message an OpenAI-compatible endpoint reported. Structured errors
+/// (`{"error": {"message": ...}}`, which is what the Axle gateway sends when
+/// credit runs out) read as sentences instead of raw JSON.
+pub(crate) fn extract_upstream_error_message(body: &str) -> String {
+    let trimmed = body.trim();
+    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+        let message = value
+            .get("error")
+            .and_then(|error| {
+                error.as_str().map(str::to_owned).or_else(|| {
+                    error
+                        .get("message")
+                        .and_then(|message| message.as_str())
+                        .map(str::to_owned)
+                })
+            })
+            .or_else(|| {
+                value
+                    .get("message")
+                    .and_then(|message| message.as_str())
+                    .map(str::to_owned)
+            });
+        if let Some(message) = message {
+            if !message.trim().is_empty() {
+                return message;
+            }
+        }
+    }
+    trimmed.to_owned()
+}
+
+fn provider_api_error(label: &str, status: reqwest::StatusCode, body: &str) -> anyhow::Error {
+    let hint = if matches!(status.as_u16(), 401 | 403) {
+        " Check that the API key is valid and authorized for this model."
+    } else {
+        ""
+    };
+    anyhow::anyhow!(
+        "{} API error (HTTP {}): {}{}",
+        label,
+        status,
+        extract_upstream_error_message(body),
+        hint
+    )
+}
+
 pub struct OpenAiProvider {
     api_key: String,
     api_key_env: Option<String>,
@@ -186,18 +232,7 @@ impl LlmProvider for OpenAiProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let err_text = resp.text().await?;
-            let hint = if matches!(status.as_u16(), 401 | 403) {
-                " Check that the API key is valid and authorized for this model."
-            } else {
-                ""
-            };
-            anyhow::bail!(
-                "{} API error (HTTP {}): {}{}",
-                self.provider_label,
-                status,
-                err_text,
-                hint
-            );
+            return Err(provider_api_error(self.provider_label, status, &err_text));
         }
 
         let val: Value = resp.json().await?;
@@ -262,18 +297,7 @@ impl LlmProvider for OpenAiProvider {
         if !resp.status().is_success() {
             let status = resp.status();
             let err_text = resp.text().await?;
-            let hint = if matches!(status.as_u16(), 401 | 403) {
-                " Check that the API key is valid and authorized for this model."
-            } else {
-                ""
-            };
-            anyhow::bail!(
-                "{} API error (HTTP {}): {}{}",
-                self.provider_label,
-                status,
-                err_text,
-                hint
-            );
+            return Err(provider_api_error(self.provider_label, status, &err_text));
         }
 
         Ok(stream_parser::openai(resp))
@@ -346,5 +370,53 @@ mod tests {
         apply_sampling_options(&mut body, &options);
 
         assert_eq!(body["temperature"], 0.25);
+    }
+
+    #[test]
+    fn structured_errors_surface_the_gateway_message() {
+        assert_eq!(
+            extract_upstream_error_message(
+                r#"{"error":{"message":"Not enough Axle credits: this request reserves 12 and your balance is 3.","type":"insufficient_credits","code":"axle_insufficient_credits"}}"#,
+            ),
+            "Not enough Axle credits: this request reserves 12 and your balance is 3."
+        );
+        assert_eq!(
+            extract_upstream_error_message(r#"{"error":"Revoked."}"#),
+            "Revoked."
+        );
+        assert_eq!(
+            extract_upstream_error_message(r#"{"message":"Bad model."}"#),
+            "Bad model."
+        );
+    }
+
+    #[test]
+    fn unstructured_errors_fall_back_to_the_raw_body() {
+        assert_eq!(
+            extract_upstream_error_message("upstream exploded"),
+            "upstream exploded"
+        );
+        assert_eq!(extract_upstream_error_message("  spaced  "), "spaced");
+        assert_eq!(
+            extract_upstream_error_message(r#"{"error":{"message":"  "}}"#),
+            r#"{"error":{"message":"  "}}"#
+        );
+    }
+
+    #[test]
+    fn provider_errors_keep_the_status_and_key_hint() {
+        let error = provider_api_error("Axle", reqwest::StatusCode::PAYMENT_REQUIRED, "{}");
+        let message = error.to_string();
+        assert!(message.contains("Axle API error (HTTP 402"));
+        assert!(!message.contains("API key is valid"));
+
+        let unauthorized = provider_api_error(
+            "OpenAI",
+            reqwest::StatusCode::UNAUTHORIZED,
+            r#"{"error":{"message":"bad key"}}"#,
+        );
+        let message = unauthorized.to_string();
+        assert!(message.contains("OpenAI API error (HTTP 401 Unauthorized): bad key"));
+        assert!(message.contains("API key is valid"));
     }
 }
