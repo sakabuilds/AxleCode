@@ -37,16 +37,25 @@ describe("gateway base URL", () => {
 });
 
 describe("credits", () => {
-  it("reads the balance through the local server", async () => {
+  it("reads the balance and its three buckets through the local server", async () => {
     const fetchMock = respondWith({
       connected: true,
       object: "axle.credits",
-      credits: 91.5,
+      credits: 2_191.5,
       credit_usd: 0.005,
       daily_free_credits: 100,
-      balance_usd: 0.4575,
+      free_credits: 91.5,
+      plan_credits: 2_000,
+      paid_credits: 100,
+      balance_usd: 10.9575,
     });
-    expect(await fetchAxleCredits()).toEqual({ credits: 91.5, dailyFreeCredits: 100 });
+    expect(await fetchAxleCredits()).toEqual({
+      credits: 2_191.5,
+      dailyFreeCredits: 100,
+      freeCredits: 91.5,
+      planCredits: 2_000,
+      paidCredits: 100,
+    });
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toContain("/api/axle/credits");
     expect(url).not.toContain("axl_");
@@ -138,11 +147,24 @@ describe("model rates", () => {
         id: "axle-nano",
         label: "Axle Nano",
         tier: 1,
+        plan: "free",
         contextWindow: 128000,
         creditsPerMillionInput: 40,
         creditsPerMillionOutput: 160,
       },
     ]);
+  });
+
+  it("marks a paid model as plan-gated", async () => {
+    respondWith({
+      data: [
+        {
+          id: "glm-5.3",
+          axle: { label: "GLM 5.3", tier: 3, plan: "paid" },
+        },
+      ],
+    });
+    expect((await fetchAxleModelRates())[0]?.plan).toBe("paid");
   });
 
   it("does not need a key", async () => {
