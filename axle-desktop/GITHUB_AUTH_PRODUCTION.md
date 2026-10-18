@@ -21,10 +21,27 @@ Recommended registration values:
 | OAuth App name | `Axle` |
 | Homepage URL | Your real HTTPS Axle website |
 | Callback URL | `http://127.0.0.1/github/oauth/callback` |
+| Callback URL (second) | `https://axle-auth.axle-download-worker.workers.dev/v1/auth/callback/github` |
 | Callback wildcard matching | **Off** |
 | Device Flow | **Off** |
 
-Why the callback has no port: GitHub supports loopback callbacks for native desktop apps. Axle binds an available random port on `127.0.0.1`, then sends a redirect such as `http://127.0.0.1:49152/github/oauth/callback`. GitHub allows the loopback port to vary from the registered callback. Do not use `localhost` here.
+The same GitHub OAuth App serves two flows, so **both** callback URLs must be registered:
+
+1. **Desktop plugin connect** (native loopback flow): the desktop binds a random
+   port on `127.0.0.1` and redirects to
+   `http://127.0.0.1:49152/github/oauth/callback`; GitHub allows the loopback
+   port to vary from the registered callback. Do not use `localhost` here and do
+   not add a port to the registered value. The worker only brokers the code
+   exchange (`/v1/github/exchange`) and never sees the browser redirect.
+2. **Axle account sign-in** ("Continue with GitHub"): the worker owns this
+   callback, so register `${PUBLIC_BASE_URL}/v1/auth/callback/github`, today
+   `https://axle-auth.axle-download-worker.workers.dev/v1/auth/callback/github`.
+   Without it, GitHub sign-in fails with `redirect_uri_mismatch` even though the
+   desktop plugin flow works, and vice versa.
+
+GitHub OAuth Apps accept multiple callback URLs, so register both on the same
+app. If either flow fails with `redirect_uri_mismatch`, the missing entry here
+is the cause.
 
 ### OAuth scope
 
@@ -88,26 +105,24 @@ Deploy:
 npx wrangler deploy
 ```
 
-For production, attach a dedicated HTTPS hostname such as:
+The currently deployed HTTPS broker is:
 
 ```text
-https://auth.axle.llc
+https://axle-auth.axle-download-worker.workers.dev
 ```
 
-The current temporary HTTPS deployment is:
-
-```text
-https://axle-auth.axle-nexus-updates.workers.dev
-```
-
-Use a Cloudflare custom domain or route. The desktop build rejects non-HTTPS broker URLs except loopback HTTP used for local development.
+A dedicated Cloudflare custom domain or route (for example
+`https://auth.axle.llc`, once the domain is attached and its DNS resolves) can
+replace it; when it changes, update `PUBLIC_BASE_URL`/`AUTH_ISSUER` on the
+Worker and `AXLE_GITHUB_AUTH_BROKER_URL` together. The desktop build rejects
+non-HTTPS broker URLs except loopback HTTP used for local development.
 
 ### Verify the broker
 
 Open or request:
 
 ```text
-https://auth.axle.llc/health
+https://axle-auth.axle-download-worker.workers.dev/health
 ```
 
 A correctly configured broker returns a small response indicating that the GitHub client ID is configured. It never returns the client secret.
@@ -133,7 +148,7 @@ Example:
 
 ```text
 AXLE_GITHUB_CLIENT_ID=Iv1.xxxxxxxxxxxxxxxx
-AXLE_GITHUB_AUTH_BROKER_URL=https://auth.axle.llc
+AXLE_GITHUB_AUTH_BROKER_URL=https://axle-auth.axle-download-worker.workers.dev
 ```
 
 These values are intentionally public. `vite.config.ts` embeds them in the packaged desktop application so end users do not have to set environment variables after installation.
