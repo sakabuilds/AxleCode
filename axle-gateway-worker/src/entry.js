@@ -107,6 +107,118 @@ function upstreamConfig(env) {
   };
 }
 
+/**
+ * Plan access for paid models. The account API is the source of truth for
+ * subscriptions; the gateway caches its answer briefly and fails open on
+ * every kind of outage, so a billing-backend problem can never lock a paying
+ * user out of the models they pay for.
+ */
+const PLAN_CACHE_TTL_MS = 5 * 60_000;
+const planCache = new Map();
+
+export async function hasPaidPlan(userId, env) {
+  const baseUrl = env?.ACCOUNT_API_URL;
+  const token = env?.INTERNAL_API_TOKEN;
+  if (typeof baseUrl !== "string" || baseUrl.length === 0 || typeof token !== "string" || token.length === 0) {
+    return true; // deployments without billing stay open
+  }
+  const now = Date.now();
+  const cached = planCache.get(userId);
+  if (cached !== undefined && cached.expiresAt > now) return cached.paid;
+  // Same-zone worker-to-worker global fetch fails with error 1042, so the
+  // deployed gateway routes through the ACCOUNT_API_SERVICE binding when it
+  // is bound; self-hosted deployments fall back to global fetch.
+  const accountFetch =
+    typeof env?.ACCOUNT_API_SERVICE?.fetch === "function"
+      ? (url, init) => env.ACCOUNT_API_SERVICE.fetch(url, init)
+      : fetch;
+  try {
+    const response = await accountFetch(
+      `${baseUrl.replace(/\/+$/u, "")}/v1/billing/plan?user_id=${encodeURIComponent(userId)}`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(4_000),
+      },
+    );
+    if (!response.ok) return true;
+    const payload = await response.json();
+    const paid = payload?.paid === true;
+    if (planCache.size > 4_096) planCache.clear();
+    planCache.set(userId, { paid, expiresAt: now + PLAN_CACHE_TTL_MS });
+    return paid;
+  } catch {
+    return true;
+  }
+}
+
+/** Constant-time bearer-token comparison for the internal credit route. */
+async function tokensMatch(presented, expected) {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(presented)),
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+  ]);
+  const left = new Uint8Array(a);
+  const right = new Uint8Array(b);
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let index = 0; index < left.length; index += 1) diff |= left[index] ^ right[index];
+  return diff === 0;
+}
+
+/**
+ * The account API applies purchases and plan grants here after Bachs confirms
+ * a payment. `reference` is the payment event id, so a redelivered webhook
+ * can never double-credit an account.
+ */
+async function internalCreditsResponse(request, env) {
+  const expected = env?.INTERNAL_API_TOKEN;
+  const presented = request.headers.get("authorization") ?? "";
+  if (
+    typeof expected !== "string" ||
+    expected.length === 0 ||
+    !(await tokensMatch(presented, `Bearer ${expected}`))
+  ) {
+    return json({ error: { message: "A valid internal token is required." } }, 401);
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: { message: "Request body must be JSON." } }, 400);
+  }
+  const userId = typeof body?.user_id === "string" && body.user_id.length > 0 ? body.user_id : null;
+  const amount = Number(body?.amount);
+  const bucket = body?.bucket;
+  const reference =
+    typeof body?.reference === "string" && body.reference.length > 0 && body.reference.length <= 256
+      ? body.reference
+      : null;
+  if (!userId || !Number.isFinite(amount) || amount <= 0 || !bucket || !reference) {
+    return json(
+      {
+        error: {
+          message: "user_id, a positive amount, bucket ('paid'|'plan'), and reference are required.",
+        },
+      },
+      400,
+    );
+  }
+  if (bucket !== "paid" && bucket !== "plan") {
+    return json({ error: { message: "bucket must be 'paid' or 'plan'." } }, 400);
+  }
+  const ledger = ledgerFor(env);
+  const result =
+    bucket === "plan"
+      ? await ledger.planCredit(userId, amount, reference)
+      : await ledger.credit(userId, amount, { kind: "purchase" }, reference);
+  return json({
+    object: "axle.internal_credit",
+    applied: result.applied,
+    balance: result.balance,
+  });
+}
+
 function messageText(body) {
   let characters = 0;
   for (const message of body?.messages ?? []) {
@@ -194,10 +306,13 @@ async function modelsResponse() {
 }
 
 async function creditsResponse(ledger, userId) {
-  const { balance } = await ledger.ensureDailyGrant(userId);
+  const { balance, freeBalance, planBalance, paidBalance } = await ledger.ensureDailyGrant(userId);
   return json({
     object: "axle.credits",
     credits: balance,
+    free_credits: freeBalance,
+    plan_credits: planBalance,
+    paid_credits: paidBalance,
     credit_usd: CREDIT_USD,
     daily_free_credits: DAILY_FREE_CREDITS,
     balance_usd: Number((balance * CREDIT_USD).toFixed(4)),
@@ -245,6 +360,20 @@ async function chatCompletions(request, env, ctx, ledger, userId) {
         },
       },
       400,
+    );
+  }
+
+  if (model.plan === "paid" && !(await hasPaidPlan(userId, env))) {
+    return json(
+      {
+        error: {
+          message: `${model.label} requires a paid Axle plan. Upgrade to Pro, Pro+, or Ultra to use it.`,
+          type: "plan_required",
+          code: "axle_plan_required",
+          model: model.id,
+        },
+      },
+      403,
     );
   }
 
@@ -383,6 +512,10 @@ export async function handleRequest(request, env = {}, ctx = {}) {
     const userId = await resolveUserId(request, env, ctx);
     if (!userId) return json({ error: { message: "Missing Axle API key." } }, 401);
     return usageResponse(ledgerFor(env), userId, url.searchParams.get("limit"));
+  }
+
+  if (path === "/internal/credits" && request.method === "POST") {
+    return internalCreditsResponse(request, env);
   }
 
   if (path === "/chat/completions") {
