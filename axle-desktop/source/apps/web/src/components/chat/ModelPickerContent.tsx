@@ -34,6 +34,7 @@ import {
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
 import { catalogSectionForModel, isModelInAxleCatalog } from "./axleModelCatalog";
+import { useHiddenAxleModelSlugs } from "../../entitlements/axleModelAccess";
 
 type ModelPickerItem = {
   slug: string;
@@ -122,6 +123,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const highlightedModelKeyRef = useRef<string | null>(null);
   const favorites = useClientSettings((s) => s.favorites ?? []);
   const isAxleRuntime = instanceEntries.some((entry) => entry.driverKind === "axle");
+  // Paid Axle gateway models are hidden for accounts positively resolved to a
+  // Free plan; the set is empty in every other case, so nothing else changes.
+  const hiddenAxleModelSlugs = useHiddenAxleModelSlugs();
   const [selectedInstanceId, setSelectedInstanceId] = useState<ModelPickerRailSelection>(() => {
     if (props.lockedProvider !== null) {
       // When locked, prime the sidebar to the currently-active instance
@@ -212,6 +216,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         continue;
       }
       for (const model of models) {
+        if (hiddenAxleModelSlugs.has(model.slug)) {
+          continue;
+        }
         out.push({
           slug: model.slug,
           name: model.name,
@@ -228,7 +235,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       }
     }
     return out;
-  }, [modelOptionsByInstance, entryByInstanceId]);
+  }, [modelOptionsByInstance, entryByInstanceId, hiddenAxleModelSlugs]);
 
   const isLocked = props.lockedProvider !== null;
   const isSearching = searchQuery.trim().length > 0;
