@@ -7,6 +7,7 @@ import { Link } from "@tanstack/react-router";
 import {
   CircleUserRoundIcon,
   CoinsIcon,
+  CreditCardIcon,
   KeyRoundIcon,
   LayoutDashboardIcon,
   Link2Icon,
@@ -22,6 +23,7 @@ export type AccountSectionPath =
   | "/settings/account/connections"
   | "/settings/account/sessions"
   | "/settings/account/credits"
+  | "/settings/account/billing"
   | "/settings/account/api-keys";
 
 const ACCOUNT_SECTIONS: ReadonlyArray<{
@@ -33,6 +35,7 @@ const ACCOUNT_SECTIONS: ReadonlyArray<{
   { label: "Profile", to: "/settings/account/profile", icon: CircleUserRoundIcon },
   { label: "Connections", to: "/settings/account/connections", icon: Link2Icon },
   { label: "Sessions", to: "/settings/account/sessions", icon: MonitorSmartphoneIcon },
+  { label: "Billing", to: "/settings/account/billing", icon: CreditCardIcon },
   { label: "Credits", to: "/settings/account/credits", icon: CoinsIcon },
   { label: "API keys", to: "/settings/account/api-keys", icon: KeyRoundIcon },
 ];
