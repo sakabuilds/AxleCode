@@ -2,10 +2,11 @@
  * Which Axle gateway models the signed-in plan may reach.
  *
  * Enforcement lives in the gateway, which refuses paid models on a free plan;
- * this module only mirrors the catalog's `plan` flags so the picker does not
- * advertise models the account cannot use. Only a positively resolved Free
- * plan hides anything: signed-out sessions, unconfigured deployments, and
- * failed lookups leave the catalog untouched so no one is ever locked out.
+ * this module only mirrors the catalog's `plan` flags so the picker can show
+ * paid models as disabled instead of advertising them as selectable. Only a
+ * positively resolved Free plan locks anything: signed-out sessions,
+ * unconfigured deployments, and failed lookups leave the catalog untouched so
+ * no one is ever locked out.
  */
 
 import type { CloudEntitlements } from "@axle/contracts";
@@ -21,21 +22,21 @@ const AXLE_SLUG_PREFIX = "axle/";
 const EMPTY_SLUGS: ReadonlySet<string> = new Set();
 
 /**
- * Slugs the picker must hide for this plan. Empty unless the plan positively
- * resolved to Free and the catalog loaded — every other combination fails
- * open.
+ * Slugs the picker must disable for this plan. Empty unless the plan
+ * positively resolved to Free and the catalog loaded — every other
+ * combination fails open.
  */
-export function hiddenAxleModelSlugs(
+export function lockedAxleModelSlugs(
   entitlements: CloudEntitlements | null,
   rates: ReadonlyArray<AxleModelRate> | null,
 ): ReadonlySet<string> {
   if (entitlements === null || rates === null) return EMPTY_SLUGS;
   if (planTierFromId(entitlements.planId) !== "free") return EMPTY_SLUGS;
-  const hidden = new Set<string>();
+  const locked = new Set<string>();
   for (const rate of rates) {
-    if (rate.plan === "paid") hidden.add(`${AXLE_SLUG_PREFIX}${rate.id}`);
+    if (rate.plan === "paid") locked.add(`${AXLE_SLUG_PREFIX}${rate.id}`);
   }
-  return hidden;
+  return locked;
 }
 
 type AxleRatesSnapshot =
@@ -100,13 +101,13 @@ export function useAxleModelRates(): ReadonlyArray<AxleModelRate> | null {
 
 /**
  * Axle model slugs the current account cannot use. Empty unless the plan
- * positively resolved to Free; callers simply skip matching picker rows.
+ * positively resolved to Free; callers show matching picker rows disabled.
  */
-export function useHiddenAxleModelSlugs(): ReadonlySet<string> {
+export function useLockedAxleModelSlugs(): ReadonlySet<string> {
   const entitlements = useEntitlements();
   const rates = useAxleModelRates();
   return useMemo(
-    () => hiddenAxleModelSlugs(resolvedEntitlements(entitlements), rates),
+    () => lockedAxleModelSlugs(resolvedEntitlements(entitlements), rates),
     [entitlements, rates],
   );
 }

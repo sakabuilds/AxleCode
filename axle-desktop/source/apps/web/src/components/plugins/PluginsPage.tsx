@@ -1,6 +1,7 @@
 import {
   CheckIcon,
   LoaderCircleIcon,
+  LockIcon,
   LogInIcon,
   PlugIcon,
   RefreshCwIcon,
@@ -10,6 +11,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAccountActions, useAccountState } from "../../account/AccountAuthProvider";
+import { openUpgradeDialog } from "../billing/UpgradeDialog";
+import { pluginLockedForPlan } from "../../entitlements/gates";
+import { useEntitlements, resolvedEntitlements } from "../../entitlements/useEntitlements";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { PluginLogo } from "./PluginLogo";
@@ -31,16 +35,21 @@ function PluginRow({
   connected,
   busy,
   disabled,
+  locked,
   onConnect,
   onDisconnect,
+  onUpgrade,
 }: {
   readonly plugin: PluginDefinition;
   readonly connected: boolean;
   readonly busy: boolean;
   readonly disabled: boolean;
+  readonly locked: boolean;
   readonly onConnect: (pluginId: PluginId) => void;
   readonly onDisconnect: (pluginId: PluginId) => void;
+  readonly onUpgrade: (pluginId: PluginId) => void;
 }) {
+  const actionLabel = busy ? "Working…" : connected ? "Disconnect" : locked ? "Upgrade" : "Connect";
   return (
     <li className="flex items-center gap-3 py-4 sm:gap-4">
       <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/30">
@@ -54,21 +63,36 @@ function PluginRow({
               <CheckIcon className="size-3" aria-hidden="true" /> Connected
             </span>
           ) : null}
+          {locked ? (
+            <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+              <LockIcon className="size-3" aria-hidden="true" /> Paid plans
+            </span>
+          ) : null}
         </div>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">{plugin.description}</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {locked ? `${plugin.description} — included with paid plans.` : plugin.description}
+        </p>
       </div>
       <Button
         type="button"
         size="sm"
         variant="outline"
         disabled={disabled}
-        aria-label={`${connected ? "Disconnect" : "Connect"} ${plugin.name}`}
+        aria-label={`${actionLabel} ${plugin.name}`}
         aria-busy={busy}
-        onClick={() => (connected ? onDisconnect(plugin.id) : onConnect(plugin.id))}
+        onClick={() => {
+          if (connected) {
+            onDisconnect(plugin.id);
+          } else if (locked) {
+            onUpgrade(plugin.id);
+          } else {
+            onConnect(plugin.id);
+          }
+        }}
         className="min-w-22 shrink-0 text-xs"
       >
         {busy ? <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden="true" /> : null}
-        {busy ? "Working…" : connected ? "Disconnect" : "Connect"}
+        {busy ? "Working…" : actionLabel}
       </Button>
     </li>
   );
@@ -77,6 +101,11 @@ function PluginRow({
 export function PluginsPage() {
   const account = useAccountState();
   const { signIn } = useAccountActions();
+  const entitlements = resolvedEntitlements(useEntitlements());
+  const pluginLocked = useCallback(
+    (pluginId: PluginId) => pluginLockedForPlan(entitlements, pluginId),
+    [entitlements],
+  );
   const hasPluginSession =
     loadPluginSessionToken() !== null ||
     ((account.status === "signed-in" || account.status === "signed-out") &&
@@ -128,6 +157,10 @@ export function PluginsPage() {
 
   const connect = useCallback(
     async (pluginId: PluginId) => {
+      if (pluginLocked(pluginId)) {
+        openUpgradeDialog("plugins");
+        return;
+      }
       const sessionToken = loadPluginSessionToken();
       if (!sessionToken) {
         setError(pluginError ?? "Your plugin session is still starting. Please try again shortly.");
@@ -145,7 +178,7 @@ export function PluginsPage() {
         setBusyPluginId(null);
       }
     },
-    [busyPluginId, pluginError, refresh],
+    [busyPluginId, pluginError, pluginLocked, refresh],
   );
 
   const disconnect = useCallback(
@@ -281,8 +314,10 @@ export function PluginsPage() {
                   connected
                   busy={busyPluginId === plugin.id}
                   disabled={busyPluginId !== null || loading || !hasPluginSession}
+                  locked={false}
                   onConnect={connect}
                   onDisconnect={disconnect}
+                  onUpgrade={() => openUpgradeDialog("plugins")}
                 />
               ))}
             </ul>
@@ -308,8 +343,10 @@ export function PluginsPage() {
                   connected={false}
                   busy={busyPluginId === plugin.id}
                   disabled={busyPluginId !== null || loading || !hasPluginSession}
+                  locked={pluginLocked(plugin.id)}
                   onConnect={connect}
                   onDisconnect={disconnect}
+                  onUpgrade={() => openUpgradeDialog("plugins")}
                 />
               ))}
             </ul>

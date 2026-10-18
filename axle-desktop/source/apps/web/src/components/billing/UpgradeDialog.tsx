@@ -26,7 +26,12 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 
-export type UpgradeReason = "cloud-jobs" | "schedules" | "pull-request-reviews" | "account-menu";
+export type UpgradeReason =
+  | "cloud-jobs"
+  | "schedules"
+  | "pull-request-reviews"
+  | "plugins"
+  | "account-menu";
 
 const REASON_COPY: Record<UpgradeReason, { readonly title: string; readonly description: string }> =
   {
@@ -44,6 +49,11 @@ const REASON_COPY: Record<UpgradeReason, { readonly title: string; readonly desc
       title: "Model-assisted pull-request reviews are part of paid plans",
       description:
         "Paid plans review your pull requests with the model of your choice and post the findings back to GitHub.",
+    },
+    plugins: {
+      title: "Jira, Notion, Slack, and email plugins are part of paid plans",
+      description:
+        "GitHub is included on Free. Paid plans unlock the other plugins, along with the GLM 5.3 and Nemotron families, monthly credits, and cloud jobs.",
     },
     "account-menu": {
       title: "Get more out of Axle",

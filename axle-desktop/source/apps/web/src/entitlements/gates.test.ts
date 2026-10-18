@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { CloudEntitlements } from "@axle/contracts";
 
-import { cloudJobsLocked, pullRequestReviewsLocked, scheduledTasksLimit } from "./gates";
+import {
+  cloudJobsLocked,
+  pluginLockedForPlan,
+  pullRequestReviewsLocked,
+  scheduledTasksLimit,
+} from "./gates";
 
 const free: CloudEntitlements = {
   planId: "free",
@@ -36,5 +41,17 @@ describe("entitlement gates", () => {
     expect(cloudJobsLocked(pro)).toBe(false);
     expect(pullRequestReviewsLocked(pro)).toBe(false);
     expect(scheduledTasksLimit(pro)).toBe(50);
+  });
+
+  it("keeps GitHub free and locks the other plugins on the Free plan", () => {
+    expect(pluginLockedForPlan(free, "github")).toBe(false);
+    for (const pluginId of ["jira", "notion", "gmail", "outlook", "slack", "sentry"]) {
+      expect(pluginLockedForPlan(free, pluginId)).toBe(true);
+    }
+  });
+
+  it("unlocks every plugin on Pro and fails open without a resolved plan", () => {
+    expect(pluginLockedForPlan(pro, "jira")).toBe(false);
+    expect(pluginLockedForPlan(null, "jira")).toBe(false);
   });
 });

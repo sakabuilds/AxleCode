@@ -2,7 +2,7 @@ import type { CloudEntitlements } from "@axle/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { AxleModelRate } from "../account/axleGateway";
-import { hiddenAxleModelSlugs } from "./axleModelAccess";
+import { lockedAxleModelSlugs } from "./axleModelAccess";
 
 const rate = (id: string, plan: "free" | "paid"): AxleModelRate => ({
   id,
@@ -28,29 +28,29 @@ const entitlements = (planId: string): CloudEntitlements => ({
   features: { scheduledTasksMax: 2, pullRequestReviews: false, teamSharing: false },
 });
 
-describe("hidden Axle model slugs", () => {
-  it("hides nothing when no plan was positively resolved", () => {
-    expect(hiddenAxleModelSlugs(null, rates).size).toBe(0);
+describe("locked Axle model slugs", () => {
+  it("locks nothing when no plan was positively resolved", () => {
+    expect(lockedAxleModelSlugs(null, rates).size).toBe(0);
   });
 
-  it("hides nothing when the catalog is unavailable", () => {
-    expect(hiddenAxleModelSlugs(entitlements("free"), null).size).toBe(0);
+  it("locks nothing when the catalog is unavailable", () => {
+    expect(lockedAxleModelSlugs(entitlements("free"), null).size).toBe(0);
   });
 
-  it("hides paid models on the Free plan", () => {
-    expect([...hiddenAxleModelSlugs(entitlements("free"), rates)].sort()).toEqual([
+  it("locks paid models on the Free plan", () => {
+    expect([...lockedAxleModelSlugs(entitlements("free"), rates)].sort()).toEqual([
       "axle/glm-5.3",
       "axle/nemotron-3-super",
     ]);
   });
 
-  it("hides nothing on a paid plan", () => {
+  it("locks nothing on a paid plan", () => {
     for (const planId of ["pro", "pro-plus", "ultra"]) {
-      expect(hiddenAxleModelSlugs(entitlements(planId), rates).size).toBe(0);
+      expect(lockedAxleModelSlugs(entitlements(planId), rates).size).toBe(0);
     }
   });
 
   it("fails open for an unrecognized plan id", () => {
-    expect(hiddenAxleModelSlugs(entitlements("enterprise"), rates).size).toBe(0);
+    expect(lockedAxleModelSlugs(entitlements("enterprise"), rates).size).toBe(0);
   });
 });

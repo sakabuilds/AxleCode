@@ -34,7 +34,7 @@ import {
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
 import { catalogSectionForModel, isModelInAxleCatalog } from "./axleModelCatalog";
-import { useHiddenAxleModelSlugs } from "../../entitlements/axleModelAccess";
+import { useLockedAxleModelSlugs } from "../../entitlements/axleModelAccess";
 
 type ModelPickerItem = {
   slug: string;
@@ -123,9 +123,16 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const highlightedModelKeyRef = useRef<string | null>(null);
   const favorites = useClientSettings((s) => s.favorites ?? []);
   const isAxleRuntime = instanceEntries.some((entry) => entry.driverKind === "axle");
-  // Paid Axle gateway models are hidden for accounts positively resolved to a
-  // Free plan; the set is empty in every other case, so nothing else changes.
-  const hiddenAxleModelSlugs = useHiddenAxleModelSlugs();
+  // Paid Axle gateway models are disabled for accounts positively resolved to
+  // a Free plan; the set is empty in every other case, so nothing else changes.
+  const lockedAxleModelSlugs = useLockedAxleModelSlugs();
+  const lockedModelReason = useCallback(
+    (slug: string): string | null =>
+      lockedAxleModelSlugs.has(slug)
+        ? "Included with paid plans. Upgrade to use this model."
+        : null,
+    [lockedAxleModelSlugs],
+  );
   const [selectedInstanceId, setSelectedInstanceId] = useState<ModelPickerRailSelection>(() => {
     if (props.lockedProvider !== null) {
       // When locked, prime the sidebar to the currently-active instance
@@ -216,9 +223,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         continue;
       }
       for (const model of models) {
-        if (hiddenAxleModelSlugs.has(model.slug)) {
-          continue;
-        }
         out.push({
           slug: model.slug,
           name: model.name,
@@ -235,7 +239,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       }
     }
     return out;
-  }, [modelOptionsByInstance, entryByInstanceId, hiddenAxleModelSlugs]);
+  }, [modelOptionsByInstance, entryByInstanceId]);
 
   const isLocked = props.lockedProvider !== null;
   const isSearching = searchQuery.trim().length > 0;
@@ -394,7 +398,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
   const handleModelSelect = useCallback(
     (modelSlug: string, instanceId: ProviderInstanceId) => {
-      if (getModelDisabledReason?.(instanceId, modelSlug)) {
+      if (getModelDisabledReason?.(instanceId, modelSlug) ?? lockedModelReason(modelSlug)) {
         return;
       }
       const options = modelOptionsByInstance.get(instanceId);
@@ -413,7 +417,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         onInstanceModelChange(instanceId, resolvedModel);
       }
     },
-    [entryByInstanceId, getModelDisabledReason, modelOptionsByInstance, onInstanceModelChange],
+    [
+      entryByInstanceId,
+      getModelDisabledReason,
+      lockedModelReason,
+      modelOptionsByInstance,
+      onInstanceModelChange,
+    ],
   );
 
   const toggleFavorite = useCallback(
@@ -437,7 +447,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     >();
     let selectableModelIndex = 0;
     for (const model of filteredModels) {
-      if (getModelDisabledReason?.(model.instanceId, model.slug)) {
+      if (getModelDisabledReason?.(model.instanceId, model.slug) ?? lockedModelReason(model.slug)) {
         continue;
       }
       const jumpCommand = modelPickerJumpCommandForIndex(selectableModelIndex);
@@ -448,7 +458,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       selectableModelIndex += 1;
     }
     return mapping;
-  }, [filteredModels, getModelDisabledReason]);
+  }, [filteredModels, getModelDisabledReason, lockedModelReason]);
   const modelJumpModelKeys = useMemo(
     () => [...modelJumpCommandByKey.keys()],
     [modelJumpCommandByKey],
@@ -662,7 +672,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       return null;
                     }
                     const disabledReason =
-                      getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
+                      getModelDisabledReason?.(model.instanceId, model.slug) ??
+                      lockedModelReason(model.slug);
                     return (
                       <ModelListRow
                         key={modelKey}
