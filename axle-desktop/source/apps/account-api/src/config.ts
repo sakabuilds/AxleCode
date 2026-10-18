@@ -1,7 +1,7 @@
 export interface AccountApiConfig {
   readonly host: string;
   readonly port: number;
-  readonly databaseUrl: string;
+  readonly mongodbUri: string;
   readonly authJwksUrl: string;
   readonly authIssuer: string;
   readonly authAudience: string | null;
@@ -12,9 +12,9 @@ export interface AccountApiConfig {
 export function readAccountApiConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): AccountApiConfig {
-  const databaseUrl = firstNonEmpty(env, "NEON_DATABASE_URL", "DATABASE_URL");
-  if (!databaseUrl) {
-    throw new Error("NEON_DATABASE_URL or DATABASE_URL is required for the account API.");
+  const mongodbUri = firstNonEmpty(env, "MONGODB_URI");
+  if (!mongodbUri) {
+    throw new Error("MONGODB_URI is required for the account API.");
   }
 
   const clerkIssuer = firstNonEmpty(env, "CLERK_ISSUER");
@@ -57,7 +57,7 @@ export function readAccountApiConfig(
   return {
     host: env.HOST?.trim() || "127.0.0.1",
     port: portValue,
-    databaseUrl,
+    mongodbUri,
     authJwksUrl,
     authIssuer,
     authAudience,
