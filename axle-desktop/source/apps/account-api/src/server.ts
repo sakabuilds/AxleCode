@@ -5,27 +5,49 @@ import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
 
 import { createAccountAuthenticator } from "./auth.ts";
+import { readBachsConfig } from "./bachsConfig.ts";
+import { createBillingRequestHandler } from "./billingHandler.ts";
 import { readAccountApiConfig } from "./config.ts";
 import { createAccountDatabase } from "./database.ts";
 import { readBillingConfig } from "./billingConfig.ts";
 import { readCloudConfig } from "./cloudConfig.ts";
 import { createCloudRequestHandler } from "./cloudHandler.ts";
 import { createCloudDatabase, createCloudJobStore } from "./cloudStore.ts";
+import { readGatewayCreditsConfig } from "./gateway.ts";
 import { createAccountRequestHandler, RequestValidationError } from "./handler.ts";
+import { mongoDatabase } from "./mongo.ts";
 
+// The app-local file wins; the workspace file supplies shared local settings
+// (payment keys, gateway URLs) that are not duplicated per app.
 const localEnvFile = NodeURL.fileURLToPath(new URL("../.env.local", import.meta.url));
 if (NodeFS.existsSync(localEnvFile)) NodeProcess.loadEnvFile(localEnvFile);
+const workspaceEnvFile = NodeURL.fileURLToPath(new URL("../../.env.local", import.meta.url));
+if (NodeFS.existsSync(workspaceEnvFile)) NodeProcess.loadEnvFile(workspaceEnvFile);
 
 const config = readAccountApiConfig();
 const database = createAccountDatabase(config);
 const authenticate = createAccountAuthenticator(config);
 const cloudConfig = readCloudConfig(NodeProcess.env);
 const billingConfig = readBillingConfig(NodeProcess.env);
-const cloudDatabase = cloudConfig ? createCloudDatabase(config.databaseUrl) : null;
+const bachsConfig = readBachsConfig(NodeProcess.env);
+const cloudDatabase = cloudConfig
+  ? createCloudDatabase(mongoDatabase(config.mongodbUri))
+  : null;
+const cloudStore = cloudConfig && cloudDatabase ? createCloudJobStore(cloudDatabase.query, cloudConfig, billingConfig) : null;
 const handleCloudRequest = createCloudRequestHandler({
   config: cloudConfig,
   billing: billingConfig,
-  store: cloudConfig && cloudDatabase ? createCloudJobStore(cloudDatabase.query, cloudConfig, billingConfig) : null,
+  store: cloudStore,
+  authenticate,
+  touchSession: database.touchSession,
+  corsOrigin: config.corsOrigin,
+});
+const handleBillingRequest = createBillingRequestHandler({
+  bachs: bachsConfig,
+  billing: billingConfig,
+  store: cloudStore,
+  gateway: readGatewayCreditsConfig(NodeProcess.env),
+  internalToken: NodeProcess.env.AXLE_INTERNAL_TOKEN?.trim() || null,
   authenticate,
   touchSession: database.touchSession,
   corsOrigin: config.corsOrigin,
@@ -41,7 +63,7 @@ const server = NodeHttp.createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
     const body = await readBody(request);
     const webRequest = toWebRequest(request, body, url);
-    const result = await handleCloudRequest(webRequest) ?? await handleRequest(webRequest);
+    const result = await handleCloudRequest(webRequest) ?? await handleBillingRequest(webRequest) ?? await handleRequest(webRequest);
     response.writeHead(result.status, Object.fromEntries(result.headers));
     response.end(await result.text());
   } catch (error) {
