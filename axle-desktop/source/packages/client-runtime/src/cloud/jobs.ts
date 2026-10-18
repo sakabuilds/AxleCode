@@ -1,5 +1,6 @@
 import {
   CloudBillingView,
+  CloudCheckoutSession,
   CloudJob,
   CloudJobCreateInput,
   CloudJobEvent,
@@ -49,8 +50,19 @@ const decodeEventList = Schema.decodeUnknownSync(
   Schema.Struct({ events: Schema.Array(CloudJobEvent), lastSequence: Schema.Number }),
 );
 const decodeBilling = Schema.decodeUnknownSync(CloudBillingView);
+const decodeCheckout = Schema.decodeUnknownSync(CloudCheckoutSession);
 
 export type CloudBilling = CloudBillingView;
+export type CloudCheckout = CloudCheckoutSession;
+
+export interface CloudCheckoutRequest {
+  readonly plan: "pro" | "pro-plus" | "ultra" | "credits";
+  /** Optional prefilled buyer email; the hosted checkout collects it when absent. */
+  readonly email?: string;
+  readonly seats?: number;
+  /** Required for credit packs: the chosen whole-dollar amount, $5 to $500. */
+  readonly usd?: number;
+}
 
 export interface CloudJobsEventPage {
   readonly events: ReadonlyArray<CloudJobEvent>;
@@ -151,6 +163,20 @@ export class CloudJobsClient {
       method: "GET",
       path: "/v1/cloud/billing",
       decode: decodeBilling,
+    });
+  }
+
+  /**
+   * `POST /v1/billing/checkout` — a hosted payment session for a paid plan.
+   * The caller opens `checkoutUrl` in a browser; the plan is applied
+   * server-side when the provider's webhook confirms payment.
+   */
+  async createCheckoutSession(input: CloudCheckoutRequest): Promise<CloudCheckout> {
+    return this.request({
+      method: "POST",
+      path: "/v1/billing/checkout",
+      body: input,
+      decode: decodeCheckout,
     });
   }
 
