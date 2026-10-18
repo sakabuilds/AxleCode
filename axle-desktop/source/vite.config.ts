@@ -21,8 +21,10 @@ export default defineConfig({
     testTimeout: 60_000,
   },
   staged: {
-    // Formatter only for now — no lint or typecheck on commit.
-    "*": "vp fmt",
+    // Formatter only for now — no lint or typecheck on commit. Patterns are
+    // limited to file types oxfmt can parse so commits touching other types
+    // (SQL, shell, extensionless hook scripts) are not blocked.
+    "**/*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,md,mdx,css,scss,html,yml,yaml,toml}": "vp fmt",
   },
   fmt: {
     ignorePatterns: [
