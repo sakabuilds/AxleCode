@@ -2,6 +2,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import {
   ArrowRightIcon,
   CoinsIcon,
+  CreditCardIcon,
   KeyRoundIcon,
   Link2Icon,
   LogOutIcon,
@@ -122,6 +123,20 @@ function OverviewPage() {
                   >
                     <MonitorSmartphoneIcon className="size-3.5" />
                     Review
+                  </Button>
+                </AccountRow>
+                <AccountRow
+                  title="Billing"
+                  description="Your plan, monthly credits, and one-time credit packs."
+                >
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    render={<Link to="/settings/account/billing" />}
+                  >
+                    <CreditCardIcon className="size-3.5" />
+                    Manage
                   </Button>
                 </AccountRow>
                 <AccountRow
