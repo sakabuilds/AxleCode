@@ -1,7 +1,8 @@
 // @effect-diagnostics globalDate:off
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import { createRemoteJWKSet, customFetch, jwtVerify, type JWTPayload } from "jose";
 
 import type { AccountApiConfig } from "./config.ts";
+import type { BindingFetch } from "./gateway.ts";
 
 export interface AccountPrincipal {
   readonly userId: string;
@@ -17,8 +18,13 @@ export class AccountAuthenticationError extends Error {
   }
 }
 
-export function createAccountAuthenticator(config: AccountApiConfig) {
-  const jwks = createRemoteJWKSet(new URL(config.authJwksUrl));
+export function createAccountAuthenticator(config: AccountApiConfig, fetcher?: BindingFetch) {
+  // The deployed worker reaches the auth worker's JWKS through a service
+  // binding: same-zone worker-to-worker global fetch fails with error 1042.
+  const jwks = createRemoteJWKSet(
+    new URL(config.authJwksUrl),
+    fetcher === undefined ? undefined : { [customFetch]: fetcher },
+  );
 
   return async (request: Request): Promise<AccountPrincipal> => {
     const authorization = request.headers.get("authorization") ?? "";
