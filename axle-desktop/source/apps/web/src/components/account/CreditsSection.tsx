@@ -20,9 +20,6 @@ import {
   type AxleUsageEntry,
 } from "../../account/axleGateway";
 import { SettingsSection, useRelativeTimeTick } from "../settings/settingsLayout";
-import { openUpgradeDialog } from "../billing/UpgradeDialog";
-import { premiumModelsLocked } from "../../entitlements/gates";
-import { useEntitlements, resolvedEntitlements } from "../../entitlements/useEntitlements";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
@@ -36,9 +33,6 @@ const ENTRY_LABELS: Record<string, string> = {
   top_up: "Top-up or refund",
   refund: "Usage adjustment",
 };
-
-/** Gateway tiers at or above this one are Pro-only. */
-const PREMIUM_MODEL_TIER = 2;
 
 function entryLabel(kind: string): string {
   return ENTRY_LABELS[kind] ?? kind.replaceAll("_", " ");
@@ -60,7 +54,8 @@ interface CreditsLoad {
   readonly loading: boolean;
 }
 
-function useAxleCredits(): CreditsLoad & { readonly reload: () => Promise<void> } {
+/** Shared with the billing page, which also shows the balance and its buckets. */
+export function useAxleCredits(): CreditsLoad & { readonly reload: () => Promise<void> } {
   const [state, setState] = useState<CreditsLoad>({
     credits: null,
     connected: null,
@@ -124,11 +119,32 @@ function BalanceCard({
           Refresh
         </Button>
       </div>
+      <div className="mt-3 grid gap-1.5 text-xs leading-5 text-muted-foreground sm:grid-cols-3">
+        <span>
+          <span className="text-foreground/80">{formatCredits(credits.freeCredits)}</span> free —
+          renews daily
+        </span>
+        <span>
+          <span className="text-foreground/80">{formatCredits(credits.planCredits)}</span> plan —
+          monthly allowance
+        </span>
+        <span>
+          <span className="text-foreground/80">{formatCredits(credits.paidCredits)}</span> purchased
+          — never expires
+        </span>
+      </div>
       <p className="mt-3 text-xs leading-5 text-muted-foreground">
         Every account gets {formatCredits(credits.dailyFreeCredits)} credits each UTC day for free,
-        applied the first time you use the hosted provider that day. Unused credits roll over; there
-        is no separate paid balance.
+        applied the first time you use the hosted provider that day. The daily grant renews — it
+        never accumulates. Paid plans add a monthly allowance, and purchased credits stay until you
+        spend them.
       </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button size="sm" render={<Link to="/settings/account/billing" />}>
+          <ArrowUpRightIcon className="size-3.5" />
+          Buy credits
+        </Button>
+      </div>
     </div>
   );
 }
@@ -136,8 +152,6 @@ function BalanceCard({
 /** Model rates only change with a deploy, so they load once and stay put. */
 function ModelRatesSection() {
   const [models, setModels] = useState<ReadonlyArray<AxleModelRate> | null>(null);
-  const entitlements = resolvedEntitlements(useEntitlements());
-  const premiumLocked = premiumModelsLocked(entitlements);
 
   useEffect(() => {
     let active = true;
@@ -184,16 +198,9 @@ function ModelRatesSection() {
               <TableRow key={model.id}>
                 <TableCell className="font-medium text-foreground">{model.label}</TableCell>
                 <TableCell>
-                  <span className="flex items-center gap-1.5">
-                    <Badge variant="outline" size="sm">
-                      Tier {model.tier}
-                    </Badge>
-                    {premiumLocked && model.tier >= PREMIUM_MODEL_TIER ? (
-                      <Badge variant="secondary" size="sm">
-                        Pro
-                      </Badge>
-                    ) : null}
-                  </span>
+                  <Badge variant="outline" size="sm">
+                    Tier {model.tier}
+                  </Badge>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {formatContextWindow(model.contextWindow)}
@@ -213,18 +220,6 @@ function ModelRatesSection() {
         A turn is reserved at its worst case before it runs and the unused part is refunded from the
         provider's own token report, so a long reply never costs more than it used.
       </p>
-      {premiumLocked ? (
-        <p className="px-1 pt-1.5 text-xs leading-5 text-muted-foreground">
-          Premium models (tier {PREMIUM_MODEL_TIER} and up) are included with Axle Pro.{" "}
-          <button
-            type="button"
-            className="underline underline-offset-2 transition-colors hover:text-foreground"
-            onClick={() => openUpgradeDialog("premium-models")}
-          >
-            Upgrade
-          </button>
-        </p>
-      ) : null}
     </SettingsSection>
   );
 }
