@@ -51,9 +51,9 @@ Timeouts exist per tool (300 s default; bash self-managed), per approval, compac
 **Verify:** confirm whether any per-turn step cap exists in `loop_runner.rs` (none was observed in the read window).
 **Remediation:** add a configurable max-steps/token budget per turn and surface it in events.
 
-### SEC-10 — MCP/plugin tool calls cross an approval gate but the server side trusts the bearer token — Medium — partially confirmed
-`McpHttpServer` (toolkit registrations at 214/219/291) authenticates with the bearer token the adapter exports; the session registry scopes calls to an invocation context (`McpInvocationContext.ts`). **[U]** Token rotation and per-thread scoping were not verified; a leaked token's blast radius depends on that.
-**Remediation:** verify token is per-launch, short-lived, and bound to a single thread/session.
+### SEC-10 — MCP/plugin tool calls cross an approval gate but the server side trusts the bearer token — Medium — confirmed (resolved 2026-10-18)
+`McpHttpServer` (toolkit registrations at 214/219/291) authenticates with the bearer token the adapter exports; the session registry scopes calls to an invocation context (`McpInvocationContext.ts`). **Verified 2026-10-18 [V]:** `McpSessionRegistry.ts` issues a fresh 32-byte random credential per provider launch and stores only its SHA-256 hash; the credential is bound to one environment/thread/provider-session (plus cwd, auth session, plugin session token, and a `preview` capability set), expires after 30 min idle or 8 h total, and is revoked on provider-session/thread teardown and on logout. The registry is process-local, so a server restart drops all credentials; there is no in-place rotation (each launch gets a new credential without revoking in-flight ones). Unknown/expired tokens are rejected with `401 invalid_mcp_credential`.
+**Residual:** the raw token still sits in the spawned agent's environment, so SEC-2 remains the real exposure path; the token's own blast radius is limited to one thread/session until expiry.
 
 ### SEC-11 — No rate limiting / abuse controls on local HTTP API — Low — hypothesis
 Raw routes (codex-auth, OTLP proxy) are scope-guarded (`http.ts:196-246`) but no rate limit middleware was observed.
