@@ -36,11 +36,11 @@ console.log(`Gateway: ${base}\n`);
 
 console.log("Catalog and grant");
 const models = await (await clientFetch(`${base}/v1/models`)).json();
-check("four models are listed", models.data.length === 4, models.data.length);
+check("six models are listed", models.data.length === 6, models.data.length);
 check(
-  "models are the tiered Axle ids",
+  "models are the real-named Axle ids",
   models.data.map((model) => model.id).join(",") ===
-    "axle-20b,axle-55b,axle-320b,axle-552b",
+    "gemma-4,muse-glimmer,nemotron-3.5-lightning,glm-5.3-flash,glm-5.3,nemotron-3-super",
 );
 
 const credits = await (await clientFetch(`${base}/v1/credits`, { headers: auth })).json();
@@ -51,11 +51,11 @@ console.log("\nMetering");
 const core = await clientFetch(`${base}/v1/chat/completions`, {
   method: "POST",
   headers: { ...auth, ...json },
-  body: JSON.stringify({ model: "axle-320b", messages: [{ role: "user", content: "hi" }] }),
+  body: JSON.stringify({ model: "glm-5.3", messages: [{ role: "user", content: "hi" }] }),
 });
 check("non-streaming turn succeeds", core.status === 200, core.status);
 check(
-  "charge matches the axle-320b rate",
+  "charge matches the GLM 5.3 rate",
   core.headers.get("x-axle-credits-charged") === "0.0042",
   core.headers.get("x-axle-credits-charged"),
 );
@@ -69,7 +69,7 @@ const stream = await clientFetch(`${base}/v1/chat/completions`, {
   method: "POST",
   headers: { ...auth, ...json },
   body: JSON.stringify({
-    model: "axle-20b",
+    model: "gemma-4",
     stream: true,
     messages: [{ role: "user", content: "hi" }],
   }),
@@ -80,7 +80,7 @@ await sleep(80);
 const afterStream = await (await clientFetch(`${base}/v1/credits`, { headers: auth })).json();
 check(
   "streamed turn charged real usage (Axle-20b rate)",
-  afterStream.credits === 99.99468,
+  afterStream.credits === 99.9951,
   afterStream.credits,
 );
 
@@ -89,8 +89,8 @@ const insufficient = await clientFetch(`${base}/v1/chat/completions`, {
   method: "POST",
   headers: { ...auth, ...json },
   body: JSON.stringify({
-    model: "axle-552b",
-    max_tokens: 100000,
+    model: "nemotron-3-super",
+    max_tokens: 400000,
     messages: [{ role: "user", content: "hi" }],
   }),
 });
@@ -127,7 +127,7 @@ if (!existsSync(binary)) {
   const output = await new Promise((resolve) => {
     const child = spawn(
       binary,
-      ["--provider", "axle", "--model", "axle-20b", "--text-only", "-p", "say hi", "--cwd", "/tmp"],
+      ["--provider", "axle", "--model", "gemma-4", "--text-only", "-p", "say hi", "--cwd", "/tmp"],
       {
         env: { ...process.env, AXLE_BASE_URL: `${base}/v1`, AXLE_API_KEY: "axle_engine_key" },
       },
