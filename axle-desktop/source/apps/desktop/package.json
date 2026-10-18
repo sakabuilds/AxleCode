@@ -1,12 +1,12 @@
 {
   "name": "@axle/desktop",
-  "version": "1.1.29",
+  "version": "1.1.31",
   "private": true,
+  "homepage": "https://axle.llc",
   "author": {
     "name": "Axle",
     "email": "support@axle.llc"
   },
-  "homepage": "https://axle.llc",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
@@ -17,12 +17,12 @@
     "smoke-test": "node scripts/smoke-test.mjs"
   },
   "dependencies": {
-    "@effect/platform-node": "catalog:",
     "@axle/client-runtime": "workspace:*",
     "@axle/contracts": "workspace:*",
     "@axle/shared": "workspace:*",
     "@axle/ssh": "workspace:*",
     "@axle/tailscale": "workspace:*",
+    "@effect/platform-node": "catalog:",
     "effect": "catalog:",
     "electron": "41.5.0",
     "electron-store": "^8.2.0",
