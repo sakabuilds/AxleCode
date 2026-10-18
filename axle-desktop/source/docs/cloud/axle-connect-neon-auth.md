@@ -2,7 +2,7 @@
 
 Axle Cloud uses Neon Auth for web, desktop, and mobile account authentication. The relay validates
 Neon Auth JWTs against the configured JWKS URL, issuer, and audience. Axle-specific profiles, devices,
-sessions, usage events, and aggregates are stored in Neon Postgres by the account API.
+sessions, usage events, and aggregates are stored in the account API's MongoDB database.
 
 ## Public client configuration
 
@@ -17,19 +17,19 @@ T3CODE_RELAY_URL=https://relay.example.com
 ```
 
 The shared loader projects these canonical values into `VITE_*` and `EXPO_PUBLIC_*` aliases. Never put
-`NEON_DATABASE_URL` or a private signing key in a client environment.
+the `MONGODB_URI` connection string or a private signing key in a client environment.
 
 ## Server-only account API
 
 Copy `apps/account-api/.env.example` into a private deployment environment and set:
 
-- `NEON_DATABASE_URL` (or `DATABASE_URL`) — the supplied Neon Postgres connection string.
+- `MONGODB_URI` — the server-only MongoDB connection string.
 - `NEON_AUTH_JWKS_URL`
 - `NEON_AUTH_ISSUER`
 - `NEON_AUTH_AUDIENCE`
 
-The account API applies migrations on startup and accepts only Neon Auth bearer JWTs. The connection
-string is never sent to web, desktop, or mobile clients.
+The account API bootstraps collection indexes on startup and accepts only Neon Auth bearer JWTs. The
+connection string is never sent to web, desktop, or mobile clients.
 
 ## Relay deployment
 
@@ -82,4 +82,4 @@ fail early when the Team ID, provisioning profile, or RP-domain configuration is
 
 The web onboarding route uses Neon Auth UI with Google social sign-in and the configured email flow.
 Mobile uses a native Neon Auth account form. Account-specific data is returned by the account API and
-stored in Neon Postgres.
+stored in the account API's MongoDB database.
