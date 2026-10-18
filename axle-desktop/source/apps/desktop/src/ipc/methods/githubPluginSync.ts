@@ -6,7 +6,7 @@ import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import { readGitHubPluginCredentialSnapshot } from "./githubPluginCredentials.ts";
 
-const DEFAULT_PLUGIN_WORKER_URL = "https://auth.axle.llc";
+const DEFAULT_PLUGIN_WORKER_URL = "https://axle-auth.axle-download-worker.workers.dev";
 const AUTH_WAIT_TIMEOUT_MS = 5 * 60_000;
 const AUTH_POLL_INTERVAL_MS = 750;
 
