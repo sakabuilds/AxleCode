@@ -1,59 +1,87 @@
 // Axle credits: the unit users spend on the hosted provider.
 //
-// 100 credits == $0.50, so one credit is worth half a cent. Every user gets
-// 100 credits ($0.50) per UTC day for free; top-ups add more. Models are
-// priced by "smartness": the larger the model, the more credits each token
-// costs, so an Axle-552b turn drains a day's free credits far faster than an
-// Axle-20b turn.
+// 100 credits == $0.50, so one credit is worth half a cent ($1 == 200 credits).
+// Every user gets 100 free credits per UTC day; top-ups and plan grants add
+// more. Credit rates below are each model's real upstream (NVIDIA NIM) rate
+// with a ~20% Axle margin on top, converted at 200 credits per dollar.
 
 export const CREDIT_USD = 0.005;
+export const CREDITS_PER_DOLLAR = 1 / CREDIT_USD;
 export const DAILY_FREE_CREDITS = 100;
 
 /**
- * The four models Axle ships on its hosted provider. `upstream` is the model
- * id sent to the upstream OpenAI-compatible endpoint (NVIDIA NIM, configured
- * by `UPSTREAM_BASE_URL`); it is deliberately data, not code, so the catalog
- * can be re-pointed without touching the gateway logic.
+ * The models Axle ships on its hosted provider, under their real names.
+ * `upstream` is the model id sent to the upstream OpenAI-compatible endpoint
+ * (NVIDIA NIM, configured by `UPSTREAM_BASE_URL`); it is deliberately data,
+ * not code, so the catalog can be re-pointed without touching the gateway
+ * logic.
  *
- * `creditsPerMillion*` prices are per 1,000,000 tokens and rise with the
- * model tier.
+ * `plan` marks which plans may use the model: `free` models are available to
+ * every account, `paid` models require an active paid plan (Pro, Pro+, or
+ * Ultra). `tier` is a display/sort hint only.
+ *
+ * `creditsPerMillion*` prices are per 1,000,000 tokens.
  */
 export const AXLE_MODELS = Object.freeze([
   {
-    id: "axle-20b",
-    label: "Axle-20b",
+    id: "gemma-4",
+    label: "Google Gemma 4",
     tier: 1,
-    upstream: "openai/gpt-oss-20b",
-    creditsPerMillionInput: 40,
-    creditsPerMillionOutput: 160,
+    plan: "free",
+    upstream: "google/gemma-4-31b-it",
+    creditsPerMillionInput: 25,
+    creditsPerMillionOutput: 100,
     contextWindow: 128_000,
   },
   {
-    id: "axle-55b",
-    label: "Axle-55b",
+    id: "muse-glimmer",
+    label: "Meta Muse Glimmer",
     tier: 2,
-    upstream: "nvidia/nemotron-3-ultra-550b-a55b",
-    creditsPerMillionInput: 60,
-    creditsPerMillionOutput: 240,
-    contextWindow: 131_072,
+    plan: "free",
+    upstream: "meta/muse-glimmer-30b",
+    creditsPerMillionInput: 15,
+    creditsPerMillionOutput: 60,
+    contextWindow: 128_000,
   },
   {
-    id: "axle-320b",
-    label: "Axle-320b",
+    id: "nemotron-3.5-lightning",
+    label: "Nemotron 3.5 Lightning",
     tier: 3,
+    plan: "free",
+    upstream: "nvidia/nemotron-3.5-lightning-30b-a3b",
+    creditsPerMillionInput: 12,
+    creditsPerMillionOutput: 50,
+    contextWindow: 128_000,
+  },
+  {
+    id: "glm-5.3-flash",
+    label: "GLM 5.3 Flash",
+    tier: 4,
+    plan: "paid",
+    upstream: "z-ai/glm-5.3-flash",
+    creditsPerMillionInput: 30,
+    creditsPerMillionOutput: 120,
+    contextWindow: 200_000,
+  },
+  {
+    id: "glm-5.3",
+    label: "GLM 5.3",
+    tier: 5,
+    plan: "paid",
     upstream: "z-ai/glm-5.3",
     creditsPerMillionInput: 150,
     creditsPerMillionOutput: 600,
     contextWindow: 200_000,
   },
   {
-    id: "axle-552b",
-    label: "Axle-552b",
-    tier: 4,
-    upstream: "deepseek-ai/deepseek-v4.1-flash",
-    creditsPerMillionInput: 300,
-    creditsPerMillionOutput: 1_200,
-    contextWindow: 200_000,
+    id: "nemotron-3-super",
+    label: "Nemotron 3 Super",
+    tier: 6,
+    plan: "paid",
+    upstream: "nvidia/nemotron-3-super-120b-a12b",
+    creditsPerMillionInput: 75,
+    creditsPerMillionOutput: 300,
+    contextWindow: 256_000,
   },
 ]);
 
@@ -62,7 +90,7 @@ const MODELS_BY_UPSTREAM = new Map(AXLE_MODELS.map((model) => [model.upstream, m
 
 /**
  * Resolve a model the caller named, accepting either the Axle id
- * (`axle-320b`) or the upstream id (`z-ai/glm-5.3`).
+ * (`glm-5.3`) or the upstream id (`z-ai/glm-5.3`).
  */
 export function findModel(id) {
   if (typeof id !== "string") return undefined;
@@ -116,14 +144,15 @@ export function publicModelList() {
     object: "list",
     data: AXLE_MODELS.map((model) => ({
       id: model.id,
-      // The desktop picker prefers `name` over a humanized id, so the exact
-      // Axle label ("Axle-20b", not "Axle 20b") is what the user sees.
+      // The desktop picker prefers `name` over a humanized id, so the real
+      // model label ("GLM 5.3", not "Glm 5.3") is what the user sees.
       name: model.label,
       object: "model",
       owned_by: "axle",
       axle: {
         label: model.label,
         tier: model.tier,
+        plan: model.plan,
         context_window: model.contextWindow,
         credits_per_million_input: model.creditsPerMillionInput,
         credits_per_million_output: model.creditsPerMillionOutput,
