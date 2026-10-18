@@ -33,6 +33,7 @@ import { Route as SettingsAccountSessionsRouteImport } from './routes/settings.a
 import { Route as SettingsAccountProfileRouteImport } from './routes/settings.account.profile'
 import { Route as SettingsAccountCreditsRouteImport } from './routes/settings.account.credits'
 import { Route as SettingsAccountConnectionsRouteImport } from './routes/settings.account.connections'
+import { Route as SettingsAccountBillingRouteImport } from './routes/settings.account.billing'
 import { Route as SettingsAccountApiKeysRouteImport } from './routes/settings.account.api-keys'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
@@ -157,6 +158,11 @@ const SettingsAccountConnectionsRoute =
     path: '/connections',
     getParentRoute: () => SettingsAccountRoute,
   } as any)
+const SettingsAccountBillingRoute = SettingsAccountBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => SettingsAccountRoute,
+} as any)
 const SettingsAccountApiKeysRoute = SettingsAccountApiKeysRouteImport.update({
   id: '/api-keys',
   path: '/api-keys',
@@ -196,6 +202,7 @@ export interface FileRoutesByFullPath {
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/settings/account/api-keys': typeof SettingsAccountApiKeysRoute
+  '/settings/account/billing': typeof SettingsAccountBillingRoute
   '/settings/account/connections': typeof SettingsAccountConnectionsRoute
   '/settings/account/credits': typeof SettingsAccountCreditsRoute
   '/settings/account/profile': typeof SettingsAccountProfileRoute
@@ -223,6 +230,7 @@ export interface FileRoutesByTo {
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/settings/account/api-keys': typeof SettingsAccountApiKeysRoute
+  '/settings/account/billing': typeof SettingsAccountBillingRoute
   '/settings/account/connections': typeof SettingsAccountConnectionsRoute
   '/settings/account/credits': typeof SettingsAccountCreditsRoute
   '/settings/account/profile': typeof SettingsAccountProfileRoute
@@ -253,6 +261,7 @@ export interface FileRoutesById {
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
   '/settings/account/api-keys': typeof SettingsAccountApiKeysRoute
+  '/settings/account/billing': typeof SettingsAccountBillingRoute
   '/settings/account/connections': typeof SettingsAccountConnectionsRoute
   '/settings/account/credits': typeof SettingsAccountCreditsRoute
   '/settings/account/profile': typeof SettingsAccountProfileRoute
@@ -283,6 +292,7 @@ export interface FileRouteTypes {
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
     | '/settings/account/api-keys'
+    | '/settings/account/billing'
     | '/settings/account/connections'
     | '/settings/account/credits'
     | '/settings/account/profile'
@@ -310,6 +320,7 @@ export interface FileRouteTypes {
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
     | '/settings/account/api-keys'
+    | '/settings/account/billing'
     | '/settings/account/connections'
     | '/settings/account/credits'
     | '/settings/account/profile'
@@ -339,6 +350,7 @@ export interface FileRouteTypes {
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
     | '/settings/account/api-keys'
+    | '/settings/account/billing'
     | '/settings/account/connections'
     | '/settings/account/credits'
     | '/settings/account/profile'
@@ -526,6 +538,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAccountConnectionsRouteImport
       parentRoute: typeof SettingsAccountRoute
     }
+    '/settings/account/billing': {
+      id: '/settings/account/billing'
+      path: '/billing'
+      fullPath: '/settings/account/billing'
+      preLoaderRoute: typeof SettingsAccountBillingRouteImport
+      parentRoute: typeof SettingsAccountRoute
+    }
     '/settings/account/api-keys': {
       id: '/settings/account/api-keys'
       path: '/api-keys'
@@ -566,6 +585,7 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 interface SettingsAccountRouteChildren {
   SettingsAccountApiKeysRoute: typeof SettingsAccountApiKeysRoute
+  SettingsAccountBillingRoute: typeof SettingsAccountBillingRoute
   SettingsAccountConnectionsRoute: typeof SettingsAccountConnectionsRoute
   SettingsAccountCreditsRoute: typeof SettingsAccountCreditsRoute
   SettingsAccountProfileRoute: typeof SettingsAccountProfileRoute
@@ -575,6 +595,7 @@ interface SettingsAccountRouteChildren {
 
 const SettingsAccountRouteChildren: SettingsAccountRouteChildren = {
   SettingsAccountApiKeysRoute: SettingsAccountApiKeysRoute,
+  SettingsAccountBillingRoute: SettingsAccountBillingRoute,
   SettingsAccountConnectionsRoute: SettingsAccountConnectionsRoute,
   SettingsAccountCreditsRoute: SettingsAccountCreditsRoute,
   SettingsAccountProfileRoute: SettingsAccountProfileRoute,
