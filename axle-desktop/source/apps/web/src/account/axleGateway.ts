@@ -28,6 +28,10 @@ export function axleGatewayBaseUrl(): string {
 export interface AxleCredits {
   readonly credits: number;
   readonly dailyFreeCredits: number;
+  /** The three buckets the total splits into: renews daily, plan, purchased. */
+  readonly freeCredits: number;
+  readonly planCredits: number;
+  readonly paidCredits: number;
 }
 
 export interface AxleUsageEntry {
@@ -42,6 +46,8 @@ export interface AxleModelRate {
   readonly id: string;
   readonly label: string;
   readonly tier: number;
+  /** Which plans may use the model; the gateway enforces it, the picker mirrors it. */
+  readonly plan: "free" | "paid";
   readonly contextWindow: number;
   readonly creditsPerMillionInput: number;
   readonly creditsPerMillionOutput: number;
@@ -99,6 +105,9 @@ export async function fetchAxleCredits(): Promise<AxleCredits | null> {
   return {
     credits: asNumber(value.credits),
     dailyFreeCredits: asNumber(value.daily_free_credits),
+    freeCredits: asNumber(value.free_credits),
+    planCredits: asNumber(value.plan_credits),
+    paidCredits: asNumber(value.paid_credits),
   };
 }
 
@@ -145,6 +154,7 @@ export async function fetchAxleModelRates(): Promise<ReadonlyArray<AxleModelRate
       id: typeof row.id === "string" ? row.id : "",
       label: typeof axle.label === "string" ? axle.label : String(row.id ?? ""),
       tier: asNumber(axle.tier),
+      plan: axle.plan === "paid" ? "paid" : "free",
       contextWindow: asNumber(axle.context_window),
       creditsPerMillionInput: asNumber(axle.credits_per_million_input),
       creditsPerMillionOutput: asNumber(axle.credits_per_million_output),
