@@ -130,6 +130,20 @@ with `--mcp-url` (bearer or custom header from an env var), `--mcp-stdio-program
 / `--mcp-stdio-arg`, and `--github-mcp` (GitHub's hosted remote MCP server with
 a real PAT).
 
+On the server side (`apps/server/src/mcp/`), three toolkits are exposed behind
+a bearer credential issued by `McpSessionRegistry`: a 32-byte random token
+whose SHA-256 hash is all the server stores. Each credential is scoped to one
+thread and provider session (plus cwd, auth session, and plugin session token
+when present) and expires after 30 minutes idle or 8 hours total; provider
+session and thread teardown revoke the matching credentials, logout revokes
+the auth session's credentials and clears its plugin token, and a server
+restart drops every credential because the registry is process-local. There is
+no in-place rotation: each provider launch gets a fresh credential without
+revoking in-flight credentials held by an active turn. The agent receives the
+raw token via `--mcp-url` + `--mcp-bearer-token-env-var`
+(`T3_MCP_BEARER_TOKEN`); unknown or expired tokens are rejected with
+`401 invalid_mcp_credential`.
+
 ## Extension points
 
 Adding a provider touches a fixed set of registration points: the Rust
