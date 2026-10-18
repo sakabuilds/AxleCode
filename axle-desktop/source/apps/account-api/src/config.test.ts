@@ -4,14 +4,14 @@ import { readAccountApiConfig } from "./config.ts";
 
 describe("readAccountApiConfig", () => {
   const clerkEnv = {
-    NEON_DATABASE_URL: "postgresql://user:password@ep-example.neon.tech/db?sslmode=require",
+    MONGODB_URI: "mongodb+srv://user:password@example.mongodb.net/axle",
     CLERK_ISSUER: "https://clerk.example.com",
     CLERK_AUDIENCE: "axle-account-api",
   };
 
   it("prefers Clerk verification settings for the account API", () => {
     expect(readAccountApiConfig(clerkEnv)).toMatchObject({
-      databaseUrl: clerkEnv.NEON_DATABASE_URL,
+      mongodbUri: clerkEnv.MONGODB_URI,
       authJwksUrl: "https://clerk.example.com/.well-known/jwks.json",
       authIssuer: clerkEnv.CLERK_ISSUER,
       authAudience: clerkEnv.CLERK_AUDIENCE,
@@ -39,7 +39,7 @@ describe("readAccountApiConfig", () => {
 
   it("keeps legacy Neon Auth verification as a migration fallback", () => {
     const legacyEnv = {
-      NEON_DATABASE_URL: clerkEnv.NEON_DATABASE_URL,
+      MONGODB_URI: clerkEnv.MONGODB_URI,
       NEON_AUTH_JWKS_URL: "https://auth.example.neon.tech/.well-known/jwks.json",
       NEON_AUTH_ISSUER: "https://auth.example.neon.tech",
       NEON_AUTH_AUDIENCE: "axle-relay",
@@ -56,15 +56,15 @@ describe("readAccountApiConfig", () => {
     expect(() =>
       readAccountApiConfig({
         ...clerkEnv,
-        NEON_DATABASE_URL: " ",
+        MONGODB_URI: " ",
       }),
-    ).toThrow("NEON_DATABASE_URL or DATABASE_URL is required");
+    ).toThrow("MONGODB_URI is required");
   });
 
   it("requires Clerk or complete legacy Neon verification settings", () => {
     expect(() =>
       readAccountApiConfig({
-        NEON_DATABASE_URL: clerkEnv.NEON_DATABASE_URL,
+        MONGODB_URI: clerkEnv.MONGODB_URI,
       }),
     ).toThrow("CLERK_ISSUER");
   });
