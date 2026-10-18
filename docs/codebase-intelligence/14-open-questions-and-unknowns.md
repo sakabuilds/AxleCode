@@ -33,10 +33,8 @@
 **Why it matters:** security review + "user logged out randomly" bugs.
 **Resolve by:** trace the codex provider auth path in `AxleAdapter.ts`/auth modules without printing secrets.
 
-## Q7 — MCP tokens: rotation, scoping, revocation?
-**Known [V]:** `McpHttpServer.ts` exposes the toolkit with auth; plugin OAuth worker exists. Rotation/revocation semantics, per-thread scoping, and token lifetimes unknown ([U]).
-**Why it matters:** exposed agent tooling is a high-value attack surface (doc 09).
-**Resolve by:** read `McpHttpServer.ts` auth path end-to-end; test revocation by rotating a token.
+## Q7 — MCP tokens: rotation, scoping, revocation? — RESOLVED 2026-10-18
+**Resolved [V]** (evidence: SEC-10 in doc 09): `McpSessionRegistry.ts` issues a fresh 32-byte credential per provider launch, stores only its SHA-256 hash, scopes it to one environment/thread/provider-session (plus cwd, auth session, plugin token, `preview` capability), expires it after 30 min idle or 8 h max, and revokes it on teardown/logout. Registry is in-memory (restart drops all) and there is no in-place rotation by design. Residual exposure is token presence in the child env (SEC-2), not scoping.
 
 ## Q8 — Web WS reconnect/backoff policy?
 **Known [V]:** client connection layer exists (`apps/web/src/connection/`); reconnect behavior under server drop not exercised.
