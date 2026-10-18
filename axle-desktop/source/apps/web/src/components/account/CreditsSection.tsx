@@ -10,6 +10,8 @@ import {
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 
+import { useAccountState } from "../../account/AccountAuthProvider";
+import { useAccountSnapshot } from "../../account/useAccountSnapshot";
 import {
   fetchAxleCredits,
   fetchAxleModelRates,
@@ -19,10 +21,14 @@ import {
   type AxleModelRate,
   type AxleUsageEntry,
 } from "../../account/axleGateway";
+import { startCreditsCheckout } from "../billing/UpgradeDialog";
+import { resolveCloudPublicConfig } from "../../cloud/publicConfig";
 import { SettingsSection, useRelativeTimeTick } from "../settings/settingsLayout";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
+import { cn } from "../../lib/utils";
 import { AccountRow } from "./accountShared";
 import { epochToIso, formatTimestamp } from "./accountFormat";
 
@@ -139,12 +145,6 @@ function BalanceCard({
         never accumulates. Paid plans add a monthly allowance, and purchased credits stay until you
         spend them.
       </p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" render={<Link to="/settings/account/billing" />}>
-          <ArrowUpRightIcon className="size-3.5" />
-          Buy credits
-        </Button>
-      </div>
     </div>
   );
 }
@@ -337,6 +337,132 @@ function CreditsErrorPanel({
   );
 }
 
+/** Credit packs start at $5; $1 buys 200 credits on the hosted provider. */
+const CREDITS_PER_DOLLAR = 200;
+const TOPUP_PRESETS = [5, 10, 25, 50] as const;
+const MIN_TOPUP_USD = 5;
+const MAX_TOPUP_USD = 500;
+
+function wholeCents(value: number): boolean {
+  return Number.isFinite(value) && Math.round(value * 100) === value * 100;
+}
+
+/**
+ * One-time credit packs. The buyer picks the whole-dollar amount here; the
+ * hosted Bachs page takes the payment and the webhook credits the account.
+ */
+function BuyCreditsSection() {
+  const account = useAccountState();
+  const { state: accountSnapshot } = useAccountSnapshot();
+  const accountApiUrl = resolveCloudPublicConfig().accountApiUrl;
+  const email =
+    accountSnapshot.snapshot?.user?.email ??
+    account.user?.primaryEmailAddress?.emailAddress ??
+    null;
+  const signedIn = account.status === "signed-in";
+  const [amount, setAmount] = useState<number | null>(10);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const buy = useCallback(
+    async (usd: number) => {
+      if (accountApiUrl === null) {
+        setError("Checkout is not configured in this build.");
+        return;
+      }
+      if (!signedIn) {
+        setError("Sign in to buy credits.");
+        return;
+      }
+      if (!wholeCents(usd) || usd < MIN_TOPUP_USD || usd > MAX_TOPUP_USD) {
+        setError(`Enter an amount between $${MIN_TOPUP_USD} and $${MAX_TOPUP_USD}.`);
+        return;
+      }
+      setBusy(true);
+      setError(null);
+      try {
+        await startCreditsCheckout({ accountApiUrl, usd, email });
+      } catch {
+        setError("Could not start checkout. Please try again.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [accountApiUrl, email, signedIn],
+  );
+
+  const amountText = amount === null ? "" : String(amount);
+  const valid =
+    amount !== null && wholeCents(amount) && amount >= MIN_TOPUP_USD && amount <= MAX_TOPUP_USD;
+
+  return (
+    <SettingsSection title="Buy credits" icon={<CoinsIcon />}>
+      <div className="px-1 py-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <p className="max-w-prose text-xs leading-5 text-muted-foreground">
+            Credits never expire. $1 buys {formatCredits(CREDITS_PER_DOLLAR)} credits; packs start
+            at ${MIN_TOPUP_USD}.
+          </p>
+          {valid && amount !== null ? (
+            <Badge variant="secondary" size="sm">
+              {formatCredits(amount * CREDITS_PER_DOLLAR)} credits
+            </Badge>
+          ) : null}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {TOPUP_PRESETS.map((preset) => (
+            <Button
+              key={preset}
+              size="sm"
+              variant="outline"
+              className={cn("h-8", amount === preset && "border-ring bg-accent")}
+              disabled={busy}
+              onClick={() => {
+                setAmount(preset);
+                void buy(preset);
+              }}
+            >
+              ${preset}
+            </Button>
+          ))}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">$</span>
+            <Input
+              type="number"
+              min={MIN_TOPUP_USD}
+              max={MAX_TOPUP_USD}
+              step="0.01"
+              value={amountText}
+              placeholder="Custom"
+              className="h-8 w-24 text-[13px]"
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                setAmount(Number.isFinite(parsed) && parsed > 0 ? parsed : null);
+              }}
+            />
+            <Button
+              size="sm"
+              className="h-8"
+              disabled={busy || !valid}
+              onClick={() => amount !== null && void buy(amount)}
+            >
+              {busy ? (
+                <LoaderCircleIcon className="size-3.5 animate-spin" />
+              ) : (
+                <CoinsIcon className="size-3.5" />
+              )}
+              Buy credits
+            </Button>
+          </div>
+        </div>
+        {error !== null ? (
+          <p className="mt-2 text-[11px] leading-4 text-destructive-foreground">{error}</p>
+        ) : null}
+      </div>
+    </SettingsSection>
+  );
+}
+
 /**
  * Balance, rates, and activity for the hosted provider. The balance is read
  * through the local server, which resolves the account key the Axle provider
@@ -350,6 +476,7 @@ export function CreditsSection() {
     return (
       <>
         <NotConnectedNotice />
+        <BuyCreditsSection />
         <ModelRatesSection />
       </>
     );
@@ -363,6 +490,7 @@ export function CreditsSection() {
         ) : (
           <CreditsLoadingPanel text="Loading your credits…" />
         )}
+        <BuyCreditsSection />
         <ModelRatesSection />
       </>
     );
@@ -374,6 +502,7 @@ export function CreditsSection() {
 
       {error !== null ? <CreditsErrorPanel error={error} onRetry={reload} /> : null}
 
+      <BuyCreditsSection />
       <ModelRatesSection />
       <UsageSection usage={usage} loading={loading} />
     </>

@@ -26,6 +26,7 @@ import { Route as SettingsKeybindingsRouteImport } from './routes/settings.keybi
 import { Route as SettingsInstructionsRouteImport } from './routes/settings.instructions'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
+import { Route as SettingsBillingRouteImport } from './routes/settings.billing'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAccountRouteImport } from './routes/settings.account'
 import { Route as SettingsAccountIndexRouteImport } from './routes/settings.account.index'
@@ -122,6 +123,11 @@ const SettingsDiagnosticsRoute = SettingsDiagnosticsRouteImport.update({
   path: '/diagnostics',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsBillingRoute = SettingsBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
   id: '/archived',
   path: '/archived',
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRouteWithChildren
   '/settings/account': typeof SettingsAccountRouteWithChildren
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/billing': typeof SettingsBillingRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
@@ -217,6 +224,7 @@ export interface FileRoutesByTo {
   '/schedules': typeof SchedulesRoute
   '/settings': typeof SettingsRouteWithChildren
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/billing': typeof SettingsBillingRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
@@ -248,6 +256,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRouteWithChildren
   '/settings/account': typeof SettingsAccountRouteWithChildren
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/billing': typeof SettingsBillingRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/instructions': typeof SettingsInstructionsRoute
@@ -280,6 +289,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/settings/account'
     | '/settings/archived'
+    | '/settings/billing'
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/instructions'
@@ -307,6 +317,7 @@ export interface FileRouteTypes {
     | '/schedules'
     | '/settings'
     | '/settings/archived'
+    | '/settings/billing'
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/instructions'
@@ -337,6 +348,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/settings/account'
     | '/settings/archived'
+    | '/settings/billing'
     | '/settings/diagnostics'
     | '/settings/general'
     | '/settings/instructions'
@@ -489,6 +501,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsDiagnosticsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/billing': {
+      id: '/settings/billing'
+      path: '/billing'
+      fullPath: '/settings/billing'
+      preLoaderRoute: typeof SettingsBillingRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/archived': {
       id: '/settings/archived'
       path: '/archived'
@@ -610,6 +629,7 @@ const SettingsAccountRouteWithChildren = SettingsAccountRoute._addFileChildren(
 interface SettingsRouteChildren {
   SettingsAccountRoute: typeof SettingsAccountRouteWithChildren
   SettingsArchivedRoute: typeof SettingsArchivedRoute
+  SettingsBillingRoute: typeof SettingsBillingRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsInstructionsRoute: typeof SettingsInstructionsRoute
@@ -624,6 +644,7 @@ interface SettingsRouteChildren {
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAccountRoute: SettingsAccountRouteWithChildren,
   SettingsArchivedRoute: SettingsArchivedRoute,
+  SettingsBillingRoute: SettingsBillingRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsInstructionsRoute: SettingsInstructionsRoute,

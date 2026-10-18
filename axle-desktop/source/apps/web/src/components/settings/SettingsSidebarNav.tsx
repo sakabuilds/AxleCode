@@ -6,6 +6,7 @@ import {
   BoxesIcon,
   SlidersHorizontalIcon,
   BrainIcon,
+  CreditCardIcon,
   KeyboardIcon,
   CircleUserRoundIcon,
   PlugZapIcon,
@@ -26,6 +27,7 @@ import {
 
 export type SettingsSectionPath =
   | "/settings/account"
+  | "/settings/billing"
   | "/settings/general"
   | "/settings/personalize"
   | "/settings/keybindings"
@@ -41,6 +43,7 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
   icon: ComponentType<{ className?: string }>;
 }> = [
   { label: "Account", to: "/settings/account", icon: CircleUserRoundIcon },
+  { label: "Billing", to: "/settings/billing", icon: CreditCardIcon },
   { label: "General", to: "/settings/general", icon: Settings2Icon },
   { label: "Personalize", to: "/settings/personalize", icon: SlidersHorizontalIcon },
   { label: "Keybindings", to: "/settings/keybindings", icon: KeyboardIcon },

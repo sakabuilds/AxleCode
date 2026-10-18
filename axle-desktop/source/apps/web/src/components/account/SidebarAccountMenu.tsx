@@ -135,7 +135,7 @@ export function SidebarAccountMenu() {
           <MenuItem
             onClick={() => {
               closeMobileSidebar();
-              void navigate({ to: "/settings/account/billing" });
+              void navigate({ to: "/settings/billing", search: {} });
             }}
           >
             <CreditCardIcon className="size-3.5" />
@@ -144,7 +144,7 @@ export function SidebarAccountMenu() {
           <MenuItem
             onClick={() => {
               closeMobileSidebar();
-              void navigate({ to: "/settings/account/credits" });
+              void navigate({ to: "/settings/billing", search: { tab: "credits" } });
             }}
           >
             <CoinsIcon className="size-3.5" />
