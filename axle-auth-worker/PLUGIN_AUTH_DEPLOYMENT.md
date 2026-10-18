@@ -20,7 +20,11 @@ OAuth client IDs are public values. Put them in `wrangler.toml` under `[vars]`; 
 - `SENTRY_CLIENT_ID`
 - `FIGMA_CLIENT_ID`
 - `CLERK_PUBLISHABLE_KEY`
-- `PUBLIC_BASE_URL`, normally `https://auth.axle.llc`
+- `PUBLIC_BASE_URL`, the deployed Worker origin. Today this is
+  `https://axle-auth.axle-download-worker.workers.dev`. A custom domain such as
+  `https://auth.axle.llc` can replace it once the domain is attached and its DNS
+  resolves, but `PUBLIC_BASE_URL` and `AUTH_ISSUER` must stay in sync with the
+  origin actually serving the Worker.
 
 Do not put provider client secrets in `wrangler.toml`, Vite variables, the desktop installer, or source control.
 
@@ -54,14 +58,17 @@ Configure each provider application to allow the callback on the deployed Worker
 
 ```text
 Google sign-in: https://axle-auth.axle-download-worker.workers.dev/v1/auth/callback/google
-Gmail:   https://auth.axle.llc/v1/plugins/gmail/callback
-Outlook: https://auth.axle.llc/v1/plugins/outlook/callback
-Slack:   https://auth.axle.llc/v1/plugins/slack/callback
-Jira:    https://auth.axle.llc/v1/plugins/jira/callback
-Notion:  https://auth.axle.llc/v1/plugins/notion/callback
-Sentry:  https://auth.axle.llc/v1/plugins/sentry/callback
-Figma:   https://auth.axle.llc/v1/plugins/figma/callback
+Gmail:   https://axle-auth.axle-download-worker.workers.dev/v1/plugins/gmail/callback
+Outlook: https://axle-auth.axle-download-worker.workers.dev/v1/plugins/outlook/callback
+Slack:   https://axle-auth.axle-download-worker.workers.dev/v1/plugins/slack/callback
+Jira:    https://axle-auth.axle-download-worker.workers.dev/v1/plugins/jira/callback
+Notion:  https://axle-auth.axle-download-worker.workers.dev/v1/plugins/notion/callback
+Sentry:  https://axle-auth.axle-download-worker.workers.dev/v1/plugins/sentry/callback
+Figma:   https://axle-auth.axle-download-worker.workers.dev/v1/plugins/figma/callback
 ```
+
+Do not register callbacks for `auth.axle.llc` (or any other custom domain) until
+that origin is attached to the Worker and its DNS resolves.
 
 Google is the desktop sign-in provider, and Google requires an exact redirect
 URI match. The URI must be `${PUBLIC_BASE_URL}/v1/auth/callback/google` for the
@@ -113,8 +120,8 @@ NEON_AUTH_AUDIENCE=axle-relay
 Source builds need only the Worker origin:
 
 ```sh
-VITE_AXLE_PLUGIN_WORKER_URL=https://auth.axle.llc
-AXLE_PLUGIN_WORKER_URL=https://auth.axle.llc
+VITE_AXLE_PLUGIN_WORKER_URL=https://axle-auth.axle-download-worker.workers.dev
+AXLE_PLUGIN_WORKER_URL=https://axle-auth.axle-download-worker.workers.dev
 ```
 
 The provider client IDs do not need to be exposed to the Electron renderer because the Worker constructs the provider authorization URLs. They are public, but keeping them in Worker vars gives one authoritative deployment configuration and avoids duplicating OAuth config in the installer.
@@ -141,3 +148,38 @@ npx wrangler deploy --name axle-auth
 ```
 
 After deployment, verify `/health`, Clerk sign-in, every provider OAuth callback, disconnect/reconnect behavior, GitHub credential import/refresh, agent authorization-card cancellation, and one read plus one permitted write action for each plugin.
+
+### Credentialless smoke test
+
+These checks need no secrets and catch origin drift, broken routes, and auth-wall regressions. Verified against the deployed `https://axle-auth.axle-download-worker.workers.dev` on 2026-10-18:
+
+```sh
+BASE=https://axle-auth.axle-download-worker.workers.dev
+
+# 0. Secret inventory: names only, never values. Expect at minimum
+#    GITHUB_CLIENT_SECRET, GOOGLE_CLIENT_SECRET, PLUGIN_TOKEN_ENCRYPTION_KEY,
+#    CLERK_SECRET_KEY, and a <PROVIDER>_CLIENT_SECRET for every plugin you
+#    expect to work. Missing names explain false entries in /health.
+npx wrangler secret list
+
+# 1. Health: 200 with the config flags; providerClientSecretsConfigured must be
+#    true for every provider you expect to work (github's client secret is not
+#    reported here - check GITHUB_CLIENT_SECRET manually).
+curl -sS "$BASE/health"
+
+# 2. Session wall: all session-gated routes must reject unauthenticated calls
+#    with 401 {"error":"Plugin session is invalid or expired.","code":"unauthorized"}.
+curl -sS -X POST "$BASE/v1/mcp" -H "content-type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+curl -sS "$BASE/v1/plugins"
+curl -sS -X POST "$BASE/v1/plugins/github/authorize"
+
+# 3. Installation wall: 400 {"code":"invalid_installation"} without one.
+curl -sS -X POST "$BASE/v1/session"
+```
+
+Full OAuth E2E (connect a plugin and run one MCP tool call through the native
+agent) additionally requires, in order: provider client secrets set via
+`npx wrangler secret put`, a Clerk sign-in, and a completed OAuth authorization
+in the app. Until `providerClientSecretsConfigured` is true for a provider, its
+authorize flow cannot complete even though the route itself responds.
