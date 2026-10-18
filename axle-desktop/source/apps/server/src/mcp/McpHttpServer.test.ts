@@ -105,7 +105,7 @@ it.effect("reviews a PR with the separate review agent before posting validated 
       Effect.sync(() => {
         reviewCalls.push(input);
         return {
-          response: JSON.stringify({
+          response: encodeJson({
             summary: "One issue found.",
             findings: [
               {
