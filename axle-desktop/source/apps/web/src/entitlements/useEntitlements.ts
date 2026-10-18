@@ -31,6 +31,17 @@ export function useEntitlements(): EntitlementsSnapshot {
     }
   }, [account.status]);
 
+  // Plan changes (upgrades, operator edits) arrive out-of-band; re-check when
+  // the window regains focus so the UI converges without a restart.
+  useEffect(() => {
+    if (!entitlementsConfigured() || account.status !== "signed-in") return;
+    const onFocus = () => loadEntitlements(true);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [account.status]);
+
   return snapshot;
 }
 
