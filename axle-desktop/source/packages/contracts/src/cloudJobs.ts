@@ -156,7 +156,6 @@ export const CloudPlanFeatures = Schema.Struct({
   /** Maximum saved scheduled tasks; use a high value (1000) for effectively unlimited. */
   scheduledTasksMax: NonNegativeInt,
   pullRequestReviews: Schema.Boolean,
-  premiumModels: Schema.Boolean,
   teamSharing: Schema.Boolean,
 });
 export type CloudPlanFeatures = typeof CloudPlanFeatures.Type;
@@ -195,3 +194,14 @@ export const CloudBillingView = Schema.Struct({
   entries: Schema.Array(CloudCreditLedgerEntry),
 });
 export type CloudBillingView = typeof CloudBillingView.Type;
+
+/**
+ * `POST /v1/billing/checkout` — a hosted payment session for a paid plan. The
+ * caller opens `checkoutUrl` in a browser; the plan is applied server-side when
+ * the provider's webhook confirms payment.
+ */
+export const CloudCheckoutSession = Schema.Struct({
+  checkoutId: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256)),
+  checkoutUrl: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(2048)),
+});
+export type CloudCheckoutSession = typeof CloudCheckoutSession.Type;
