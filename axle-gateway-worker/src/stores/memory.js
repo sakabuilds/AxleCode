@@ -8,6 +8,7 @@ export class MemoryCreditsStore {
   #users = new Map();
   #locks = new Map();
   #ledger = new Map();
+  #references = new Set();
 
   #withLock(userId, operation) {
     const previous = this.#locks.get(userId) ?? Promise.resolve();
@@ -22,46 +23,108 @@ export class MemoryCreditsStore {
     return next;
   }
 
+  #recordFor(userId) {
+    return (
+      this.#users.get(userId) ?? {
+        balance: 0,
+        planBalance: 0,
+        paidBalance: 0,
+        grantedOn: null,
+        planMonth: null,
+      }
+    );
+  }
+
+  #total(record) {
+    return record.balance + record.planBalance + record.paidBalance;
+  }
+
   async read(userId) {
     const record = this.#users.get(userId);
-    return { balance: record?.balance ?? 0, grantedOn: record?.grantedOn ?? null };
+    return {
+      balance: record?.balance ?? 0,
+      planBalance: record?.planBalance ?? 0,
+      paidBalance: record?.paidBalance ?? 0,
+      grantedOn: record?.grantedOn ?? null,
+    };
   }
 
   grantDaily(userId, date, amount, at = Date.now()) {
     return this.#withLock(userId, () => {
-      const record = this.#users.get(userId) ?? { balance: 0, grantedOn: null };
+      const record = this.#recordFor(userId);
       if (record.grantedOn === date) {
-        return { granted: false, balance: record.balance };
+        return { granted: false, balance: this.#total(record), ...this.#spread(record) };
       }
-      record.balance += amount;
+      // Renew, not add: a new day resets the free bucket, so unused free
+      // credits never roll over.
+      record.balance = amount;
       record.grantedOn = date;
       this.#users.set(userId, record);
-      this.record(userId, "daily_grant", amount, record.balance, at, { date });
-      return { granted: true, balance: record.balance };
+      this.record(userId, "daily_grant", amount, this.#total(record), at, { date });
+      return { granted: true, balance: this.#total(record), ...this.#spread(record) };
+    });
+  }
+
+  grantPlan(userId, month, amount, at = Date.now(), reference = null) {
+    return this.#withLock(userId, () => {
+      if (reference !== null) {
+        if (this.#references.has(reference)) {
+          const record = this.#recordFor(userId);
+          return { applied: false, balance: this.#total(record), ...this.#spread(record) };
+        }
+        this.#references.add(reference);
+      }
+      const record = this.#recordFor(userId);
+      record.planBalance = amount;
+      record.planMonth = month;
+      this.#users.set(userId, record);
+      this.record(userId, "plan_grant", amount, this.#total(record), at, { month, reference });
+      return { applied: true, balance: this.#total(record), ...this.#spread(record) };
     });
   }
 
   charge(userId, amount, at = Date.now(), meta = {}) {
     return this.#withLock(userId, () => {
-      const record = this.#users.get(userId) ?? { balance: 0, grantedOn: null };
-      if (record.balance < amount) {
-        return { charged: false, balance: record.balance };
+      const record = this.#recordFor(userId);
+      if (this.#total(record) < amount) {
+        return { charged: false, balance: this.#total(record), ...this.#spread(record) };
       }
-      record.balance -= amount;
+      // Spend order: free first, then plan, then paid credits.
+      const fromFree = Math.min(record.balance, amount);
+      const fromPlan = Math.min(record.planBalance, amount - fromFree);
+      const fromPaid = amount - fromFree - fromPlan;
+      record.balance -= fromFree;
+      record.planBalance -= fromPlan;
+      record.paidBalance -= fromPaid;
       this.#users.set(userId, record);
-      this.record(userId, "spend", -amount, record.balance, at, meta);
-      return { charged: true, balance: record.balance };
+      this.record(userId, "spend", -amount, this.#total(record), at, meta);
+      return { charged: true, balance: this.#total(record), ...this.#spread(record) };
     });
   }
 
-  add(userId, amount, at = Date.now(), meta = {}) {
+  add(userId, amount, at = Date.now(), meta = {}, reference = null) {
     return this.#withLock(userId, () => {
-      const record = this.#users.get(userId) ?? { balance: 0, grantedOn: null };
-      record.balance += amount;
+      if (reference !== null) {
+        if (this.#references.has(reference)) {
+          const record = this.#recordFor(userId);
+          return { applied: false, balance: this.#total(record), ...this.#spread(record) };
+        }
+        this.#references.add(reference);
+      }
+      const record = this.#recordFor(userId);
+      record.paidBalance += amount;
       this.#users.set(userId, record);
-      this.record(userId, "top_up", amount, record.balance, at, meta);
-      return { balance: record.balance };
+      this.record(userId, "top_up", amount, this.#total(record), at, meta);
+      return { applied: true, balance: this.#total(record), ...this.#spread(record) };
     });
+  }
+
+  #spread(record) {
+    return {
+      freeBalance: record.balance,
+      planBalance: record.planBalance,
+      paidBalance: record.paidBalance,
+    };
   }
 
   /**
