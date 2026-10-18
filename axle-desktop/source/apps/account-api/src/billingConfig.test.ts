@@ -16,7 +16,6 @@ const valid = {
       features: {
         scheduledTasksMax: 50,
         pullRequestReviews: true,
-        premiumModels: true,
         teamSharing: false,
       },
     },
@@ -73,7 +72,6 @@ describe("billing configuration", () => {
       features: {
         scheduledTasksMax: 50,
         pullRequestReviews: true,
-        premiumModels: true,
         teamSharing: false,
       },
     });
@@ -89,25 +87,23 @@ describe("billing configuration", () => {
     expect(DEFAULT_PLAN_FEATURES).toEqual({
       scheduledTasksMax: 2,
       pullRequestReviews: false,
-      premiumModels: false,
       teamSharing: false,
     });
   });
   it.each([
     [
       "negative scheduled task limit",
-      { scheduledTasksMax: -1, pullRequestReviews: true, premiumModels: true, teamSharing: false },
+      { scheduledTasksMax: -1, pullRequestReviews: true, teamSharing: false },
     ],
     [
       "oversized scheduled task limit",
       {
         scheduledTasksMax: 1001,
         pullRequestReviews: true,
-        premiumModels: true,
         teamSharing: false,
       },
     ],
-    ["missing review switch", { scheduledTasksMax: 10, premiumModels: true, teamSharing: false }],
+    ["missing review switch", { scheduledTasksMax: 10, teamSharing: false }],
   ])("rejects invalid plan features (%s)", (_label, features) => {
     const plans = [{ ...valid.plans[1], features }];
     expect(() =>
