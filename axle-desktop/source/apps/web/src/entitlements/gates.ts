@@ -15,10 +15,6 @@ export function pullRequestReviewsLocked(entitlements: CloudEntitlements | null)
   return entitlements !== null && !entitlements.features.pullRequestReviews;
 }
 
-export function premiumModelsLocked(entitlements: CloudEntitlements | null): boolean {
-  return entitlements !== null && !entitlements.features.premiumModels;
-}
-
 /** Maximum saved scheduled tasks, or null when unlimited/unknown. */
 export function scheduledTasksLimit(entitlements: CloudEntitlements | null): number | null {
   return entitlements === null ? null : entitlements.features.scheduledTasksMax;
