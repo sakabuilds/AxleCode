@@ -1,7 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off cryptoRandomUUID:off
 import * as NodeCrypto from "node:crypto";
-import * as NodeFS from "node:fs";
-import { neon } from "@neondatabase/serverless";
+import type { Db } from "mongodb";
 
 import type {
   CloudJob,
@@ -14,16 +13,12 @@ import type {
 } from "@axle/contracts";
 import type { CloudConfig, CloudEnvironment } from "./cloudConfig.ts";
 import type { BillingConfig, CloudJobEntitlement } from "./billingConfig.ts";
-import { resolveCloudJobEntitlement } from "./billingConfig.ts";
+import { resolveCloudJobEntitlement, resolvePlanEntitlement } from "./billingConfig.ts";
+import { CloudJobError } from "./cloudErrors.ts";
+import { createCloudQuery } from "./cloudMongo.ts";
+import { ensureMongoIndexes } from "./mongo.ts";
 
-export class CloudJobError extends Error {
-  readonly code: string;
-  constructor(code: string) {
-    super(code);
-    this.name = "CloudJobError";
-    this.code = code;
-  }
-}
+export { CloudJobError };
 
 export type CloudQuery = (operation: string, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -51,29 +46,14 @@ export interface CreditBillingView {
   readonly entries: ReadonlyArray<CreditLedgerEntryView>;
 }
 
-export function createCloudDatabase(databaseUrl: string) {
-  const sql = neon(databaseUrl);
+export function createCloudDatabase(db: Db) {
   return {
-    migrate: async () => {
-      await sql.unsafe(
-        NodeFS.readFileSync(new URL("../migrations/003_cloud_jobs.sql", import.meta.url), "utf8"),
-      );
-      await sql.unsafe(
-        NodeFS.readFileSync(new URL("../migrations/004_credits.sql", import.meta.url), "utf8"),
-      );
+    // The Mongo binding is stateless schema-on-use: indexes are the only
+    // bootstrap step, and creating them is idempotent.
+    migrate: async (): Promise<void> => {
+      await ensureMongoIndexes(db);
     },
-    query: async (operation: string, args: Record<string, unknown>): Promise<unknown> => {
-      try {
-        const rows =
-          await sql`SELECT axle_cloud_command_atomic(${operation}, ${JSON.stringify(args)}::JSONB) AS result`;
-        return rows[0]?.result;
-      } catch (error) {
-        if (error instanceof Error && /^AXLE_CLOUD:[a-z_]+$/u.test(error.message)) {
-          throw new CloudJobError(error.message.slice("AXLE_CLOUD:".length));
-        }
-        throw error;
-      }
-    },
+    query: createCloudQuery(db),
   };
 }
 
@@ -100,8 +80,31 @@ export function createCloudJobStore(
   config: CloudConfig,
   billing: BillingConfig | null = null,
 ) {
-  const entitlementFor = (userId: string): CloudJobEntitlement | null =>
-    billing === null ? null : resolveCloudJobEntitlement(billing, userId);
+  /**
+   * Plan precedence: explicit operator assignment in the billing config, then
+   * an active paid subscription recorded from the payment webhook, then the
+   * configured default plan. Only a plan id present in the billing config can
+   * grant entitlements, so a stale subscription cannot widen access.
+   */
+  const entitlementFor = async (userId: string): Promise<CloudJobEntitlement | null> => {
+    if (billing === null) return null;
+    if (billing.userPlans?.[userId] !== undefined) {
+      return resolveCloudJobEntitlement(billing, userId);
+    }
+    const subscription = (await query("subscription-get", { userId })) as {
+      planId?: unknown;
+      status?: unknown;
+    } | null;
+    if (
+      subscription !== null &&
+      subscription.status === "active" &&
+      typeof subscription.planId === "string" &&
+      billing.plans.some((plan) => plan.planId === subscription.planId)
+    ) {
+      return resolvePlanEntitlement(billing, subscription.planId);
+    }
+    return resolveCloudJobEntitlement(billing, userId);
+  };
   const environment = (id: string): CloudEnvironment => {
     const value = config.environments.find((item) => item.environmentId === id);
     if (!value) throw new CloudJobError("environment_unavailable");
@@ -143,7 +146,7 @@ export function createCloudJobStore(
       }
       // Plan entitlement and the spend gate are resolved server-side; the client
       // never supplies its plan, balance, or limits.
-      const entitlement = entitlementFor(userId);
+      const entitlement = await entitlementFor(userId);
       if (entitlement !== null && !entitlement.cloudJobsEnabled)
         throw new CloudJobError("cloud_not_entitled");
       return (await query("create", {
@@ -191,7 +194,7 @@ export function createCloudJobStore(
       })) as CloudJob;
     },
     async billing(userId: string): Promise<CreditBillingView> {
-      const entitlement = entitlementFor(userId);
+      const entitlement = await entitlementFor(userId);
       const view = (await query("billing", {
         userId,
         planId: entitlement?.planId ?? "operator",
@@ -210,7 +213,7 @@ export function createCloudJobStore(
         throw new CloudJobError("invalid_entry_id");
       if (!Number.isSafeInteger(input.amount) || input.amount <= 0)
         throw new CloudJobError("invalid_amount");
-      const entitlement = entitlementFor(userId);
+      const entitlement = await entitlementFor(userId);
       return (await query("grant", {
         userId,
         entryId: input.entryId,
@@ -219,6 +222,21 @@ export function createCloudJobStore(
         planId: entitlement?.planId ?? "operator",
         monthlyCredits: entitlement?.monthlyCredits ?? 0,
       })) as { planId: string; balance: number };
+    },
+    /**
+     * Records a payment-provider webhook idempotently; `collection.succeeded`
+     * with a mapped user and plan activates the paid subscription in the same
+     * statement. Duplicates and unrelated event types are acknowledged without
+     * further effect.
+     */
+    async applyWebhookEvent(event: {
+      eventId: string;
+      eventType: string;
+      userId: string | null;
+      planId: string | null;
+      providerReference: string | null;
+    }): Promise<{ applied: boolean; granted: boolean }> {
+      return (await query("webhook-apply", event)) as { applied: boolean; granted: boolean };
     },
     async claim(workerId: string, environmentId: string): Promise<CloudJobLease | null> {
       const selected = environment(environmentId);
