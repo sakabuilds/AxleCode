@@ -24,3 +24,10 @@ database_id = "d62b83bb-52de-4319-aec9-dab4a38db6cd"
 binding = "ACCOUNTS_DB"
 database_name = "axle-accounts"
 database_id = "92573546-757a-4fc4-939c-2eb41015ff13"
+
+# The account API worker that owns plan resolution for paid-model gating.
+# Same-zone worker-to-worker fetch fails with error 1042, so the deployed
+# gateway reaches /v1/billing/plan through this service binding.
+[[services]]
+binding = "ACCOUNT_API_SERVICE"
+service = "axle-account"
