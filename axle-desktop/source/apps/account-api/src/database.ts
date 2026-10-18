@@ -1,10 +1,10 @@
-// @effect-diagnostics nodeBuiltinImport:off
-import { neon } from "@neondatabase/serverless";
-import * as NodeFS from "node:fs";
+// @effect-diagnostics globalDate:off
+import type { Db } from "mongodb";
 
 import type { AccountApiConfig } from "./config.ts";
 import type { AccountPrincipal } from "./auth.ts";
 import { AccountDeviceConflictError, AccountSessionAccessError } from "./errors.ts";
+import { ensureMongoIndexes, isDuplicateKeyError, mongoDatabase } from "./mongo.ts";
 
 export interface AccountProfile {
   readonly userId: string;
@@ -86,186 +86,220 @@ export interface UsageEventInput {
   readonly occurredAt: string;
 }
 
+interface ProfileDoc {
+  _id: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface StatsDoc {
+  _id: string;
+  totalTurns: number;
+  totalInputTokens: number;
+  totalCachedInputTokens: number;
+  totalOutputTokens: number;
+  totalReasoningOutputTokens: number;
+  totalTokens: number;
+  totalToolUses: number;
+  totalCostUsd: number;
+  mostUsedProvider: string | null;
+  mostUsedModel: string | null;
+  lastActiveAt: Date | null;
+  updatedAt: Date;
+}
+
+interface DeviceDoc {
+  _id: string;
+  userId: string;
+  label: string | null;
+  deviceType: string;
+  platform: string | null;
+  osVersion: string | null;
+  appVersion: string | null;
+  browser: string | null;
+  lastSeenAt: Date;
+  createdAt: Date;
+  revokedAt: Date | null;
+}
+
+interface SessionDoc {
+  _id: string;
+  userId: string;
+  deviceId: string | null;
+  issuedAt: Date | null;
+  expiresAt: Date | null;
+  lastSeenAt: Date;
+  revokedAt: Date | null;
+}
+
+interface UsageModelDoc {
+  _id: unknown;
+  userId: string;
+  provider: string;
+  model: string;
+  turnCount: number;
+  totalTokens: number;
+  lastUsedAt: Date;
+}
+
 export function createAccountDatabase(config: AccountApiConfig) {
-  const sql = neon(config.databaseUrl);
+  const db: Db = mongoDatabase(config.mongodbUri);
+
   const migrate = async (): Promise<void> => {
-    // The rebrand migration renames populated pre-rebrand tables before the
-    // schema file runs, so `CREATE TABLE IF NOT EXISTS` never creates empty
-    // replacements alongside the user's existing data.
-    const rebrandSql = NodeFS.readFileSync(
-      new URL("../migrations/002_rebrand_axle.sql", import.meta.url),
-      "utf8",
-    );
-    await sql.unsafe(rebrandSql);
-    const schemaSql = NodeFS.readFileSync(
-      new URL("../migrations/001_account.sql", import.meta.url),
-      "utf8",
-    );
-    await sql.unsafe(schemaSql);
+    await ensureMongoIndexes(db);
   };
 
   const ensureAccount = async (userId: string): Promise<void> => {
-    await sql.transaction([
-      sql`
-        INSERT INTO axle_account_profiles (user_id)
-        VALUES (${userId})
-        ON CONFLICT (user_id) DO NOTHING
-      `,
-      sql`
-        INSERT INTO axle_account_stats (user_id)
-        VALUES (${userId})
-        ON CONFLICT (user_id) DO NOTHING
-      `,
+    // Upsert-if-missing on both roots; never rewrites live rows. The SQL
+    // version committed these two inserts in one transaction, but they are
+    // independent defaults and each is idempotent, so ordering is irrelevant.
+    await Promise.all([
+      db
+        .collection<ProfileDoc>("axle_account_profiles")
+        .updateOne(
+          { _id: userId },
+          {
+            $setOnInsert: {
+              displayName: null,
+              avatarUrl: null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          },
+          { upsert: true },
+        ),
+      db.collection<StatsDoc>("axle_account_stats").updateOne(
+        { _id: userId },
+        {
+          $setOnInsert: {
+            totalTurns: 0,
+            totalInputTokens: 0,
+            totalCachedInputTokens: 0,
+            totalOutputTokens: 0,
+            totalReasoningOutputTokens: 0,
+            totalTokens: 0,
+            totalToolUses: 0,
+            totalCostUsd: 0,
+            mostUsedProvider: null,
+            mostUsedModel: null,
+            lastActiveAt: null,
+            updatedAt: new Date(),
+          },
+        },
+        { upsert: true },
+      ),
     ]);
   };
 
   const touchSession = async (principal: AccountPrincipal): Promise<void> => {
     if (!principal.sessionId) return;
-    const accepted = await sql`
-      INSERT INTO axle_account_sessions (
-        session_id,
-        user_id,
-        issued_at,
-        expires_at,
-        last_seen_at
-      )
-      VALUES (
-        ${principal.sessionId},
-        ${principal.userId},
-        ${principal.issuedAt?.toISOString() ?? null},
-        ${principal.expiresAt?.toISOString() ?? null},
-        now()
-      )
-      ON CONFLICT (session_id) DO UPDATE SET
-        issued_at = COALESCE(excluded.issued_at, axle_account_sessions.issued_at),
-        expires_at = COALESCE(excluded.expires_at, axle_account_sessions.expires_at),
-        last_seen_at = now()
-      WHERE axle_account_sessions.user_id = excluded.user_id
-        AND axle_account_sessions.revoked_at IS NULL
-      RETURNING session_id
-    `;
-    if (accepted.length === 0) throw new AccountSessionAccessError();
+    const sessions = db.collection<SessionDoc>("axle_account_sessions");
+    const now = new Date();
+    const issuedAt = principal.issuedAt ?? null;
+    const expiresAt = principal.expiresAt ?? null;
+    try {
+      await sessions.updateOne(
+        { _id: principal.sessionId },
+        {
+          $setOnInsert: {
+            userId: principal.userId,
+            deviceId: null,
+            issuedAt,
+            expiresAt,
+            lastSeenAt: now,
+            revokedAt: null,
+          },
+        },
+        { upsert: true },
+      );
+    } catch (error) {
+      // A concurrent first touch owns the row; the conditional update below
+      // decides whether this principal is allowed to keep it.
+      if (!isDuplicateKeyError(error)) throw error;
+    }
+    const claims: Record<string, unknown> = { lastSeenAt: now };
+    if (issuedAt) claims.issuedAt = issuedAt;
+    if (expiresAt) claims.expiresAt = expiresAt;
+    const accepted = await sessions.findOneAndUpdate(
+      { _id: principal.sessionId, userId: principal.userId, revokedAt: null },
+      { $set: claims },
+      { returnDocument: "after" },
+    );
+    if (!accepted) throw new AccountSessionAccessError();
   };
 
   const getAccount = async (userId: string): Promise<AccountSnapshot> => {
     await ensureAccount(userId);
-    const [profileRows, statsRows, deviceRows, sessionRows, threadRows] = await Promise.all([
-      sql`
-        SELECT
-          user_id AS "userId",
-          display_name AS "displayName",
-          avatar_url AS "avatarUrl",
-          created_at AS "createdAt",
-          updated_at AS "updatedAt"
-        FROM axle_account_profiles
-        WHERE user_id = ${userId}
-      `,
-      sql`
-        SELECT
-          total_turns AS "totalTurns",
-          total_threads AS "totalThreads",
-          total_input_tokens AS "totalInputTokens",
-          total_cached_input_tokens AS "totalCachedInputTokens",
-          total_output_tokens AS "totalOutputTokens",
-          total_reasoning_output_tokens AS "totalReasoningOutputTokens",
-          total_tokens AS "totalTokens",
-          total_tool_uses AS "totalToolUses",
-          total_cost_usd AS "totalCostUsd",
-          most_used_provider AS "mostUsedProvider",
-          most_used_model AS "mostUsedModel",
-          last_active_at AS "lastActiveAt"
-        FROM axle_account_stats
-        WHERE user_id = ${userId}
-      `,
-      sql`
-        SELECT
-          device_id AS "deviceId",
-          label,
-          device_type AS "deviceType",
-          platform,
-          os_version AS "osVersion",
-          app_version AS "appVersion",
-          browser,
-          last_seen_at AS "lastSeenAt",
-          revoked_at AS "revokedAt"
-        FROM axle_account_devices
-        WHERE user_id = ${userId}
-        ORDER BY last_seen_at DESC
-      `,
-      sql`
-        SELECT
-          session_id AS "sessionId",
-          device_id AS "deviceId",
-          issued_at AS "issuedAt",
-          expires_at AS "expiresAt",
-          last_seen_at AS "lastSeenAt",
-          revoked_at AS "revokedAt"
-        FROM axle_account_sessions
-        WHERE user_id = ${userId}
-        ORDER BY last_seen_at DESC
-      `,
-      sql`
-        SELECT COUNT(DISTINCT thread_id)::int AS "totalThreads"
-        FROM axle_account_usage_events
-        WHERE user_id = ${userId} AND thread_id IS NOT NULL
-      `,
+    const [profile, stats, deviceDocs, sessionDocs, threadIds, mostUsedRows] = await Promise.all([
+      db.collection<ProfileDoc>("axle_account_profiles").findOne({ _id: userId }),
+      db.collection<StatsDoc>("axle_account_stats").findOne({ _id: userId }),
+      db
+        .collection<DeviceDoc>("axle_account_devices")
+        .find({ userId })
+        .sort({ lastSeenAt: -1 })
+        .toArray(),
+      db
+        .collection<SessionDoc>("axle_account_sessions")
+        .find({ userId })
+        .sort({ lastSeenAt: -1 })
+        .toArray(),
+      db
+        .collection("axle_account_usage_events")
+        .distinct("threadId", { userId, threadId: { $ne: null } }),
+      db
+        .collection<UsageModelDoc>("axle_account_usage_models")
+        .find({ userId })
+        .sort({ turnCount: -1, totalTokens: -1, lastUsedAt: -1 })
+        .limit(1)
+        .toArray(),
     ]);
-
-    const profile = profileRows[0];
-    const stats = statsRows[0];
     if (!profile || !stats) {
       throw new Error("Account profile initialization failed.");
     }
-
-    const mostUsedModelRows = await sql`
-      SELECT provider, model
-      FROM axle_account_usage_models
-      WHERE user_id = ${userId}
-      ORDER BY turn_count DESC, total_tokens DESC, last_used_at DESC
-      LIMIT 1
-    `;
-    const mostUsedModel = mostUsedModelRows[0];
+    const mostUsedModel = mostUsedRows[0];
 
     return {
       profile: {
-        userId: String(profile.userId),
+        userId: String(profile._id),
         displayName: nullableString(profile.displayName),
         avatarUrl: nullableString(profile.avatarUrl),
-        createdAt: String(profile.createdAt),
-        updatedAt: String(profile.updatedAt),
+        createdAt: timestamp(profile.createdAt),
+        updatedAt: timestamp(profile.updatedAt),
       },
       stats: {
         totalTurns: toCount(stats.totalTurns),
-        totalThreads: toCount(threadRows[0]?.totalThreads),
+        totalThreads: threadIds.filter((value) => typeof value === "string").length,
         totalInputTokens: toCount(stats.totalInputTokens),
         totalCachedInputTokens: toCount(stats.totalCachedInputTokens),
         totalOutputTokens: toCount(stats.totalOutputTokens),
         totalReasoningOutputTokens: toCount(stats.totalReasoningOutputTokens),
         totalTokens: toCount(stats.totalTokens),
         totalToolUses: toCount(stats.totalToolUses),
-        totalCostUsd: String(stats.totalCostUsd ?? "0"),
+        totalCostUsd: String(stats.totalCostUsd ?? 0),
         mostUsedProvider: nullableString(mostUsedModel?.provider),
         mostUsedModel: nullableString(mostUsedModel?.model),
-        lastActiveAt: nullableString(stats.lastActiveAt),
+        lastActiveAt: timestampOrNull(stats.lastActiveAt),
       },
-      devices: deviceRows.map((row) => ({
-        deviceId: String(row.deviceId),
+      devices: deviceDocs.map((row) => ({
+        deviceId: String(row._id),
         label: nullableString(row.label),
         deviceType: String(row.deviceType),
         platform: nullableString(row.platform),
         osVersion: nullableString(row.osVersion),
         appVersion: nullableString(row.appVersion),
         browser: nullableString(row.browser),
-        lastSeenAt: String(row.lastSeenAt),
-        revokedAt: nullableString(row.revokedAt),
+        lastSeenAt: timestamp(row.lastSeenAt),
+        revokedAt: timestampOrNull(row.revokedAt),
       })),
-      sessions: sessionRows.map((row) => ({
-        sessionId: String(row.sessionId),
+      sessions: sessionDocs.map((row) => ({
+        sessionId: String(row._id),
         deviceId: nullableString(row.deviceId),
-        issuedAt: nullableString(row.issuedAt),
-        expiresAt: nullableString(row.expiresAt),
-        lastSeenAt: String(row.lastSeenAt),
-        revokedAt: nullableString(row.revokedAt),
+        issuedAt: timestampOrNull(row.issuedAt),
+        expiresAt: timestampOrNull(row.expiresAt),
+        lastSeenAt: timestamp(row.lastSeenAt),
+        revokedAt: timestampOrNull(row.revokedAt),
       })),
     };
   };
@@ -275,54 +309,59 @@ export function createAccountDatabase(config: AccountApiConfig) {
     input: { readonly displayName?: string | null; readonly avatarUrl?: string | null },
   ): Promise<void> => {
     await ensureAccount(userId);
-    await sql`
-      UPDATE axle_account_profiles
-      SET
-        display_name = COALESCE(${input.displayName ?? null}, display_name),
-        avatar_url = COALESCE(${input.avatarUrl ?? null}, avatar_url),
-        updated_at = now()
-      WHERE user_id = ${userId}
-    `;
+    // COALESCE semantics from the SQL upsert: null/undefined leave the stored
+    // value untouched; only a concrete string writes.
+    const claims: Record<string, unknown> = { updatedAt: new Date() };
+    if (input.displayName != null) claims.displayName = input.displayName;
+    if (input.avatarUrl != null) claims.avatarUrl = input.avatarUrl;
+    await db
+      .collection<ProfileDoc>("axle_account_profiles")
+      .updateOne({ _id: userId }, { $set: claims });
   };
 
   const upsertDevice = async (userId: string, input: AccountDeviceInput): Promise<void> => {
     await ensureAccount(userId);
-    const accepted = await sql`
-      INSERT INTO axle_account_devices (
-        device_id,
-        user_id,
-        label,
-        device_type,
-        platform,
-        os_version,
-        app_version,
-        browser,
-        last_seen_at
-      )
-      VALUES (
-        ${input.deviceId},
-        ${userId},
-        ${input.label ?? null},
-        ${input.deviceType ?? "unknown"},
-        ${input.platform ?? null},
-        ${input.osVersion ?? null},
-        ${input.appVersion ?? null},
-        ${input.browser ?? null},
-        now()
-      )
-      ON CONFLICT (device_id) DO UPDATE SET
-        label = COALESCE(excluded.label, axle_account_devices.label),
-        device_type = excluded.device_type,
-        platform = COALESCE(excluded.platform, axle_account_devices.platform),
-        os_version = COALESCE(excluded.os_version, axle_account_devices.os_version),
-        app_version = COALESCE(excluded.app_version, axle_account_devices.app_version),
-        browser = COALESCE(excluded.browser, axle_account_devices.browser),
-        last_seen_at = now()
-      WHERE axle_account_devices.user_id = excluded.user_id
-        AND axle_account_devices.revoked_at IS NULL
-      RETURNING device_id
-    `;
-    if (accepted.length === 0) throw new AccountDeviceConflictError();
+    const devices = db.collection<DeviceDoc>("axle_account_devices");
+    const now = new Date();
+    try {
+      await devices.updateOne(
+        { _id: input.deviceId },
+        {
+          $setOnInsert: {
+            userId,
+            label: input.label ?? null,
+            deviceType: input.deviceType ?? "unknown",
+            platform: input.platform ?? null,
+            osVersion: input.osVersion ?? null,
+            appVersion: input.appVersion ?? null,
+            browser: input.browser ?? null,
+            lastSeenAt: now,
+            createdAt: now,
+            revokedAt: null,
+          },
+        },
+        { upsert: true },
+      );
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) throw error;
+    }
+    // device_type is always overwritten (matching the SQL excluded row), while
+    // metadata keeps the stored value when the new registration omits it.
+    const claims: Record<string, unknown> = {
+      deviceType: input.deviceType ?? "unknown",
+      lastSeenAt: now,
+    };
+    if (input.label != null) claims.label = input.label;
+    if (input.platform != null) claims.platform = input.platform;
+    if (input.osVersion != null) claims.osVersion = input.osVersion;
+    if (input.appVersion != null) claims.appVersion = input.appVersion;
+    if (input.browser != null) claims.browser = input.browser;
+    const accepted = await devices.findOneAndUpdate(
+      { _id: input.deviceId, userId, revokedAt: null },
+      { $set: claims },
+      { returnDocument: "after" },
+    );
+    if (!accepted) throw new AccountDeviceConflictError();
   };
 
   const recordUsageEvent = async (userId: string, input: UsageEventInput): Promise<boolean> => {
@@ -331,7 +370,10 @@ export function createAccountDatabase(config: AccountApiConfig) {
     if (!input.eventId.trim() || !model) {
       throw new Error("Usage event ID and model are required.");
     }
-
+    const occurredAt = new Date(input.occurredAt);
+    if (Number.isNaN(occurredAt.getTime())) {
+      throw new Error("Usage event timestamp is invalid.");
+    }
     const values = {
       inputTokens: nonNegativeCount(input.inputTokens),
       cachedInputTokens: nonNegativeCount(input.cachedInputTokens),
@@ -339,147 +381,78 @@ export function createAccountDatabase(config: AccountApiConfig) {
       reasoningOutputTokens: nonNegativeCount(input.reasoningOutputTokens),
       totalTokens: nonNegativeCount(input.totalTokens),
       toolUses: nonNegativeCount(input.toolUses),
-      costUsd: input.costUsd === undefined ? null : Math.max(0, input.costUsd),
+      costUsd: input.costUsd === undefined ? 0 : Math.max(0, input.costUsd),
     };
 
     await ensureAccount(userId);
-    const inserted = await sql`
-      WITH inserted_event AS (
-        INSERT INTO axle_account_usage_events (
-          user_id,
-          event_id,
-          device_id,
-          environment_id,
-          thread_id,
-          turn_id,
-          provider,
-          provider_instance_id,
-          model,
-          input_tokens,
-          cached_input_tokens,
-          output_tokens,
-          reasoning_output_tokens,
-          total_tokens,
-          tool_uses,
-          cost_usd,
-          occurred_at
-        )
-        VALUES (
-          ${userId},
-          ${input.eventId.trim()},
-          ${input.deviceId ?? null},
-          ${input.environmentId ?? null},
-          ${input.threadId ?? null},
-          ${input.turnId ?? null},
-          ${provider},
-          ${input.providerInstanceId ?? null},
-          ${model},
-          ${values.inputTokens},
-          ${values.cachedInputTokens},
-          ${values.outputTokens},
-          ${values.reasoningOutputTokens},
-          ${values.totalTokens},
-          ${values.toolUses},
-          ${values.costUsd},
-          ${input.occurredAt}
-        )
-        ON CONFLICT (user_id, event_id) DO NOTHING
-        RETURNING *
-      ),
-      daily AS (
-        INSERT INTO axle_account_usage_daily (
-          user_id,
-          usage_date,
-          turn_count,
-          input_tokens,
-          cached_input_tokens,
-          output_tokens,
-          reasoning_output_tokens,
-          total_tokens,
-          tool_uses,
-          cost_usd
-        )
-        SELECT
-          user_id,
-          occurred_at::date,
-          1,
-          input_tokens,
-          cached_input_tokens,
-          output_tokens,
-          reasoning_output_tokens,
-          total_tokens,
-          tool_uses,
-          COALESCE(cost_usd, 0)
-        FROM inserted_event
-        ON CONFLICT (user_id, usage_date) DO UPDATE SET
-          turn_count = axle_account_usage_daily.turn_count + EXCLUDED.turn_count,
-          input_tokens = axle_account_usage_daily.input_tokens + EXCLUDED.input_tokens,
-          cached_input_tokens = axle_account_usage_daily.cached_input_tokens + EXCLUDED.cached_input_tokens,
-          output_tokens = axle_account_usage_daily.output_tokens + EXCLUDED.output_tokens,
-          reasoning_output_tokens = axle_account_usage_daily.reasoning_output_tokens + EXCLUDED.reasoning_output_tokens,
-          total_tokens = axle_account_usage_daily.total_tokens + EXCLUDED.total_tokens,
-          tool_uses = axle_account_usage_daily.tool_uses + EXCLUDED.tool_uses,
-          cost_usd = axle_account_usage_daily.cost_usd + EXCLUDED.cost_usd
-      ),
-      models AS (
-        INSERT INTO axle_account_usage_models (
-          user_id,
-          provider,
-          model,
-          turn_count,
-          total_tokens,
-          last_used_at
-        )
-        SELECT user_id, provider, model, 1, total_tokens, occurred_at
-        FROM inserted_event
-        ON CONFLICT (user_id, provider, model) DO UPDATE SET
-          turn_count = axle_account_usage_models.turn_count + EXCLUDED.turn_count,
-          total_tokens = axle_account_usage_models.total_tokens + EXCLUDED.total_tokens,
-          last_used_at = GREATEST(axle_account_usage_models.last_used_at, EXCLUDED.last_used_at)
-      ),
-      stats AS (
-        INSERT INTO axle_account_stats (
-          user_id,
-          total_turns,
-          total_input_tokens,
-          total_cached_input_tokens,
-          total_output_tokens,
-          total_reasoning_output_tokens,
-          total_tokens,
-          total_tool_uses,
-          total_cost_usd,
-          last_active_at,
-          updated_at
-        )
-        SELECT
-          user_id,
-          1,
-          input_tokens,
-          cached_input_tokens,
-          output_tokens,
-          reasoning_output_tokens,
-          total_tokens,
-          tool_uses,
-          COALESCE(cost_usd, 0),
-          occurred_at,
-          now()
-        FROM inserted_event
-        ON CONFLICT (user_id) DO UPDATE SET
-          total_turns = axle_account_stats.total_turns + EXCLUDED.total_turns,
-          total_input_tokens = axle_account_stats.total_input_tokens + EXCLUDED.total_input_tokens,
-          total_cached_input_tokens = axle_account_stats.total_cached_input_tokens + EXCLUDED.total_cached_input_tokens,
-          total_output_tokens = axle_account_stats.total_output_tokens + EXCLUDED.total_output_tokens,
-          total_reasoning_output_tokens = axle_account_stats.total_reasoning_output_tokens + EXCLUDED.total_reasoning_output_tokens,
-          total_tokens = axle_account_stats.total_tokens + EXCLUDED.total_tokens,
-          total_tool_uses = axle_account_stats.total_tool_uses + EXCLUDED.total_tool_uses,
-          total_cost_usd = axle_account_stats.total_cost_usd + EXCLUDED.total_cost_usd,
-          last_active_at = GREATEST(axle_account_stats.last_active_at, EXCLUDED.last_active_at),
-          updated_at = now()
-      )
-      SELECT COUNT(*)::int AS "insertedCount" FROM inserted_event
-    `;
+    try {
+      await db.collection("axle_account_usage_events").insertOne({
+        userId,
+        eventId: input.eventId.trim(),
+        deviceId: input.deviceId ?? null,
+        environmentId: input.environmentId ?? null,
+        threadId: input.threadId ?? null,
+        turnId: input.turnId ?? null,
+        provider,
+        providerInstanceId: input.providerInstanceId ?? null,
+        model,
+        ...values,
+        occurredAt,
+      });
+    } catch (error) {
+      // The unique (userId, eventId) index makes replays exact no-ops: the
+      // second delivery must not touch the daily/model/stat aggregates.
+      if (isDuplicateKeyError(error)) return false;
+      throw error;
+    }
 
-    return toCount(inserted[0]?.insertedCount) > 0;
+    const usageDate = occurredAt.toISOString().slice(0, 10);
+    const increments = {
+      turnCount: 1,
+      inputTokens: values.inputTokens,
+      cachedInputTokens: values.cachedInputTokens,
+      outputTokens: values.outputTokens,
+      reasoningOutputTokens: values.reasoningOutputTokens,
+      totalTokens: values.totalTokens,
+      toolUses: values.toolUses,
+      costUsd: values.costUsd,
+    };
+    await Promise.all([
+      db
+        .collection("axle_account_usage_daily")
+        .updateOne(
+          { userId, usageDate },
+          { $inc: increments, $setOnInsert: { userId, usageDate } },
+          { upsert: true },
+        ),
+      db.collection("axle_account_usage_models").updateOne(
+        { userId, provider, model },
+        {
+          $inc: { turnCount: 1, totalTokens: values.totalTokens },
+          $max: { lastUsedAt: occurredAt },
+          $setOnInsert: { userId, provider, model },
+        },
+        { upsert: true },
+      ),
+      db.collection<StatsDoc>("axle_account_stats").updateOne(
+        { _id: userId },
+        {
+          $inc: {
+            totalTurns: 1,
+            totalInputTokens: values.inputTokens,
+            totalCachedInputTokens: values.cachedInputTokens,
+            totalOutputTokens: values.outputTokens,
+            totalReasoningOutputTokens: values.reasoningOutputTokens,
+            totalTokens: values.totalTokens,
+            totalToolUses: values.toolUses,
+            totalCostUsd: values.costUsd,
+          },
+          $max: { lastActiveAt: occurredAt },
+          $set: { updatedAt: new Date() },
+        },
+      ),
+    ]);
+    return true;
   };
 
   return {
@@ -495,6 +468,16 @@ export function createAccountDatabase(config: AccountApiConfig) {
 
 function nullableString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function timestamp(value: Date | string): string {
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === "string" ? value : "";
+}
+
+function timestampOrNull(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
+  return timestamp(value) || null;
 }
 
 function toCount(value: unknown): number {
