@@ -5,11 +5,11 @@ import worker, { boundedToolText, boundedValue, normalizeAnalytics } from "./ent
 
 test("legacy sign-in links hand older builds to Axle's own sign-in page", async () => {
   const requested =
-    "https://auth.axle.llc/v1/clerk/desktop?mode=external&intent=signup&redirect_uri=axle%3A%2F%2Fapp%2Fclerk-callback&state=state_1234567890123456";
+    "https://axle-auth.axle-download-worker.workers.dev/v1/clerk/desktop?mode=external&intent=signup&redirect_uri=axle%3A%2F%2Fapp%2Fclerk-callback&state=state_1234567890123456";
   const response = await worker.fetch(new Request(requested), {});
   assert.equal(response.status, 302);
   const location = new URL(response.headers.get("location"));
-  assert.equal(location.origin, "https://auth.axle.llc");
+  assert.equal(location.origin, "https://axle-auth.axle-download-worker.workers.dev");
   assert.equal(location.pathname, "/v1/auth/desktop");
   assert.equal(location.searchParams.get("mode"), "external");
   assert.equal(location.searchParams.get("intent"), "signup");
@@ -19,7 +19,7 @@ test("legacy sign-in links hand older builds to Axle's own sign-in page", async 
 
 test("legacy sign-in never renders a third-party frame", async () => {
   const response = await worker.fetch(
-    new Request("https://auth.axle.llc/v1/clerk/desktop"),
+    new Request("https://axle-auth.axle-download-worker.workers.dev/v1/clerk/desktop"),
     {},
   );
   assert.equal(response.status, 302);
