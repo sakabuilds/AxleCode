@@ -1,6 +1,7 @@
 import {
   ChevronsUpDownIcon,
   CoinsIcon,
+  CreditCardIcon,
   KeyRoundIcon,
   LogInIcon,
   LogOutIcon,
@@ -15,7 +16,7 @@ import { useAccountActions, useAccountState } from "../../account/AccountAuthPro
 import { signOutAccount } from "../../account/accountClient";
 import { useAccountSnapshot } from "../../account/useAccountSnapshot";
 import { openUpgradeDialog } from "../billing/UpgradeDialog";
-import { PLAN_DISPLAY, planTierFromId } from "../../entitlements/planCatalog";
+import { PLAN_DISPLAY, planSupportsUpgrade, planTierFromId } from "../../entitlements/planCatalog";
 import { useEntitlements, resolvedEntitlements } from "../../entitlements/useEntitlements";
 import { Badge } from "../ui/badge";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../ui/menu";
@@ -35,7 +36,7 @@ export function SidebarAccountMenu() {
   const { state } = useAccountSnapshot();
   const entitlements = resolvedEntitlements(useEntitlements());
   const planTier = planTierFromId(entitlements?.planId ?? null);
-  const showUpgrade = entitlements !== null && planTier !== "team";
+  const showUpgrade = planTier === null || planSupportsUpgrade(planTier);
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
   const [signingOut, setSigningOut] = useState(false);
@@ -107,7 +108,7 @@ export function SidebarAccountMenu() {
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
               <span className="min-w-0 truncate text-[13px] leading-4.5">{label}</span>
-              {planTier === "pro" || planTier === "team" ? (
+              {planTier !== null && planTier !== "free" ? (
                 <Badge variant="secondary" size="sm">
                   {PLAN_DISPLAY[planTier].name}
                 </Badge>
@@ -130,6 +131,15 @@ export function SidebarAccountMenu() {
           >
             <UserRoundIcon className="size-3.5" />
             Account settings
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              closeMobileSidebar();
+              void navigate({ to: "/settings/account/billing" });
+            }}
+          >
+            <CreditCardIcon className="size-3.5" />
+            Billing
           </MenuItem>
           <MenuItem
             onClick={() => {
