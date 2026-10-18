@@ -25,14 +25,14 @@ worker (apps/cloud-worker)
   `- upload artifacts -> jobs/{jobId}/{kind}/{name}
 ```
 
-| Piece                            | Where                                                                                            |
-| -------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Job / lease / update contracts   | `packages/contracts/src/cloudJobs.ts`                                                            |
-| Control-plane routes             | `apps/account-api/src/cloudHandler.ts`                                                           |
-| Job persistence                  | `apps/account-api/src/cloudStore.ts`, migration `apps/account-api/migrations/003_cloud_jobs.sql` |
-| Operator config (control plane)  | `apps/account-api/src/cloudConfig.ts` (`AXLE_CLOUD_CONFIG`)                                      |
-| Worker                           | `apps/cloud-worker` (`@axle/cloud-worker`)                                                       |
-| CLI runtime mode + approval file | `crates/axle_cli/src/main.rs`, `crates/axle_agent/src/loop_runner.rs`                            |
+| Piece                            | Where                                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------ |
+| Job / lease / update contracts   | `packages/contracts/src/cloudJobs.ts`                                                |
+| Control-plane routes             | `apps/account-api/src/cloudHandler.ts`                                               |
+| Job persistence                  | `apps/account-api/src/cloudStore.ts`, `apps/account-api/src/cloudMongo.ts` (MongoDB) |
+| Operator config (control plane)  | `apps/account-api/src/cloudConfig.ts` (`AXLE_CLOUD_CONFIG`)                          |
+| Worker                           | `apps/cloud-worker` (`@axle/cloud-worker`)                                           |
+| CLI runtime mode + approval file | `crates/axle_cli/src/main.rs`, `crates/axle_agent/src/loop_runner.rs`                |
 
 ## Job lifecycle
 
@@ -158,18 +158,38 @@ Provider credentials live only in the worker host environment (e.g. `ANTHROPIC_A
 ```json
 {
   "plans": [
-    { "planId": "free", "cloudJobsEnabled": false, "monthlyCredits": 20, "maxConcurrentJobs": 1 },
+    {
+      "planId": "free",
+      "cloudJobsEnabled": false,
+      "monthlyCredits": 0,
+      "maxConcurrentJobs": 1,
+      "gatewayCredits": 0
+    },
     {
       "planId": "pro",
       "cloudJobsEnabled": true,
-      "monthlyCredits": 500,
+      "monthlyCredits": 120,
       "maxConcurrentJobs": 4,
+      "gatewayCredits": 2000,
       "features": {
         "scheduledTasksMax": 50,
         "pullRequestReviews": true,
-        "premiumModels": true,
         "teamSharing": false
       }
+    },
+    {
+      "planId": "pro-plus",
+      "cloudJobsEnabled": true,
+      "monthlyCredits": 300,
+      "maxConcurrentJobs": 6,
+      "gatewayCredits": 4000
+    },
+    {
+      "planId": "ultra",
+      "cloudJobsEnabled": true,
+      "monthlyCredits": 1000,
+      "maxConcurrentJobs": 8,
+      "gatewayCredits": 10000
     }
   ],
   "defaultPlanId": "free",
@@ -180,20 +200,35 @@ Provider credentials live only in the worker host environment (e.g. `ANTHROPIC_A
 ```
 
 - `plans[]`: unique plan ids. `cloudJobsEnabled` gates job creation (`cloud_not_entitled`); `monthlyCredits` is granted once per calendar month on first use; `maxConcurrentJobs` caps concurrent work per user (combined with `maxActiveJobsPerUser`, whichever is lower wins).
-- `features` (optional per plan): advisory gates for client surfaces, resolved server-side and exposed through `GET /v1/cloud/billing` as `account.entitlements`. Plans that omit `features` fall back to the closed baseline `{ scheduledTasksMax: 2, pullRequestReviews: false, premiumModels: false, teamSharing: false }`. `entitlements` is `null` on unmetered deployments, which clients treat as everything unlocked — only a positively resolved plan may gate a feature.
+- `gatewayCredits` (optional per plan): the monthly hosted-provider allowance applied to the gateway's plan balance when the subscription webhook confirms payment. The gateway sets (not adds) this bucket per subscription month; Free keeps the gateway's 100/day grant instead.
+- `features` (optional per plan): advisory gates for client surfaces, resolved server-side and exposed through `GET /v1/cloud/billing` as `account.entitlements`. Plans that omit `features` fall back to the closed baseline `{ scheduledTasksMax: 2, pullRequestReviews: false, teamSharing: false }`. `entitlements` is `null` on unmetered deployments, which clients treat as everything unlocked — only a positively resolved plan may gate a feature.
 - `defaultPlanId`: plan for users without an explicit assignment.
 - `userPlans`: optional per-user overrides; values must reference a configured plan.
 - `creditsPerMinute`: reservation and settlement rate. Set 0 to keep plans and accounting while charging nothing.
 - `adminToken`: optional operator credential (32-256 chars) for credit grants.
 
+Plan precedence is `userPlans` → active paid subscription recorded from the payment webhook → `defaultPlanId`. Only a plan id present in `plans[]` can grant entitlements, so a stale subscription cannot widen access.
+
 Ledger policy — accounting runs in the same database transaction as the job state change:
 
-1. **Reserve** — job creation reserves `ceil(maxDurationSeconds / 60) * creditsPerMinute`; creation fails with `insufficient_credits` (402) when the balance cannot cover it, and `credit_account_missing` (402) for an account without a balance row. The client never supplies its plan, balance, or limits; the server resolves them from configuration.
+1. **Reserve** — job creation reserves `ceil(maxDurationSeconds / 60) * creditsPerMinute`; creation fails with `insufficient_credits` (402) when the balance cannot cover it, and `credit_account_missing` (402) for an account without a balance record. The client never supplies its plan, balance, or limits; the server resolves them from configuration.
 2. **Meter** — the metered window starts at the first worker claim.
 3. **Settle** — on a terminal state the charge is `ceil(runtimeMinutes) * creditsPerMinute`, capped by the reservation, and the remainder is released. Jobs cancelled before any worker claimed them are released in full. Settlement is idempotent.
 4. **Grants** — `POST /v1/cloud/credits/grant` with the `x-axle-admin` header requires the configured `adminToken` (403 otherwise) and a body `{ userId, entryId, amount, note? }`; `entryId` makes retries idempotent.
 
 Routes: `GET /v1/cloud/billing` returns the caller's `{ account: { planId, balance, updatedAt, entitlements }, entries[] }` with the 50 most recent ledger entries.
+
+### Self-serve checkout (Bachs)
+
+Paid plans and credit packs are sold through [Bachs](https://app.bachs.io/developer) hosted checkout. Products are configured by id: `AXLE_PRO_BACHS_PRODUCT_ID`, `AXLE_PRO_PLUS_BACHS_PRODUCT_ID` (legacy fallback `AXLE_TEAM_BACHS_PRODUCT_ID`), `AXLE_ULTRA_BACHS_PRODUCT_ID`, and `AXLE_CREDITS_BACHS_PRODUCT_ID`. Checkout is disabled (`billing_not_configured`, 503) until `AXLE_BACHS_API_KEY` and the ids needed for the requested flow are set; credit packs also require the gateway to be configured. The API base URL is derived from the key prefix (`sk_sandbox_...` → `https://sandbox-api.bachs.io`, `sk_live_...` → `https://api.bachs.io`) and can be overridden with `AXLE_BACHS_API_URL`. Optional: `AXLE_BACHS_SUCCESS_URL`, `AXLE_BACHS_CANCEL_URL`, `AXLE_BACHS_PAYMENT_METHOD_TYPES` (comma-separated), and `AXLE_BACHS_WEBHOOK_SECRET` (`whsec_...`) for webhook verification.
+
+- `POST /v1/billing/checkout` (session-authenticated): body `{ plan: "pro" | "pro-plus" | "ultra", email?, seats? }` (seats 1-100, default 1) for subscriptions, or `{ plan: "credits", usd, email? }` for a one-time top-up. `usd` must be a whole number of cents between $5 and $500 and is priced ad hoc on the "Axle Credits" product (`price_type: fixed`). Creates a Bachs checkout session bound to the authenticated user via metadata and returns `{ checkoutId, checkoutUrl }`. Subscription plans must also exist in `AXLE_BILLING_CONFIG.plans[]` so a sold plan always resolves entitlements; provider failures map to `billing_provider_error` (502).
+- `POST /v1/billing/webhook` (public, the only unauthenticated route): verified against the raw body with HMAC-SHA256 over `{timestamp}.{raw_body}` (`X-Bachs-Signature-V2` `t=...,v1=...`, or the legacy `X-Bachs-Timestamp` + `X-Bachs-Signature` pair), 300-second replay tolerance, multi-`v1` accepted for secret rotation. Invalid deliveries return `invalid_signature` (401). `collection.succeeded` is fulfilled before acknowledgement: a `credits` purpose purchase credits the gateway's **paid** bucket with `usd × 200` credits (the payment event id is the idempotency reference); a subscription payment applies the plan's `gatewayCredits` to the gateway's **plan** bucket and activates the subscription. Duplicate event ids and unrelated event types are acknowledged idempotently. Register the deployed URL plus `/v1/billing/webhook` in the Bachs dashboard and set `AXLE_BACHS_WEBHOOK_SECRET` to that endpoint's signing secret. Delivery failures must be 5xx so Bachs redelivers instead of losing a paid top-up.
+- `GET /v1/billing/plan?user_id=...` (internal): authenticated with `Authorization: Bearer <AXLE_INTERNAL_TOKEN>` (timing-safe compare, 401 `invalid_internal_token` otherwise) and returns `{ planId, paid, entitlements }`. This is what the hosted-provider gateway calls to gate paid models; `paid` is true only for `pro`, `pro-plus`, and `ultra`.
+
+Gateway credit application goes through the gateway's `POST /v1/internal/credits` route with `{ user_id, amount, bucket: "paid" | "plan", reference }` (`AXLE_GATEWAY_INTERNAL_URL` is the gateway origin, no `/v1` suffix; the same shared token is set as the gateway's `INTERNAL_API_TOKEN`).
+
+Subscriptions live in the `axle_billing_subscriptions` collection with the applied-event log in `axle_billing_events` (`src/cloudMongo.ts`).
 
 ## Agent process contract
 
