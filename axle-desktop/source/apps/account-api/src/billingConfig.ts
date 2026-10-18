@@ -8,6 +8,13 @@ const Plan = Schema.Struct({
   monthlyCredits: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1_000_000 })),
   maxConcurrentJobs: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
   features: Schema.optionalKey(CloudPlanFeatures),
+  /**
+   * Monthly gateway credits the plan grants on the hosted provider (the
+   * 2,000 / 4,000 / 10,000 allowances). Zero when omitted.
+   */
+  gatewayCredits: Schema.optionalKey(
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1_000_000 })),
+  ),
 });
 const Config = Schema.Struct({
   plans: Schema.Array(Plan).check(Schema.isMinLength(1)),
@@ -30,7 +37,6 @@ export type PlanFeatures = CloudPlanFeatures;
 export const DEFAULT_PLAN_FEATURES: PlanFeatures = {
   scheduledTasksMax: 2,
   pullRequestReviews: false,
-  premiumModels: false,
   teamSharing: false,
 };
 
@@ -68,6 +74,11 @@ export function resolveCloudJobEntitlement(
   userId: string,
 ): CloudJobEntitlement {
   const planId = config.userPlans?.[userId] ?? config.defaultPlanId;
+  return resolvePlanEntitlement(config, planId);
+}
+
+/** Entitlement for a known plan id; the plan is guaranteed by prior validation. */
+export function resolvePlanEntitlement(config: BillingConfig, planId: string): CloudJobEntitlement {
   const plan = config.plans.find((item) => item.planId === planId)!;
   return {
     planId: plan.planId,
