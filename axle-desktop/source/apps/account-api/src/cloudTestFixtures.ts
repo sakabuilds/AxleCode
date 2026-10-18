@@ -15,7 +15,9 @@ export const cloudConfigFixture: CloudConfig = {
 export const billingConfigFixture: BillingConfig = {
   plans: [
     { planId: "free", cloudJobsEnabled: false, monthlyCredits: 0, maxConcurrentJobs: 1 },
-    { planId: "pro", cloudJobsEnabled: true, monthlyCredits: 120, maxConcurrentJobs: 4 },
+    { planId: "pro", cloudJobsEnabled: true, monthlyCredits: 120, maxConcurrentJobs: 4, gatewayCredits: 2_000 },
+    { planId: "pro-plus", cloudJobsEnabled: true, monthlyCredits: 300, maxConcurrentJobs: 6, gatewayCredits: 4_000 },
+    { planId: "ultra", cloudJobsEnabled: true, monthlyCredits: 1_000, maxConcurrentJobs: 8, gatewayCredits: 10_000 },
   ],
   defaultPlanId: "free", userPlans: { "user-a": "pro" }, creditsPerMinute: 3,
   adminToken: "test-only-admin-credential-1234567890123456",
