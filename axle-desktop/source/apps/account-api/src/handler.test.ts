@@ -1,13 +1,29 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off
-import * as NodeSqlite from "node:sqlite";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { MongoClient, type Db } from "mongodb";
+import type { MongoMemoryServer } from "mongodb-memory-server";
+import { startMongoMemoryServer } from "./mongoTestServer.ts";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { AccountPrincipal } from "./auth.ts";
 import { createAccountDatabase, type AccountSnapshot } from "./database.ts";
 import { createAccountRequestHandler } from "./handler.ts";
 
-const { neonMock } = vi.hoisted(() => ({ neonMock: vi.fn() }));
-vi.mock("@neondatabase/serverless", () => ({ neon: neonMock }));
+interface DeviceRow {
+  _id: string;
+  userId: string;
+  label: string | null;
+  platform: string | null;
+  revokedAt: Date | null;
+  lastSeenAt: Date;
+}
+
+interface SessionRow {
+  _id: string;
+  userId: string;
+  revokedAt: Date | null;
+  lastSeenAt: Date;
+  expiresAt: Date | null;
+}
 
 const snapshot: AccountSnapshot = {
   profile: {
@@ -36,7 +52,9 @@ const snapshot: AccountSnapshot = {
 };
 
 describe("account ownership and session authorization", () => {
-  let sqlite: NodeSqlite.DatabaseSync;
+  let server: MongoMemoryServer;
+  let client: MongoClient;
+  let db: Db;
   let database: ReturnType<typeof createAccountDatabase>;
   let principal: AccountPrincipal;
   let handle: ReturnType<typeof createAccountRequestHandler>;
@@ -44,35 +62,25 @@ describe("account ownership and session authorization", () => {
   const updateProfile = vi.fn(async () => {});
   const recordUsageEvent = vi.fn(async () => true);
 
-  beforeEach(() => {
+  beforeAll(async () => {
+    server = await startMongoMemoryServer();
+    client = new MongoClient(server.getUri());
+    await client.connect();
+  });
+
+  afterAll(async () => {
+    await client?.close();
+    await server?.stop();
+  });
+
+  beforeEach(async () => {
     vi.clearAllMocks();
-    sqlite = new NodeSqlite.DatabaseSync(":memory:");
-    sqlite.exec(`
-      CREATE TABLE axle_account_profiles (user_id TEXT PRIMARY KEY);
-      CREATE TABLE axle_account_stats (user_id TEXT PRIMARY KEY);
-      CREATE TABLE axle_account_devices (
-        device_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, label TEXT, device_type TEXT,
-        platform TEXT, os_version TEXT, app_version TEXT, browser TEXT,
-        last_seen_at TEXT, revoked_at TEXT
-      );
-      CREATE TABLE axle_account_sessions (
-        session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, issued_at TEXT,
-        expires_at TEXT, last_seen_at TEXT, revoked_at TEXT
-      );
-    `);
-    // SQLite exercises the real conditional UPSERT/RETURNING statements without
-    // credentials. Only PostgreSQL's now() spelling is adapted; ownership and
-    // revocation predicates run unchanged against persisted rows.
-    const query = Object.assign(
-      async (strings: TemplateStringsArray, ...values: NodeSqlite.SQLInputValue[]) =>
-        sqlite
-          .prepare(strings.join("?").replace(/\bnow\(\)/giu, "CURRENT_TIMESTAMP"))
-          .all(...values),
-      { transaction: (queries: ReadonlyArray<Promise<unknown>>) => Promise.all(queries) },
-    );
-    neonMock.mockReturnValue(query);
+    // A real MongoDB exercises the actual conditional upserts and ownership
+    // predicates; only mocked collaborators keep the routes deterministic.
+    db = client.db("axle");
+    await db.dropDatabase();
     database = createAccountDatabase({
-      databaseUrl: "postgresql://unused.invalid/test",
+      mongodbUri: server.getUri(),
       authJwksUrl: "https://auth.invalid/jwks",
       authIssuer: "https://auth.invalid",
       authAudience: null,
@@ -81,6 +89,7 @@ describe("account ownership and session authorization", () => {
       host: "127.0.0.1",
       port: 8788,
     });
+    await database.migrate();
     principal = { userId: "user-a", sessionId: "session-a" };
     handle = createAccountRequestHandler({
       database: { ...database, getAccount, updateProfile, recordUsageEvent },
@@ -88,8 +97,6 @@ describe("account ownership and session authorization", () => {
       corsOrigin: "https://app.invalid",
     });
   });
-
-  afterEach(() => sqlite.close());
 
   function request(path: string, method = "GET", body?: unknown) {
     return handle(
@@ -115,9 +122,9 @@ describe("account ownership and session authorization", () => {
     expect(JSON.stringify(payload)).not.toContain("user-b");
     expect(getAccount).not.toHaveBeenCalled();
     expect(
-      sqlite.prepare("SELECT user_id, label, platform FROM axle_account_devices").get(),
-    ).toEqual({
-      user_id: "user-b",
+      await db.collection<DeviceRow>("axle_account_devices").findOne({ _id: "device-b" }),
+    ).toMatchObject({
+      userId: "user-b",
       label: "Private workstation",
       platform: "private-platform",
     });
@@ -136,31 +143,39 @@ describe("account ownership and session authorization", () => {
       });
       expect(response.status).toBe(200);
     }
-    expect(
-      sqlite.prepare("SELECT user_id, label, platform, revoked_at FROM axle_account_devices").all(),
-    ).toEqual([{ user_id: "user-a", label: "Work laptop", platform: "linux", revoked_at: null }]);
+    const devices = await db.collection<DeviceRow>("axle_account_devices").find({}).toArray();
+    expect(devices).toHaveLength(1);
+    expect(devices[0]).toMatchObject({
+      _id: "device-a",
+      userId: "user-a",
+      label: "Work laptop",
+      platform: "linux",
+      revokedAt: null,
+    });
     expect(getAccount).toHaveBeenCalledTimes(2);
     expect(getAccount).toHaveBeenLastCalledWith("user-a");
   });
 
   it("does not reactivate a revoked device during registration", async () => {
     await database.upsertDevice("user-a", { deviceId: "device-a", label: "Laptop" });
-    sqlite.exec(
-      "UPDATE axle_account_devices SET revoked_at = '2026-02-01', last_seen_at = '2026-01-01'",
-    );
+    await db
+      .collection<DeviceRow>("axle_account_devices")
+      .updateOne(
+        { _id: "device-a" },
+        { $set: { revokedAt: new Date("2026-02-01"), lastSeenAt: new Date("2026-01-01") } },
+      );
     const response = await request("/v1/account/devices", "POST", {
       deviceId: "device-a",
       label: "Changed",
     });
 
     expect(response.status).toBe(409);
-    expect(
-      sqlite.prepare("SELECT label, revoked_at, last_seen_at FROM axle_account_devices").get(),
-    ).toEqual({
-      label: "Laptop",
-      revoked_at: "2026-02-01",
-      last_seen_at: "2026-01-01",
-    });
+    const stored = await db
+      .collection<DeviceRow>("axle_account_devices")
+      .findOne({ _id: "device-a" });
+    expect(stored).toMatchObject({ label: "Laptop" });
+    expect((stored?.revokedAt as Date)?.toISOString()).toBe("2026-02-01T00:00:00.000Z");
+    expect((stored?.lastSeenAt as Date)?.toISOString()).toBe("2026-01-01T00:00:00.000Z");
     expect(getAccount).not.toHaveBeenCalled();
   });
 
@@ -175,9 +190,12 @@ describe("account ownership and session authorization", () => {
     ],
   ])("denies a revoked session before protected route %s", async (path, method, body) => {
     await database.touchSession(principal);
-    sqlite.exec(
-      "UPDATE axle_account_sessions SET revoked_at = '2026-02-01', last_seen_at = '2026-01-01'",
-    );
+    await db
+      .collection<SessionRow>("axle_account_sessions")
+      .updateOne(
+        { _id: "session-a" },
+        { $set: { revokedAt: new Date("2026-02-01"), lastSeenAt: new Date("2026-01-01") } },
+      );
     const response = await request(path, method, body);
 
     expect(response.status).toBe(401);
@@ -185,15 +203,12 @@ describe("account ownership and session authorization", () => {
     expect(getAccount).not.toHaveBeenCalled();
     expect(updateProfile).not.toHaveBeenCalled();
     expect(recordUsageEvent).not.toHaveBeenCalled();
-    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM axle_account_devices").get()).toEqual({
-      count: 0,
-    });
-    expect(
-      sqlite.prepare("SELECT revoked_at, last_seen_at FROM axle_account_sessions").get(),
-    ).toEqual({
-      revoked_at: "2026-02-01",
-      last_seen_at: "2026-01-01",
-    });
+    expect(await db.collection<DeviceRow>("axle_account_devices").countDocuments()).toBe(0);
+    const stored = await db
+      .collection<SessionRow>("axle_account_sessions")
+      .findOne({ _id: "session-a" });
+    expect((stored?.revokedAt as Date)?.toISOString()).toBe("2026-02-01T00:00:00.000Z");
+    expect((stored?.lastSeenAt as Date)?.toISOString()).toBe("2026-01-01T00:00:00.000Z");
   });
 
   it("rejects a differently owned session identifier without transferring it", async () => {
@@ -202,8 +217,10 @@ describe("account ownership and session authorization", () => {
 
     expect(response.status).toBe(401);
     expect(getAccount).not.toHaveBeenCalled();
-    expect(sqlite.prepare("SELECT user_id FROM axle_account_sessions").get()).toEqual({
-      user_id: "user-b",
+    expect(
+      await db.collection<SessionRow>("axle_account_sessions").findOne({ _id: "session-a" }),
+    ).toMatchObject({
+      userId: "user-b",
     });
   });
 
@@ -211,17 +228,16 @@ describe("account ownership and session authorization", () => {
     expect((await request("/v1/account")).status).toBe(200);
     principal = { ...principal, expiresAt: new Date("2027-01-01T00:00:00Z") };
     expect((await request("/v1/account")).status).toBe(200);
-    expect(
-      sqlite.prepare("SELECT user_id, expires_at, revoked_at FROM axle_account_sessions").all(),
-    ).toEqual([{ user_id: "user-a", expires_at: "2027-01-01T00:00:00.000Z", revoked_at: null }]);
+    const sessions = await db.collection<SessionRow>("axle_account_sessions").find({}).toArray();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({ userId: "user-a", revokedAt: null });
+    expect((sessions[0]?.expiresAt as Date)?.toISOString()).toBe("2027-01-01T00:00:00.000Z");
     expect(getAccount).toHaveBeenCalledTimes(2);
   });
 
   it("preserves authentication compatibility for verified tokens without a session claim", async () => {
     principal = { userId: "user-a" };
     expect((await request("/v1/account")).status).toBe(200);
-    expect(sqlite.prepare("SELECT COUNT(*) AS count FROM axle_account_sessions").get()).toEqual({
-      count: 0,
-    });
+    expect(await db.collection<SessionRow>("axle_account_sessions").countDocuments()).toBe(0);
   });
 });
