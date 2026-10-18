@@ -85,6 +85,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify release configuration
+        # Release builds read the account API URL at build time; without it the
+        # shipped app cannot resolve plans or start checkout. Fail here instead
+        # of shipping a build whose billing page is dead.
+        env:
+          AXLE_ACCOUNT_API_URL: ${{ vars.AXLE_ACCOUNT_API_URL }}
+        run: |
+          if [ -z "$AXLE_ACCOUNT_API_URL" ]; then
+            echo "::error::Repository variable AXLE_ACCOUNT_API_URL is required (Settings > Secrets and variables > Actions > Variables). It must be the deployed account API origin, e.g. https://axle-account.<subdomain>.workers.dev"
+            exit 1
+          fi
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
         with:
