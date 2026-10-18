@@ -1,12 +1,21 @@
 /**
  * Display metadata for the Axle plan catalog.
  *
- * Enforcement always happens server-side from `AXLE_BILLING_CONFIG`; this file
- * only decides how a plan is presented. Prices are display copy — keep them in
- * sync with the pricing page before announcing paid sign-up.
+ * Enforcement always happens server-side from `AXLE_BILLING_CONFIG` and the
+ * hosted-provider gateway; this file only decides how a plan is presented.
+ * Prices are display copy — keep them in sync with the Bachs products before
+ * announcing paid sign-up.
  */
 
-export type PlanTier = "free" | "pro" | "team";
+export type PlanTier = "free" | "pro" | "pro-plus" | "ultra";
+
+/** Monthly gateway credits each paid tier grants (100/day stays free for all). */
+export const PLAN_MONTHLY_CREDITS: Readonly<Record<PlanTier, number>> = {
+  free: 0,
+  pro: 2_000,
+  "pro-plus": 4_000,
+  ultra: 10_000,
+};
 
 export interface PlanDisplay {
   readonly tier: PlanTier;
@@ -17,7 +26,7 @@ export interface PlanDisplay {
   readonly highlights: readonly string[];
 }
 
-export const PLAN_ORDER: readonly PlanTier[] = ["free", "pro", "team"];
+export const PLAN_ORDER: readonly PlanTier[] = ["free", "pro", "pro-plus", "ultra"];
 
 export const PLAN_DISPLAY: Record<PlanTier, PlanDisplay> = {
   free: {
@@ -29,7 +38,8 @@ export const PLAN_DISPLAY: Record<PlanTier, PlanDisplay> = {
     highlights: [
       "Local projects, terminal, and Git tools",
       "Bring your own model keys or local models",
-      "Daily Axle model credits",
+      "Google Gemma 4, Meta Muse Glimmer, and Nemotron 3.5 Lightning",
+      "100 Axle credits every day",
       "Up to 2 scheduled tasks",
     ],
   },
@@ -40,29 +50,51 @@ export const PLAN_DISPLAY: Record<PlanTier, PlanDisplay> = {
     priceUnit: "per month",
     tagline: "For individual work that should not wait.",
     highlights: [
-      "Cloud jobs that keep running when you are offline",
-      "Unlimited scheduled tasks",
+      "Everything in Free",
+      "GLM 5.3, GLM 5.3 Flash, and Nemotron 3 Super",
+      "2,000 Axle credits every month",
+      "Up to 50 scheduled tasks",
       "Model-assisted pull-request reviews",
-      "Premium Axle models",
+      "Cloud jobs that keep running when you are offline",
     ],
   },
-  team: {
-    tier: "team",
-    name: "Team",
-    price: "$40",
-    priceUnit: "per user / month",
-    tagline: "Shared workflows for teams building together.",
+  "pro-plus": {
+    tier: "pro-plus",
+    name: "Pro+",
+    price: "$60",
+    priceUnit: "per month",
+    tagline: "Heavier work, longer runs, more of everything.",
     highlights: [
-      "Everything in Pro, for every seat",
-      "Shared workspace features as they ship",
-      "Pooled credits and centralized billing",
-      "Priority cloud capacity",
+      "Everything in Pro",
+      "4,000 Axle credits every month",
+      "Up to 100 scheduled tasks",
+      "More concurrent cloud jobs",
+    ],
+  },
+  ultra: {
+    tier: "ultra",
+    name: "Ultra",
+    price: "$200",
+    priceUnit: "per month",
+    tagline: "The whole engine, with the limits taken off.",
+    highlights: [
+      "Everything in Pro+",
+      "10,000 Axle credits every month",
+      "Up to 200 scheduled tasks",
+      "The highest cloud-job concurrency",
     ],
   },
 };
 
 export function planTierFromId(planId: string | null | undefined): PlanTier | null {
-  return planId === "free" || planId === "pro" || planId === "team" ? planId : null;
+  return planId === "free" || planId === "pro" || planId === "pro-plus" || planId === "ultra"
+    ? planId
+    : null;
+}
+
+/** Upgrade CTAs make sense for every tier except the top one. */
+export function planSupportsUpgrade(tier: PlanTier): boolean {
+  return tier !== "ultra";
 }
 
 /** Where the upgrade CTAs send people; unset means the CTA is disabled. */
