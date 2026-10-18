@@ -40,3 +40,6 @@ axle-dependencies-*/
 !.env.example
 ../../axle-website/nul
 ../../axle-website/nul
+.dev.vars
+.dev.vars.*
+.wrangler/
