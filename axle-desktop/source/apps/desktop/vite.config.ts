@@ -10,7 +10,8 @@ const githubClientId =
   process.env.AXLE_GITHUB_OAUTH_CLIENT_ID?.trim() ||
   "Ov23lis8MUy8pjCIAlXe";
 const githubAuthBrokerUrl =
-  process.env.AXLE_GITHUB_AUTH_BROKER_URL?.trim() || "https://auth.axle.llc";
+  process.env.AXLE_GITHUB_AUTH_BROKER_URL?.trim() ||
+  "https://axle-auth.axle-download-worker.workers.dev";
 const githubBuildDefine = {
   __AXLE_GITHUB_CLIENT_ID__: JSON.stringify(githubClientId),
   __AXLE_GITHUB_AUTH_BROKER_URL__: JSON.stringify(githubAuthBrokerUrl),
