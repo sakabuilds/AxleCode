@@ -164,7 +164,6 @@ describe("CloudJobsClient", () => {
               features: {
                 scheduledTasksMax: 50,
                 pullRequestReviews: true,
-                premiumModels: true,
                 teamSharing: false,
               },
             },
@@ -203,6 +202,38 @@ describe("CloudJobsClient", () => {
     });
     const billing = await client.getBilling();
     expect(billing.account.entitlements).toBeNull();
+  });
+
+  it("creates a hosted checkout session for a paid plan", async () => {
+    const { client, calls } = createClient({
+      handle: () =>
+        jsonResponse(200, {
+          checkoutId: "chk_1M2N3o4P5q6R7s8T",
+          checkoutUrl: "https://checkout.bachs.io/c/Mz9wDp3sVn7QaTf",
+        }),
+    });
+    const session = await client.createCheckoutSession({
+      plan: "pro",
+      email: "buyer@example.com",
+    });
+    expect(calls[0]?.url).toBe("https://accounts.example.com/v1/billing/checkout");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      plan: "pro",
+      email: "buyer@example.com",
+    });
+    expect(session.checkoutId).toBe("chk_1M2N3o4P5q6R7s8T");
+    expect(session.checkoutUrl).toBe("https://checkout.bachs.io/c/Mz9wDp3sVn7QaTf");
+  });
+
+  it("rejects checkout responses that do not decode as contracts", async () => {
+    const { client } = createClient({
+      handle: () => jsonResponse(200, { checkoutId: "chk_1" }),
+    });
+    const failure = (await client
+      .createCheckoutSession({ plan: "ultra", email: "buyer@example.com" })
+      .catch((error: unknown) => error)) as CloudJobsApiError;
+    expect(failure.code).toBe("unexpected_response");
   });
 
   it("maps documented error envelopes to typed errors", async () => {
