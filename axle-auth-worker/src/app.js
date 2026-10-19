@@ -1,4 +1,4 @@
-import { authenticatePluginSession, handleRequest, PLUGIN_IDS } from "./index.js";
+import { authenticatePluginSession, handleRequest, pluginPlanAllows, PLUGIN_IDS } from "./index.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const ANALYTICS_PREFIX = "analytics:user:";
@@ -440,6 +440,15 @@ async function handleWrappedRequest(request, env) {
   if (request.method === "POST" && url.pathname === "/v1/plugins/figma/authorize") {
     const session = await authenticatePluginSession(request, env);
     if (!session) return json({ error: "Plugin session is invalid or expired." }, 401);
+    if (!(await pluginPlanAllows(env, session, "figma"))) {
+      return json(
+        {
+          error: "This plugin is part of Axle's paid plans. Upgrade in Settings > Billing to connect it.",
+          code: "plan_required",
+        },
+        402,
+      );
+    }
     return startFigmaAuthorization(request, env, session);
   }
 

@@ -47,7 +47,10 @@ wrangler secret put FIGMA_CLIENT_SECRET
 wrangler secret put CLERK_SECRET_KEY
 wrangler secret put PLUGIN_TOKEN_ENCRYPTION_KEY
 wrangler secret put ANALYTICS_ADMIN_TOKEN
+wrangler secret put INTERNAL_API_TOKEN
 ```
+
+`INTERNAL_API_TOKEN` must match the gateway's `INTERNAL_API_TOKEN` (the account API's `AXLE_INTERNAL_TOKEN`); the Worker uses it to read the caller's plan through the `ACCOUNT_API_SERVICE` binding.
 
 `PLUGIN_TOKEN_ENCRYPTION_KEY` must be a base64url-encoded 32-byte random value. It protects provider credentials persisted in `PLUGIN_STORE` and encrypts the stateless desktop session tokens.
 `CLERK_SECRET_KEY` is used only by the Worker to mint a fresh short-lived Clerk session JWT from the saved Clerk session when the desktop app relaunches. The encrypted plugin-session token is retained in the desktop app's local profile for 30 days; logout clears that local token. The Clerk secret key is never returned to the desktop renderer.
@@ -86,6 +89,18 @@ http://127.0.0.1/github/oauth/callback
 ```
 
 The desktop chooses a random loopback port at runtime and imports the resulting GitHub credential into the Worker without exposing it to renderer JavaScript.
+
+## Plan gating
+
+GitHub stays available on the Free plan; every other plugin is gated server-side
+by `pluginPlanAllows` (src/index.js). The Worker asks the account API
+(`ACCOUNT_API_URL` through the `ACCOUNT_API_SERVICE` binding, authenticated by
+`INTERNAL_API_TOKEN`) whether the session's user has a paid plan. Guest sessions
+(no Axle account) count as Free. Billing outages and deployments without
+`ACCOUNT_API_URL`/`INTERNAL_API_TOKEN` fail open so a paying user is never locked
+out. `POST /v1/plugins/:id/authorize` returns
+`402 {"code":"plan_required"}` for gated plugins, including the figma route in
+`app.js`.
 
 ## Clerk application
 

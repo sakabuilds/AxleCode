@@ -536,6 +536,47 @@ function pluginCallbackUrl(request, env, pluginId) {
   return `${workerBaseUrl(request, env)}/v1/plugins/${pluginId}/callback`;
 }
 
+/** Plugins that stay available on the Free plan; the rest need a paid plan. */
+const FREE_PLAN_PLUGIN_IDS = new Set(["github"]);
+
+/**
+ * Server-side counterpart of the client plan gates. The account API is the
+ * source of truth for subscriptions; like the gateway, this fails open on
+ * every kind of outage so a billing problem can never lock a paying user out.
+ * Guest sessions have no Axle account and are therefore Free.
+ */
+export async function pluginPlanAllows(env, session, pluginId) {
+  if (FREE_PLAN_PLUGIN_IDS.has(pluginId)) return true;
+  const baseUrl = env?.ACCOUNT_API_URL;
+  const token = env?.INTERNAL_API_TOKEN;
+  if (typeof baseUrl !== "string" || baseUrl.length === 0) return true;
+  if (typeof token !== "string" || token.length === 0) return true;
+  const userId = typeof session?.userId === "string" ? session.userId : "";
+  if (userId.startsWith("guest_")) return false;
+  if (userId.length === 0) return true;
+  // Same-zone worker-to-worker global fetch fails with error 1042, so the
+  // deployed worker routes through the ACCOUNT_API_SERVICE binding when it is
+  // bound; self-hosted deployments fall back to global fetch.
+  const accountFetch =
+    typeof env?.ACCOUNT_API_SERVICE?.fetch === "function"
+      ? (url, init) => env.ACCOUNT_API_SERVICE.fetch(url, init)
+      : fetch;
+  try {
+    const response = await accountFetch(
+      `${baseUrl.replace(/\/+$/u, "")}/v1/billing/plan?user_id=${encodeURIComponent(userId)}`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(4_000),
+      },
+    );
+    if (!response.ok) return true;
+    const payload = await response.json();
+    return payload?.paid === true;
+  } catch {
+    return true;
+  }
+}
+
 async function createPkce() {
   const verifier = randomToken(48);
   const challenge = await sha256(verifier);
@@ -545,6 +586,13 @@ async function createPkce() {
 async function startPluginAuthorization(request, env, session, pluginId) {
   if (pluginId === "github") {
     return json({ pluginId, status: "external", managedBy: "desktop-github", authorizationUrl: null });
+  }
+  if (!(await pluginPlanAllows(env, session, pluginId))) {
+    return fail(
+      "This plugin is part of Axle's paid plans. Upgrade in Settings > Billing to connect it.",
+      402,
+      "plan_required",
+    );
   }
   const provider = requireProviderConfig(env, pluginId);
   const state = randomToken(32);
