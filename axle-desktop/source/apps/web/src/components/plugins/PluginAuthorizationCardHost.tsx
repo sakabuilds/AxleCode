@@ -1,6 +1,15 @@
-import { CheckCircle2Icon, LoaderCircleIcon, MessageCircleIcon, XIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  LoaderCircleIcon,
+  LockIcon,
+  MessageCircleIcon,
+  XIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { pluginLockedForPlan } from "../../entitlements/gates";
+import { resolvedEntitlements, useEntitlements } from "../../entitlements/useEntitlements";
+import { openUpgradeDialog } from "../billing/UpgradeDialog";
 import { Button } from "../ui/button";
 import { PluginLogo } from "./PluginLogo";
 import {
@@ -30,6 +39,7 @@ export function PluginAuthorizationCardHost() {
   const [completedPluginId, setCompletedPluginId] = useState<PluginId | null>(null);
   const [cancelledPluginId, setCancelledPluginId] = useState<PluginId | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const entitlements = resolvedEntitlements(useEntitlements());
 
   const refresh = useCallback(async () => {
     const sessionToken = loadPluginSessionToken();
@@ -95,6 +105,10 @@ export function PluginAuthorizationCardHost() {
 
   const connect = useCallback(
     async (pluginId: PluginId) => {
+      if (pluginLockedForPlan(entitlements, pluginId)) {
+        openUpgradeDialog("plugins");
+        return;
+      }
       const sessionToken = loadPluginSessionToken();
       if (!sessionToken || busyPluginId) return;
       setBusyPluginId(pluginId);
@@ -111,7 +125,7 @@ export function PluginAuthorizationCardHost() {
         setBusyPluginId(null);
       }
     },
-    [busyPluginId, refresh],
+    [busyPluginId, entitlements, refresh],
   );
 
   const cancel = useCallback(
@@ -191,6 +205,7 @@ export function PluginAuthorizationCardHost() {
 
   if (!plugin || !request) return null;
   const busy = busyPluginId === plugin.id;
+  const locked = pluginLockedForPlan(entitlements, plugin.id);
 
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[120] flex justify-center px-4">
@@ -203,10 +218,15 @@ export function PluginAuthorizationCardHost() {
             <PluginLogo pluginId={plugin.id} className="size-6" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">Axle wants to authorize {plugin.name}</p>
+            <p className="text-sm font-semibold">
+              {locked
+                ? `${plugin.name} needs a paid plan`
+                : `Axle wants to authorize ${plugin.name}`}
+            </p>
             <p className="mt-1 text-xs leading-5 text-neutral-600 dark:text-neutral-400">
-              Axle requested access to {plugin.name} for the task you asked it to perform. You can
-              cancel and the conversation will continue normally.
+              {locked
+                ? "GitHub is included with Free. Jira, Notion, Slack, and email plugins are part of Axle's paid plans."
+                : `Axle requested access to ${plugin.name} for the task you asked it to perform. You can cancel and the conversation will continue normally.`}
             </p>
           </div>
         </div>
@@ -226,15 +246,22 @@ export function PluginAuthorizationCardHost() {
             <XIcon className="size-3.5" />
             Cancel
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            disabled={busy}
-            onClick={() => void connect(plugin.id)}
-          >
-            {busy ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : null}
-            {busy ? "Authorizing…" : "Authorize"}
-          </Button>
+          {locked ? (
+            <Button
+              type="button"
+              size="sm"
+              disabled={busy}
+              onClick={() => openUpgradeDialog("plugins")}
+            >
+              <LockIcon className="size-3.5" />
+              Upgrade
+            </Button>
+          ) : (
+            <Button type="button" size="sm" disabled={busy} onClick={() => void connect(plugin.id)}>
+              {busy ? <LoaderCircleIcon className="size-3.5 animate-spin" /> : null}
+              {busy ? "Authorizing…" : "Authorize"}
+            </Button>
+          )}
         </div>
       </section>
     </div>
