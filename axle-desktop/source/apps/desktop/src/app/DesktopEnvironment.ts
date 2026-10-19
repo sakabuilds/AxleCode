@@ -1,4 +1,3 @@
-// @effect-diagnostics nodeBuiltinImport:off - Desktop main-process startup probes the on-disk macOS bundle for its code signature before an Effect filesystem service is available.
 import type {
   DesktopAppBranding,
   DesktopAppStageLabel,
@@ -28,10 +27,7 @@ export interface MakeDesktopEnvironmentInput {
   readonly isPackaged: boolean;
   readonly resourcesPath: string;
   readonly runningUnderArm64Translation: boolean;
-  /**
-   * Override for `macBundleSigned`; tests use it to describe a build without
-   * a real macOS bundle on disk. Production reads the bundle itself.
-   */
+
   readonly macBundleSigned?: boolean;
 }
 
@@ -47,10 +43,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly appVersion: string;
     readonly appPath: string;
     readonly resourcesPath: string;
-    /**
-     * True when this is not macOS, or when the macOS bundle is signed. An
-     * unsigned macOS bundle can never install an update.
-     */
+
     readonly macBundleSigned: boolean;
     readonly homeDirectory: string;
     readonly appDataDirectory: string;
