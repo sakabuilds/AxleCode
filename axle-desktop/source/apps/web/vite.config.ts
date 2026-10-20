@@ -4,7 +4,7 @@ import babel from "@rolldown/plugin-babel";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import "vite-plus/test/config";
-import { defineConfig } from "vite-plus";
+import { defineConfig, type ViteUserConfig } from "vite-plus";
 import pkg from "./package.json" with { type: "json" };
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
@@ -91,7 +91,7 @@ function resolveDevProxyTarget(wsUrl: string | undefined): string | undefined {
 
 const devProxyTarget = resolveDevProxyTarget(configuredWsUrl);
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode }): ViteUserConfig => {
   const demoBuild = mode === "demo";
   return {
     base: demoBuild ? "/demo/" : "/",
@@ -110,7 +110,7 @@ export default defineConfig(({ mode }) => {
         presets: demoBuild ? [] : [reactCompilerPreset()],
       }),
       tailwindcss(),
-    ],
+    ] as unknown as NonNullable<ViteUserConfig["plugins"]>,
     optimizeDeps: {
       include: [
         "@pierre/diffs",
