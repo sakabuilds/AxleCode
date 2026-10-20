@@ -15,6 +15,7 @@ env:
   AXLE_PLUGIN_WORKER_URL: ${{ vars.AXLE_PLUGIN_WORKER_URL }}
   VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.AXLE_CLERK_PUBLISHABLE_KEY }}
   VITE_AXLE_PLUGIN_WORKER_URL: ${{ vars.AXLE_PLUGIN_WORKER_URL }}
+  VITE_ACCOUNT_API_URL: ${{ vars.AXLE_ACCOUNT_API_URL }}
 
 jobs:
   test-update-feeds:
@@ -33,6 +34,18 @@ jobs:
     needs: test-update-feeds
     runs-on: ubuntu-latest
     steps:
+      - name: Verify release configuration
+        # Release builds read the account API URL at build time; without it the
+        # shipped app cannot resolve plans or start checkout. Fail here instead
+        # of shipping a build whose billing page is dead.
+        env:
+          AXLE_ACCOUNT_API_URL: ${{ vars.AXLE_ACCOUNT_API_URL }}
+        run: |
+          if [ -z "$AXLE_ACCOUNT_API_URL" ]; then
+            echo "::error::Repository variable AXLE_ACCOUNT_API_URL is required (Settings > Secrets and variables > Actions > Variables). It must be the deployed account API origin, e.g. https://axle-account.<subdomain>.workers.dev"
+            exit 1
+          fi
+
       - name: Ensure GitHub release exists (tag builds only)
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
