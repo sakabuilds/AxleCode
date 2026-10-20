@@ -6,11 +6,13 @@ import { startMongoMemoryReplSet } from "./mongoTestServer.ts";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import type { CloudJobLease, CloudJobLimits } from "@axle/contracts";
+import { createCloudScheduleStore } from "./cloudScheduleStore.ts";
 import { createCloudDatabase, createCloudJobStore } from "./cloudStore.ts";
 import {
   billingConfigFixture,
   cloudConfigFixture,
   cloudInputFixture,
+  cloudScheduleFixture,
 } from "./cloudTestFixtures.ts";
 
 // Runs against a real in-memory replica set so multi-document transactions,
@@ -353,5 +355,47 @@ describe("cloud Mongo transactions (in-memory replica set)", () => {
     expect(view.account.entitlements?.monthlyCredits).toBe(300);
     expect((await billed.grant("user-web", { entryId: "topup-1", amount: 50 })).balance).toBe(350);
     expect((await billed.grant("user-web", { entryId: "topup-1", amount: 50 })).balance).toBe(350);
+  });
+
+  it("claims schedule slots once, enforces the plan limit, and tags scheduled jobs", async () => {
+    const schedules = createCloudScheduleStore(database.query, cloudConfigFixture);
+    const saved = await schedules.save(userId, {
+      ...cloudScheduleFixture,
+      scheduleId: "schedule-1",
+    });
+    expect(saved.nextRunAt).not.toBeNull();
+    const slot = new Date(saved.nextRunAt!);
+    const dueAt = new Date(Date.now() - 1_000);
+    await database.query("schedule-advance", {
+      scheduleId: "schedule-1",
+      expectedNextRunAt: slot,
+      nextRunAt: dueAt,
+    });
+    const due = await schedules.due(new Date(), 10);
+    expect(due.map((schedule) => schedule.scheduleId)).toContain("schedule-1");
+    expect(due.find((schedule) => schedule.scheduleId === "schedule-1")?.userId).toBe(userId);
+    const claimed = await Promise.all([
+      schedules.advance("schedule-1", dueAt, null),
+      schedules.advance("schedule-1", dueAt, null),
+    ]);
+    expect(claimed.filter(Boolean)).toHaveLength(1);
+    await expect(
+      database.query("schedule-save", {
+        userId,
+        schedule: { ...cloudScheduleFixture, scheduleId: "schedule-2" },
+        maxSchedules: 1,
+        nextRunAt: null,
+      }),
+    ).rejects.toMatchObject({ code: "schedule_limit_reached" });
+    const jobStore = createCloudJobStore(database.query, cloudConfigFixture);
+    await jobStore.dispatchScheduled(
+      userId,
+      { ...cloudInputFixture, commandId: "scheduled-1" },
+      "schedule-1",
+    );
+    const runs = await jobStore.listBySchedule(userId, "schedule-1");
+    expect(runs.jobs).toHaveLength(1);
+    expect(runs.jobs[0]!.runtimeMode).toBe("full-access");
+    expect(runs.jobs[0]!.scheduleId).toBe("schedule-1");
   });
 });

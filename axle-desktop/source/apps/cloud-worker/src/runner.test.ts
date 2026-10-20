@@ -5,7 +5,12 @@ import * as NodePath from "node:path";
 import { afterAll, describe, expect, it } from "vite-plus/test";
 
 import type { CloudJob, CloudJobLease, CloudJobState } from "@axle/contracts";
-import { CloudControlPlaneError, type CloudControlPlane, type WorkerLeaseRef, type WorkerUpdate } from "./controlPlane.ts";
+import {
+  CloudControlPlaneError,
+  type CloudControlPlane,
+  type WorkerLeaseRef,
+  type WorkerUpdate,
+} from "./controlPlane.ts";
 import { FileArtifactStore } from "./artifacts.ts";
 import type { WorkerConfig } from "./config.ts";
 import type { AgentExit, AgentProcess, AgentProcessOptions } from "./process.ts";
@@ -42,7 +47,10 @@ function sleep(ms: number): Promise<void> {
 
 /** Lease/heartbeat/update surface the runner depends on, driven by the test. */
 class ScriptedControlPlane {
-  readonly updates: Array<{ readonly state: CloudJobState | undefined; readonly update: WorkerUpdate }> = [];
+  readonly updates: Array<{
+    readonly state: CloudJobState | undefined;
+    readonly update: WorkerUpdate;
+  }> = [];
   heartbeatCount = 0;
   cancelAfterHeartbeats: number | null = null;
   failHeartbeatWith: CloudControlPlaneError | null = null;
@@ -65,7 +73,11 @@ class ScriptedControlPlane {
     return this.states().filter((entry) => entry === state).length;
   }
 
-  async heartbeat(_environmentId: string, _jobId: string, lease: WorkerLeaseRef): Promise<CloudJobLease> {
+  async heartbeat(
+    _environmentId: string,
+    _jobId: string,
+    lease: WorkerLeaseRef,
+  ): Promise<CloudJobLease> {
     this.heartbeatCount += 1;
     const failure = this.failHeartbeatWith;
     if (failure !== null) {
@@ -87,7 +99,12 @@ class ScriptedControlPlane {
     };
   }
 
-  async update(_environmentId: string, _jobId: string, _lease: WorkerLeaseRef, update: WorkerUpdate): Promise<CloudJob> {
+  async update(
+    _environmentId: string,
+    _jobId: string,
+    _lease: WorkerLeaseRef,
+    update: WorkerUpdate,
+  ): Promise<CloudJob> {
     this.updates.push({ state: update.state, update });
     const lastSequence = this.job.lastSequence + 1;
     if (update.state === undefined) {
@@ -100,10 +117,22 @@ class ScriptedControlPlane {
         : update.state === "failed" && update.failureCode !== undefined
           ? { ...this.job, state: update.state, lastSequence, failureCode: update.failureCode }
           : { ...this.job, state: update.state, lastSequence };
-    if (update.state === "waiting_for_approval" && update.pendingRequest !== undefined && this.autoApprovalPayload !== null) {
-      this.response = { requestId: update.pendingRequest.requestId, payload: this.autoApprovalPayload };
+    if (
+      update.state === "waiting_for_approval" &&
+      update.pendingRequest !== undefined &&
+      this.autoApprovalPayload !== null
+    ) {
+      this.response = {
+        requestId: update.pendingRequest.requestId,
+        payload: this.autoApprovalPayload,
+      };
     }
-    if (update.state === "running" || update.state === "completed" || update.state === "failed" || update.state === "cancelled") {
+    if (
+      update.state === "running" ||
+      update.state === "completed" ||
+      update.state === "failed" ||
+      update.state === "cancelled"
+    ) {
       this.response = null;
     }
     return this.job;
@@ -187,10 +216,12 @@ interface Harness {
   readonly stagingDir: string;
 }
 
-async function createHarness(options: { failPrepare?: string; includeDiff?: boolean } = {}): Promise<Harness> {
+async function createHarness(
+  options: { failPrepare?: string; includeDiff?: boolean; job?: CloudJob } = {},
+): Promise<Harness> {
   const workspaceRoot = await tempDir("axle-runner-ws-");
   const artifactRoot = await tempDir("axle-runner-art-");
-  const job = cloudJobFixture();
+  const job = options.job ?? cloudJobFixture();
   const config: WorkerConfig = {
     controlPlaneUrl: "https://cloud.example.test",
     workerId: "worker-1",
@@ -201,7 +232,12 @@ async function createHarness(options: { failPrepare?: string; includeDiff?: bool
     agentBinary: "axle",
     agentEnv: {},
     providers: [
-      { providerInstanceId: "anthropic-default", provider: "anthropic", apiKeyEnv: "ANTHROPIC_API_KEY", baseUrl: null },
+      {
+        providerInstanceId: "anthropic-default",
+        provider: "anthropic",
+        apiKeyEnv: "ANTHROPIC_API_KEY",
+        baseUrl: null,
+      },
     ],
     pollIntervalMs: 250,
     heartbeatIntervalMs: 20,
@@ -223,7 +259,11 @@ async function createHarness(options: { failPrepare?: string; includeDiff?: bool
         return { headRevision: TEST_REVISION, diffPath: null, bundlePath: null };
       }
       const diffPath = NodePath.join(stagingDir, "changes.diff");
-      await NodeFS.writeFile(diffPath, "diff --git a/README.md b/README.md\n+agent change\n", "utf8");
+      await NodeFS.writeFile(
+        diffPath,
+        "diff --git a/README.md b/README.md\n+agent change\n",
+        "utf8",
+      );
       return { headRevision: HEAD_REVISION, diffPath, bundlePath: null };
     },
     cleanup: async (workspacePath) => {
@@ -277,7 +317,10 @@ async function readApprovalDecisions(stagingDir: string): Promise<Array<Record<s
 describe("CloudJobRunner", () => {
   it("runs a job to completion and ships transcript + diff artifacts", async () => {
     const h = await createHarness();
-    const runPromise = new CloudJobRunner(h.deps).run("linux-standard", cloudJobLeaseFixture(h.job));
+    const runPromise = new CloudJobRunner(h.deps).run(
+      "linux-standard",
+      cloudJobLeaseFixture(h.job),
+    );
     await waitFor(() => h.agents.length === 1);
     const agent = h.agents[0]!;
 
@@ -294,14 +337,22 @@ describe("CloudJobRunner", () => {
     });
     await waitFor(() => h.controlPlane.states().includes("waiting_for_approval"));
     const waitingIndex = h.controlPlane.states().indexOf("waiting_for_approval");
-    await waitFor(() => h.controlPlane.states().indexOf("running", waitingIndex + 1) > waitingIndex);
+    await waitFor(
+      () => h.controlPlane.states().indexOf("running", waitingIndex + 1) > waitingIndex,
+    );
     agent.push({ type: "approval.resolved", requestId: "cli-1", decision: "allow" });
     agent.push({ type: "result", response: "all tests pass", sessionId: "session-1" });
     agent.push({ type: "shutdown" });
     agent.exitWith({ code: 0, signal: null, spawnError: null, stderrTail: "" });
     await runPromise;
 
-    expect(h.controlPlane.states()).toEqual(["running", "waiting_for_approval", "running", "finalizing", "completed"]);
+    expect(h.controlPlane.states()).toEqual([
+      "running",
+      "waiting_for_approval",
+      "running",
+      "finalizing",
+      "completed",
+    ]);
     const completed = h.controlPlane.updates.find((entry) => entry.update.state === "completed");
     expect(completed).toBeDefined();
     const result = completed!.update.result;
@@ -319,7 +370,9 @@ describe("CloudJobRunner", () => {
     }
 
     const approvalLines = await readApprovalDecisions(h.stagingDir);
-    expect(approvalLines).toEqual([{ type: "approval_response", requestId: "cli-1", decision: "allow" }]);
+    expect(approvalLines).toEqual([
+      { type: "approval_response", requestId: "cli-1", decision: "allow" },
+    ]);
     const transcript = await NodeFS.readFile(NodePath.join(h.stagingDir, "session.ndjson"), "utf8");
     expect(transcript).toContain('"type":"approval.requested"');
     expect(transcript).toContain('"sessionId":"session-1"');
@@ -332,20 +385,49 @@ describe("CloudJobRunner", () => {
     expect(spawn.args).toContain("--prompt-stdin");
     expect(spawn.args).toContain("--json-stream");
     expect(spawn.args[spawn.args.indexOf("--runtime-mode") + 1]).toBe("approval-required");
-    expect(spawn.args[spawn.args.indexOf("--approval-file") + 1]).toBe(NodePath.join(h.stagingDir, "approval.jsonl"));
+    expect(spawn.args[spawn.args.indexOf("--approval-file") + 1]).toBe(
+      NodePath.join(h.stagingDir, "approval.jsonl"),
+    );
     expect(spawn.args[spawn.args.indexOf("--provider") + 1]).toBe("anthropic");
     expect(spawn.args[spawn.args.indexOf("--model") + 1]).toBe("claude-test-model");
     expect(spawn.args[spawn.args.indexOf("--interaction-mode") + 1]).toBe("build");
 
     expect(h.workspaceCalls.snapshots).toBe(1);
     expect(h.workspaceCalls.cleaned).toEqual([NodePath.join(h.workspaceRoot, h.job.jobId)]);
-    const stored = await NodeFS.stat(NodePath.join(h.artifactRoot, "jobs", h.job.jobId, "log", "session.ndjson"));
+    const stored = await NodeFS.stat(
+      NodePath.join(h.artifactRoot, "jobs", h.job.jobId, "log", "session.ndjson"),
+    );
     expect(stored.isFile()).toBe(true);
+  });
+
+  it("runs scheduled jobs full-access with no approval round trip", async () => {
+    const h = await createHarness({
+      job: cloudJobFixture({ runtimeMode: "full-access", scheduleId: "schedule-1" }),
+    });
+    const runPromise = new CloudJobRunner(h.deps).run(
+      "linux-standard",
+      cloudJobLeaseFixture(h.job),
+    );
+    await waitFor(() => h.agents.length === 1);
+    const agent = h.agents[0]!;
+    agent.push({ type: "session", sessionId: "session-1" });
+    agent.push({ type: "result", response: "dependency bump prepared", sessionId: "session-1" });
+    agent.push({ type: "shutdown" });
+    agent.exitWith({ code: 0, signal: null, spawnError: null, stderrTail: "" });
+    await runPromise;
+
+    const spawn = h.spawns[0]!;
+    expect(spawn.args[spawn.args.indexOf("--runtime-mode") + 1]).toBe("full-access");
+    expect(h.controlPlane.states()).toContain("completed");
+    expect(h.controlPlane.states()).not.toContain("waiting_for_approval");
   });
 
   it("denies the approval when the user payload is unrecognized, then still completes", async () => {
     const h = await createHarness();
-    const runPromise = new CloudJobRunner(h.deps).run("linux-standard", cloudJobLeaseFixture(h.job));
+    const runPromise = new CloudJobRunner(h.deps).run(
+      "linux-standard",
+      cloudJobLeaseFixture(h.job),
+    );
     await waitFor(() => h.agents.length === 1);
     const agent = h.agents[0]!;
 
@@ -360,9 +442,15 @@ describe("CloudJobRunner", () => {
     });
     await waitFor(() => h.controlPlane.countStates("running") >= 2);
     const approvalLines = await readApprovalDecisions(h.stagingDir);
-    expect(approvalLines).toEqual([{ type: "approval_response", requestId: "cli-9", decision: "deny" }]);
-    const waiting = h.controlPlane.updates.find((entry) => entry.update.state === "waiting_for_approval");
-    expect((waiting!.update.pendingRequest!.payload as Record<string, unknown>).toolName).toBe("shell");
+    expect(approvalLines).toEqual([
+      { type: "approval_response", requestId: "cli-9", decision: "deny" },
+    ]);
+    const waiting = h.controlPlane.updates.find(
+      (entry) => entry.update.state === "waiting_for_approval",
+    );
+    expect((waiting!.update.pendingRequest!.payload as Record<string, unknown>).toolName).toBe(
+      "shell",
+    );
 
     agent.push({ type: "result", response: "stopped after deny" });
     agent.exitWith({ code: 0, signal: null, spawnError: null, stderrTail: "" });
@@ -372,7 +460,10 @@ describe("CloudJobRunner", () => {
 
   it("cancels a running job on the control plane's request and kills the agent", async () => {
     const h = await createHarness();
-    const runPromise = new CloudJobRunner(h.deps).run("linux-standard", cloudJobLeaseFixture(h.job));
+    const runPromise = new CloudJobRunner(h.deps).run(
+      "linux-standard",
+      cloudJobLeaseFixture(h.job),
+    );
     await waitFor(() => h.agents.length === 1 && h.controlPlane.countStates("running") === 1);
     h.controlPlane.cancelAfterHeartbeats = h.controlPlane.heartbeatCount + 1;
     const agent = h.agents[0]!;
@@ -382,17 +473,28 @@ describe("CloudJobRunner", () => {
     await runPromise;
     expect(agent.killCalls.value).toBeGreaterThanOrEqual(1);
     const cancelled = h.controlPlane.updates.find((entry) => entry.update.state === "cancelled")!;
-    expect(cancelled.update.event).toEqual({ type: "worker.cancellation", reason: "user_requested" });
+    expect(cancelled.update.event).toEqual({
+      type: "worker.cancellation",
+      reason: "user_requested",
+    });
     expect(h.controlPlane.countStates("completed")).toBe(0);
     expect(h.controlPlane.countStates("finalizing")).toBe(0);
   });
 
   it("fails the job with runtime_failed when the agent exits non-zero", async () => {
     const h = await createHarness();
-    const runPromise = new CloudJobRunner(h.deps).run("linux-standard", cloudJobLeaseFixture(h.job));
+    const runPromise = new CloudJobRunner(h.deps).run(
+      "linux-standard",
+      cloudJobLeaseFixture(h.job),
+    );
     await waitFor(() => h.agents.length === 1);
     h.agents[0]!.push({ type: "session", sessionId: "session-fail" });
-    h.agents[0]!.exitWith({ code: 2, signal: null, spawnError: null, stderrTail: "tests failed badly" });
+    h.agents[0]!.exitWith({
+      code: 2,
+      signal: null,
+      spawnError: null,
+      stderrTail: "tests failed badly",
+    });
     await runPromise;
 
     const failed = h.controlPlane.updates.find((entry) => entry.update.state === "failed")!;
@@ -418,7 +520,10 @@ describe("CloudJobRunner", () => {
 
   it("halts without terminal updates when the lease is lost", async () => {
     const h = await createHarness();
-    const runPromise = new CloudJobRunner(h.deps).run("linux-standard", cloudJobLeaseFixture(h.job));
+    const runPromise = new CloudJobRunner(h.deps).run(
+      "linux-standard",
+      cloudJobLeaseFixture(h.job),
+    );
     await waitFor(() => h.agents.length === 1 && h.controlPlane.countStates("running") === 1);
     h.controlPlane.failHeartbeatWith = new CloudControlPlaneError("lease_lost", 409);
     await waitFor(() => h.logs.some((entry) => entry.event === "control_plane_error"));
@@ -434,7 +539,10 @@ describe("CloudJobRunner", () => {
 
   it("holds a finished agent open until a pending approval is answered, then settles", async () => {
     const h = await createHarness();
-    const runPromise = new CloudJobRunner(h.deps).run("linux-standard", cloudJobLeaseFixture(h.job));
+    const runPromise = new CloudJobRunner(h.deps).run(
+      "linux-standard",
+      cloudJobLeaseFixture(h.job),
+    );
     await waitFor(() => h.agents.length === 1);
     const agent = h.agents[0]!;
     agent.push({
@@ -455,7 +563,9 @@ describe("CloudJobRunner", () => {
     await waitFor(() => h.controlPlane.countStates("running") >= 2);
     await runPromise;
     const approvalLines = await readApprovalDecisions(h.stagingDir);
-    expect(approvalLines).toEqual([{ type: "approval_response", requestId: "cli-5", decision: "allow" }]);
+    expect(approvalLines).toEqual([
+      { type: "approval_response", requestId: "cli-5", decision: "allow" },
+    ]);
     const failed = h.controlPlane.updates.find((entry) => entry.update.state === "failed")!;
     expect(failed.update.failureCode).toBe("runtime_failed");
     expect(JSON.stringify(failed.update.event)).toContain("without producing a result frame");

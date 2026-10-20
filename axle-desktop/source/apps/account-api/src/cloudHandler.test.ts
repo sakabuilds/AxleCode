@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { CloudJob } from "@axle/contracts";
 import { AccountSessionAccessError } from "./errors.ts";
 import { createCloudRequestHandler } from "./cloudHandler.ts";
+import type { CloudScheduleStore } from "./cloudScheduleStore.ts";
 import { CloudJobError, createCloudJobStore } from "./cloudStore.ts";
 import {
   billingConfigFixture,
   cloudConfigFixture,
   cloudInputFixture,
+  cloudScheduleFixture,
 } from "./cloudTestFixtures.ts";
 
 describe("cloud HTTP authorization and routing", () => {
@@ -239,5 +242,116 @@ describe("cloud HTTP authorization and routing", () => {
     expect((await request("/v1/cloud/jobs", "POST", cloudInputFixture))?.status).toBe(402);
     query.mockRejectedValue(new CloudJobError("cloud_not_entitled"));
     expect((await request("/v1/cloud/jobs", "POST", cloudInputFixture))?.status).toBe(403);
+  });
+});
+
+describe("cloud schedule HTTP routing", () => {
+  const query = vi.fn(async () => null);
+  const touchSession = vi.fn(async () => {});
+  const scheduleView = {
+    ...cloudScheduleFixture,
+    sourceRevision: null,
+    nextRunAt: null,
+    lastJobId: null,
+    lastError: null,
+    createdAt: "2026-10-18T00:00:00.000Z",
+    updatedAt: "2026-10-18T00:00:00.000Z",
+  };
+  const schedules = {
+    list: vi.fn(async () => ({ schedules: [scheduleView] })),
+    get: vi.fn(async () => scheduleView),
+    save: vi.fn(async () => scheduleView),
+    remove: vi.fn(async () => true),
+    due: vi.fn(async () => []),
+    advance: vi.fn(async () => true),
+    recordResult: vi.fn(async () => {}),
+  } as unknown as CloudScheduleStore;
+  const runSchedule = vi.fn(
+    async (): Promise<CloudJob> => ({ jobId: "job-a" }) as unknown as CloudJob,
+  );
+  let userId: string;
+  let handle: ReturnType<typeof createCloudRequestHandler>;
+  beforeEach(() => {
+    vi.resetAllMocks();
+    userId = "user-a";
+    handle = createCloudRequestHandler({
+      config: cloudConfigFixture,
+      store: createCloudJobStore(query, cloudConfigFixture),
+      schedules,
+      runSchedule,
+      authenticate: async () => ({ userId, sessionId: "session-a" }),
+      touchSession,
+      corsOrigin: "https://app.invalid",
+    });
+  });
+  const request = (path: string, method = "GET", body?: unknown) =>
+    handle(
+      new Request(`https://account.invalid${path}`, {
+        method,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      }),
+    );
+
+  it("lists schedules for the authenticated owner", async () => {
+    const response = await request("/v1/cloud/schedules");
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toEqual({ schedules: [scheduleView] });
+    expect(schedules.list).toHaveBeenCalledWith("user-a");
+  });
+
+  it("saves a validated schedule for an allowed operator user", async () => {
+    const response = await request("/v1/cloud/schedules", "POST", cloudScheduleFixture);
+    expect(response?.status).toBe(200);
+    expect(schedules.save).toHaveBeenCalledWith("user-a", cloudScheduleFixture);
+  });
+
+  it("rejects schedule bodies that fail contract validation", async () => {
+    expect((await request("/v1/cloud/schedules", "POST", { title: "incomplete" }))?.status).toBe(
+      400,
+    );
+    expect(schedules.save).not.toHaveBeenCalled();
+  });
+
+  it("denies schedule mutations without an operator grant", async () => {
+    userId = "user-b";
+    expect((await request("/v1/cloud/schedules", "POST", cloudScheduleFixture))?.status).toBe(403);
+    expect((await request("/v1/cloud/schedules/schedule-1/run", "POST", undefined))?.status).toBe(
+      403,
+    );
+    expect(schedules.save).not.toHaveBeenCalled();
+    expect(runSchedule).not.toHaveBeenCalled();
+  });
+
+  it("removes a schedule and reports whether it was deleted", async () => {
+    const response = await request("/v1/cloud/schedules/schedule-1", "DELETE");
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toEqual({ deleted: true });
+    expect(schedules.remove).toHaveBeenCalledWith("user-a", "schedule-1");
+  });
+
+  it("dispatches a manual run through the runner", async () => {
+    const response = await request("/v1/cloud/schedules/schedule-1/run", "POST", undefined);
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toEqual({ jobId: "job-a" });
+    expect(runSchedule).toHaveBeenCalledWith("user-a", "schedule-1");
+  });
+
+  it("lists runs for a schedule under the verified owner", async () => {
+    await request("/v1/cloud/schedules/schedule-1/runs");
+    expect(query).toHaveBeenCalledWith("list-by-schedule", {
+      userId: "user-a",
+      scheduleId: "schedule-1",
+    });
+  });
+
+  it("returns disabled for schedule routes when the control plane has no schedule store", async () => {
+    handle = createCloudRequestHandler({
+      config: cloudConfigFixture,
+      store: createCloudJobStore(query, cloudConfigFixture),
+      authenticate: async () => ({ userId: "user-a", sessionId: "session-a" }),
+      touchSession,
+      corsOrigin: "https://app.invalid",
+    });
+    expect((await request("/v1/cloud/schedules"))?.status).toBe(503);
   });
 });

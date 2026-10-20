@@ -7,7 +7,10 @@ import type {
   CloudJobEvent,
   CloudJobLease,
   CloudJobLimits,
+  CloudJobRuntimeMode,
   CloudJobState,
+  CloudSchedule,
+  CloudScheduleInput,
 } from "@axle/contracts";
 import { CloudJobError } from "./cloudErrors.ts";
 import { isDuplicateKeyError } from "./mongo.ts";
@@ -37,6 +40,8 @@ export interface CloudJobDoc {
   limits: CloudJobLimits;
   environmentId: string;
   state: CloudJobState;
+  runtimeMode: CloudJobRuntimeMode;
+  scheduleId: string | null;
   generation: number;
   leaseOwner: string | null;
   leaseToken: string | null;
@@ -108,6 +113,58 @@ interface CreateArgs {
   planId: string;
   monthlyCredits: number;
   creditsPerMinute: number;
+  runtimeMode?: CloudJobRuntimeMode;
+  scheduleId?: string | null;
+}
+
+export interface CloudScheduleDoc {
+  _id: string;
+  userId: string;
+  title: string;
+  prompt: string;
+  environmentId: string;
+  repositoryUrl: string;
+  sourceRef: string;
+  providerInstanceId: CloudSchedule["providerInstanceId"];
+  model: string;
+  frequency: CloudSchedule["frequency"];
+  intervalHours: number;
+  time: string;
+  dayOfWeek: CloudSchedule["dayOfWeek"];
+  date: string;
+  timeZone: string;
+  active: boolean;
+  sourceRevision: string | null;
+  nextRunAt: Date | null;
+  lastJobId: string | null;
+  lastError: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface ScheduleSaveArgs {
+  userId: string;
+  schedule: CloudScheduleInput;
+  maxSchedules: number | null;
+  nextRunAt: Date | null;
+}
+
+interface ScheduleOwnerArgs {
+  userId: string;
+  scheduleId: string;
+}
+
+interface ScheduleAdvanceArgs {
+  scheduleId: string;
+  expectedNextRunAt: Date;
+  nextRunAt: Date | null;
+}
+
+interface ScheduleResultArgs {
+  scheduleId: string;
+  jobId: string | null;
+  sourceRevision: string | null;
+  error: string | null;
 }
 
 interface ClaimArgs {
@@ -182,6 +239,7 @@ interface WebhookArgs {
  */
 export function createCloudQuery(db: Db): CloudQuery {
   const jobs = db.collection<CloudJobDoc>("axle_cloud_jobs");
+  const schedules = db.collection<CloudScheduleDoc>("axle_cloud_schedules");
   const events = db.collection("axle_cloud_job_events");
   const commands = db.collection("axle_cloud_job_commands");
   const accounts = db.collection<CreditAccountDoc>("axle_credit_accounts");
@@ -393,6 +451,8 @@ export function createCloudQuery(db: Db): CloudQuery {
   const jobView = (job: WithId<CloudJobDoc>): CloudJob => ({
     jobId: job._id,
     state: job.state,
+    runtimeMode: job.runtimeMode === "full-access" ? "full-access" : "approval-required",
+    scheduleId: job.scheduleId ?? null,
     input: job.input,
     limits: job.limits,
     generation: job.generation,
@@ -411,6 +471,30 @@ export function createCloudQuery(db: Db): CloudQuery {
     leaseToken: job.leaseToken ?? "",
     leaseExpiresAt: (job.leaseExpiresAt ?? job.deadlineAt).toISOString(),
     response: (job.pendingResponse ?? null) as CloudJobLease["response"],
+  });
+
+  const scheduleView = (schedule: CloudScheduleDoc): CloudSchedule => ({
+    scheduleId: schedule._id,
+    title: schedule.title,
+    prompt: schedule.prompt,
+    environmentId: schedule.environmentId,
+    repositoryUrl: schedule.repositoryUrl,
+    sourceRef: schedule.sourceRef,
+    providerInstanceId: schedule.providerInstanceId,
+    model: schedule.model,
+    frequency: schedule.frequency,
+    intervalHours: schedule.intervalHours,
+    time: schedule.time,
+    dayOfWeek: schedule.dayOfWeek,
+    date: schedule.date,
+    timeZone: schedule.timeZone,
+    active: schedule.active,
+    sourceRevision: schedule.sourceRevision ?? null,
+    nextRunAt: schedule.nextRunAt?.toISOString() ?? null,
+    lastJobId: schedule.lastJobId ?? null,
+    lastError: schedule.lastError ?? null,
+    createdAt: schedule.createdAt.toISOString(),
+    updatedAt: schedule.updatedAt.toISOString(),
   });
 
   return async (operation, args) => {
@@ -454,6 +538,8 @@ export function createCloudQuery(db: Db): CloudQuery {
           limits: a.limits,
           environmentId: a.input.environmentId,
           state: "queued",
+          runtimeMode: a.runtimeMode ?? "approval-required",
+          scheduleId: a.scheduleId ?? null,
           generation: 0,
           leaseOwner: null,
           leaseToken: null,
@@ -569,6 +655,103 @@ export function createCloudQuery(db: Db): CloudQuery {
       const job = await jobs.findOne({ _id: a.jobId });
       if (!job || job.userId !== a.userId) throw new CloudJobError("not_found");
       return jobView(job);
+    }
+
+    if (operation === "list-by-schedule") {
+      const a = args as unknown as { userId: string; scheduleId: string };
+      const list = await jobs
+        .find({ userId: a.userId, scheduleId: a.scheduleId })
+        .sort({ createdAt: -1, _id: 1 })
+        .limit(50)
+        .toArray();
+      return { jobs: list.map(jobView) };
+    }
+
+    if (operation === "schedule-list") {
+      const a = args as unknown as { userId: string };
+      const list = await schedules
+        .find({ userId: a.userId })
+        .sort({ createdAt: -1, _id: 1 })
+        .limit(100)
+        .toArray();
+      return { schedules: list.map(scheduleView) };
+    }
+
+    if (operation === "schedule-get") {
+      const a = args as unknown as ScheduleOwnerArgs;
+      const schedule = await schedules.findOne({ _id: a.scheduleId });
+      if (!schedule || schedule.userId !== a.userId) throw new CloudJobError("not_found");
+      return scheduleView(schedule);
+    }
+
+    if (operation === "schedule-save") {
+      const a = args as unknown as ScheduleSaveArgs;
+      return runTransaction(db, async (session) => {
+        await lock(session, `owner:${a.userId}`);
+        const existing = await schedules.findOne({ _id: a.schedule.scheduleId }, { session });
+        if (existing && existing.userId !== a.userId) throw new CloudJobError("not_found");
+        if (!existing && a.maxSchedules !== null) {
+          const count = await schedules.countDocuments({ userId: a.userId }, { session });
+          if (count >= a.maxSchedules) throw new CloudJobError("schedule_limit_reached");
+        }
+        const now = new Date();
+        const doc: CloudScheduleDoc = {
+          ...a.schedule,
+          _id: a.schedule.scheduleId,
+          userId: a.userId,
+          sourceRevision: existing?.sourceRevision ?? null,
+          nextRunAt: a.nextRunAt,
+          lastJobId: existing?.lastJobId ?? null,
+          lastError: null,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        await schedules.replaceOne({ _id: doc._id }, doc, { upsert: true, session });
+        return scheduleView(doc);
+      });
+    }
+
+    if (operation === "schedule-remove") {
+      const a = args as unknown as ScheduleOwnerArgs;
+      const result = await schedules.deleteOne({ _id: a.scheduleId, userId: a.userId });
+      return { deleted: result.deletedCount === 1 };
+    }
+
+    if (operation === "schedule-due") {
+      const a = args as unknown as { now: Date; limit: number };
+      const list = await schedules
+        .find({ active: true, nextRunAt: { $ne: null, $lte: a.now } })
+        .sort({ nextRunAt: 1, _id: 1 })
+        .limit(a.limit)
+        .toArray();
+      return {
+        schedules: list.map((schedule) => ({ ...scheduleView(schedule), userId: schedule.userId })),
+      };
+    }
+
+    if (operation === "schedule-advance") {
+      const a = args as unknown as ScheduleAdvanceArgs;
+      const result = await schedules.updateOne(
+        { _id: a.scheduleId, active: true, nextRunAt: a.expectedNextRunAt },
+        { $set: { nextRunAt: a.nextRunAt, updatedAt: new Date() } },
+      );
+      return { advanced: result.modifiedCount === 1 };
+    }
+
+    if (operation === "schedule-result") {
+      const a = args as unknown as ScheduleResultArgs;
+      await schedules.updateOne(
+        { _id: a.scheduleId },
+        {
+          $set: {
+            lastJobId: a.jobId,
+            sourceRevision: a.sourceRevision,
+            lastError: a.error,
+            updatedAt: new Date(),
+          },
+        },
+      );
+      return { recorded: true };
     }
 
     if (operation === "events") {
@@ -743,11 +926,7 @@ export function createCloudQuery(db: Db): CloudQuery {
         if (next !== job.state && !allowedTransition(job.state, next)) {
           throw new CloudJobError("invalid_transition");
         }
-        if (
-          next === "running" &&
-          WAITING_STATES.has(job.state) &&
-          job.pendingResponse === null
-        ) {
+        if (next === "running" && WAITING_STATES.has(job.state) && job.pendingResponse === null) {
           throw new CloudJobError("request_not_answered");
         }
         if (WAITING_STATES.has(next) && next !== job.state) {

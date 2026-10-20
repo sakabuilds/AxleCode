@@ -11,6 +11,10 @@
       "types": "./src/cloud/jobs.ts",
       "default": "./src/cloud/jobs.ts"
     },
+    "./cloud/schedules": {
+      "types": "./src/cloud/schedules.ts",
+      "default": "./src/cloud/schedules.ts"
+    },
     "./authorization": {
       "types": "./src/authorization/index.ts",
       "default": "./src/authorization/index.ts"

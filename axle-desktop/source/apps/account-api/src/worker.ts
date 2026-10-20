@@ -7,6 +7,9 @@ import { createAccountDatabase } from "./database.ts";
 import { readBillingConfig } from "./billingConfig.ts";
 import { readCloudConfig } from "./cloudConfig.ts";
 import { createCloudRequestHandler } from "./cloudHandler.ts";
+import { createCloudRevisionResolver } from "./cloudRevision.ts";
+import { createCloudScheduleRunner, type CloudScheduleRunner } from "./cloudScheduleRunner.ts";
+import { createCloudScheduleStore } from "./cloudScheduleStore.ts";
 import { createCloudDatabase, createCloudJobStore } from "./cloudStore.ts";
 import { readGatewayCreditsConfig, type BindingFetch } from "./gateway.ts";
 import { createAccountRequestHandler, RequestValidationError } from "./handler.ts";
@@ -31,8 +34,7 @@ import { mongoDatabase } from "./mongo.ts";
 export default {
   async fetch(request: Request, env: Record<string, unknown>): Promise<Response> {
     try {
-      ready ??= initialize(environmentRecord(env), serviceFetchers(env));
-      const handle = await ready;
+      const { handle } = await (ready ??= initialize(environmentRecord(env), serviceFetchers(env)));
       return await handle(request);
     } catch (error) {
       if (error instanceof RequestValidationError) {
@@ -46,14 +48,42 @@ export default {
       return json(500, { error: "internal_error" });
     }
   },
+  /** Cloudflare cron trigger; dispatches cloud schedules while users are offline. */
+  async scheduled(
+    _controller: unknown,
+    env: Record<string, unknown>,
+    ctx: { waitUntil(promise: Promise<unknown>): void },
+  ): Promise<void> {
+    try {
+      const { runner } = await (ready ??= initialize(environmentRecord(env), serviceFetchers(env)));
+      if (runner) {
+        ctx.waitUntil(
+          runner.runDue().catch((error: unknown) => {
+            console.error("Cloud schedule runner failed", {
+              message: error instanceof Error ? error.message : "unknown",
+            });
+          }),
+        );
+      }
+    } catch (error) {
+      console.error("Cloud schedule trigger failed", {
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  },
 };
 
-let ready: Promise<(request: Request) => Promise<Response>> | null = null;
+interface WorkerApplication {
+  readonly handle: (request: Request) => Promise<Response>;
+  readonly runner: CloudScheduleRunner | null;
+}
+
+let ready: Promise<WorkerApplication> | null = null;
 
 async function initialize(
   env: Readonly<Record<string, string | undefined>>,
   fetchers: { readonly gateway: BindingFetch | undefined; readonly auth: BindingFetch | undefined },
-): Promise<(request: Request) => Promise<Response>> {
+): Promise<WorkerApplication> {
   const config = readAccountApiConfig(env);
   const database = createAccountDatabase(config);
   const authenticate = createAccountAuthenticator(config, fetchers.auth);
@@ -65,10 +95,29 @@ async function initialize(
     cloudConfig && cloudDatabase
       ? createCloudJobStore(cloudDatabase.query, cloudConfig, billingConfig)
       : null;
+  const cloudScheduleStore =
+    cloudConfig && cloudDatabase
+      ? createCloudScheduleStore(cloudDatabase.query, cloudConfig, billingConfig)
+      : null;
+  const scheduleRunner =
+    cloudStore && cloudScheduleStore
+      ? createCloudScheduleRunner({
+          schedules: cloudScheduleStore,
+          jobs: cloudStore,
+          revisions: createCloudRevisionResolver({
+            githubToken: env.AXLE_GITHUB_TOKEN ?? null,
+          }),
+          log: (message, detail) => console.error(message, detail),
+        })
+      : null;
   const handleCloudRequest = createCloudRequestHandler({
     config: cloudConfig,
     billing: billingConfig,
     store: cloudStore,
+    schedules: cloudScheduleStore,
+    runSchedule: scheduleRunner
+      ? (userId, scheduleId) => scheduleRunner.runNow(userId, scheduleId)
+      : null,
     authenticate,
     touchSession: database.touchSession,
     corsOrigin: config.corsOrigin,
@@ -92,10 +141,13 @@ async function initialize(
   await database.migrate();
   await cloudDatabase?.migrate();
 
-  return async (request) =>
-    (await handleCloudRequest(request)) ??
-    (await handleBillingRequest(request)) ??
-    (await handleRequest(request));
+  return {
+    handle: async (request) =>
+      (await handleCloudRequest(request)) ??
+      (await handleBillingRequest(request)) ??
+      (await handleRequest(request)),
+    runner: scheduleRunner,
+  };
 }
 
 function environmentRecord(

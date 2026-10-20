@@ -7,6 +7,8 @@ export function cloudJobFixture(overrides: Partial<CloudJob> = {}): CloudJob {
   return {
     jobId: "11111111-2222-4333-8444-555555555555",
     state: "provisioning",
+    runtimeMode: "approval-required",
+    scheduleId: null,
     input: {
       commandId: "create-1",
       environmentId: "linux-standard",

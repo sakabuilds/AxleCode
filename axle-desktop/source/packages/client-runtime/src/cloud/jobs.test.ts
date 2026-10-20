@@ -9,6 +9,8 @@ const revision = "a".repeat(40);
 const sampleJob: CloudJob = {
   jobId: "job-1",
   state: "queued",
+  runtimeMode: "approval-required",
+  scheduleId: null,
   input: {
     commandId: "cmd-1",
     environmentId: "linux-standard",

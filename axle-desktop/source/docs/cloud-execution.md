@@ -13,6 +13,7 @@ client (desktop / mobile / web)
   |  POST /v1/cloud/jobs/{jobId}/cancel      request cancellation
   v
 control plane (apps/account-api)
+  |  timer (30s Node / `* * * * *` cron)  dispatch due schedules as full-access jobs
   |  POST /v1/cloud-workers/{environmentId}/claim
   |  POST /v1/cloud-workers/{environmentId}/recover
   |  POST /v1/cloud-workers/{environmentId}/jobs/{jobId}/heartbeat
@@ -20,19 +21,22 @@ control plane (apps/account-api)
   v
 worker (apps/cloud-worker)
   |  git clone (https-only, credential-free) -> workspace
-  |  spawn `axle --prompt-stdin --json-stream --runtime-mode approval-required ...`
-  |  relay approvals through the approval file
+  |  spawn `axle --prompt-stdin --json-stream --runtime-mode approval-required|full-access ...`
+  |  relay approvals through the approval file (interactive jobs only)
   `- upload artifacts -> jobs/{jobId}/{kind}/{name}
 ```
 
-| Piece                            | Where                                                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------ |
-| Job / lease / update contracts   | `packages/contracts/src/cloudJobs.ts`                                                |
-| Control-plane routes             | `apps/account-api/src/cloudHandler.ts`                                               |
-| Job persistence                  | `apps/account-api/src/cloudStore.ts`, `apps/account-api/src/cloudMongo.ts` (MongoDB) |
-| Operator config (control plane)  | `apps/account-api/src/cloudConfig.ts` (`AXLE_CLOUD_CONFIG`)                          |
-| Worker                           | `apps/cloud-worker` (`@axle/cloud-worker`)                                           |
-| CLI runtime mode + approval file | `crates/axle_cli/src/main.rs`, `crates/axle_agent/src/loop_runner.rs`                |
+| Piece                            | Where                                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------------------ |
+| Job / lease / update contracts   | `packages/contracts/src/cloudJobs.ts`                                                      |
+| Schedule contracts               | `packages/contracts/src/cloudSchedules.ts`                                                 |
+| Control-plane routes             | `apps/account-api/src/cloudHandler.ts`                                                     |
+| Job persistence                  | `apps/account-api/src/cloudStore.ts`, `apps/account-api/src/cloudMongo.ts` (MongoDB)       |
+| Schedule persistence + dispatch  | `apps/account-api/src/cloudScheduleStore.ts`, `cloudScheduleRunner.ts`, `cloudRevision.ts` |
+| Schedule timing                  | `packages/shared/src/scheduleTiming.ts`                                                    |
+| Operator config (control plane)  | `apps/account-api/src/cloudConfig.ts` (`AXLE_CLOUD_CONFIG`)                                |
+| Worker                           | `apps/cloud-worker` (`@axle/cloud-worker`)                                                 |
+| CLI runtime mode + approval file | `crates/axle_cli/src/main.rs`, `crates/axle_agent/src/loop_runner.rs`                      |
 
 ## Job lifecycle
 
@@ -79,22 +83,39 @@ Authenticated with the user's session; `cloud_access_denied` (403) when the user
 | `GET /v1/cloud/jobs/{jobId}/events?after=&limit=` | Event log (cursor paginated; default 200, max 500).    |
 | `POST /v1/cloud/jobs/{jobId}/responses`           | Answer an approval or input request.                   |
 | `POST /v1/cloud/jobs/{jobId}/cancel`              | Request cancellation.                                  |
+| `GET /v1/cloud/schedules`                         | List the caller's schedules.                           |
+| `POST /v1/cloud/schedules`                        | Create or update a schedule (upsert by `scheduleId`).  |
+| `DELETE /v1/cloud/schedules/{scheduleId}`         | Delete a schedule; returns `{ deleted }`.              |
+| `GET /v1/cloud/schedules/{scheduleId}/runs`       | Jobs dispatched by the schedule, newest first.         |
+| `POST /v1/cloud/schedules/{scheduleId}/run`       | Dispatch a manual run now.                             |
+
+### Cloud schedules
+
+A cloud schedule is self-contained: it stores the repository, branch, prompt, provider/model, and timing — not a reference to a local thread. The control plane owns it, so runs fire and settle with no IDE or desktop process open. Each run clones the pushed repository state on a worker; uncommitted local work never reaches a scheduled run.
+
+- **Timing** — `hourly`, `daily` (`time` + IANA `timezone`), `weekly` (`weekday` + `time` + `timezone`), or `once` (`runAt`). `nextRunAt` is computed from the schedule, and inactive schedules have `nextRunAt: null`.
+- **Full-access execution** — scheduled jobs are dispatched with `runtimeMode: "full-access"`, so the CLI runs without an approval file and no approval round trip. Creating the schedule is the consent; interactive jobs remain `approval-required`.
+- **Revision pinning** — a 40/64-character hex `sourceRef` is used as-is. Branch and tag names are resolved to a commit through the GitHub commits API at dispatch time (`AXLE_GITHUB_TOKEN` raises rate limits and is required for private-repository metadata, though clones stay credential-free). Repositories on other hosts must pin a commit id.
+- **Dispatch** — the control plane checks for due schedules at startup and every 30 seconds; the Cloudflare worker additionally runs the `* * * * *` cron. A slot is claimed with a compare-and-swap on `nextRunAt` before dispatch, so multiple timers never double-run a slot. Slots missed while the control plane is offline are skipped, not backfilled.
+- **Runs** — dispatched jobs carry `scheduleId` and appear under `/runs`. Scheduled command ids derive from `scheduleId` + slot, making dispatch retries idempotent; manual runs use a unique command id.
+- **Limits** — creating schedules requires `cloudJobsEnabled` (`cloud_not_entitled`) and membership in `allowedUserIds`; active schedules are capped by the plan's `scheduledTasksMax` (`schedule_limit_reached`).
 
 ### Errors
 
-| Error                                            | Status |
-| ------------------------------------------------ | ------ |
-| `cloud_not_configured`                           | 503    |
-| `unauthorized`                                   | 401    |
-| `forbidden`, `cloud_access_denied`               | 403    |
-| `cloud_not_entitled`                             | 403    |
-| `insufficient_credits`, `credit_account_missing` | 402    |
-| `not_found`                                      | 404    |
-| `invalid_*`                                      | 400    |
-| `environment_unavailable`, `model_unavailable`   | 422    |
-| `capacity_exceeded`, `event_limit_exceeded`      | 429    |
-| any other `CloudJobError` code                   | 409    |
-| `internal_error`                                 | 500    |
+| Error                                                   | Status |
+| ------------------------------------------------------- | ------ |
+| `cloud_not_configured`                                  | 503    |
+| `unauthorized`                                          | 401    |
+| `forbidden`, `cloud_access_denied`                      | 403    |
+| `cloud_not_entitled`                                    | 403    |
+| `insufficient_credits`, `credit_account_missing`        | 402    |
+| `not_found`                                             | 404    |
+| `invalid_*`                                             | 400    |
+| `environment_unavailable`, `model_unavailable`          | 422    |
+| `capacity_exceeded`, `event_limit_exceeded`             | 429    |
+| `source_revision_unavailable`, `schedule_limit_reached` | 409    |
+| any other `CloudJobError` code                          | 409    |
+| `internal_error`                                        | 500    |
 
 ## Worker configuration
 
@@ -235,12 +256,13 @@ Subscriptions live in the `axle_billing_subscriptions` collection with the appli
 The worker spawns the CLI with:
 
 ```
-axle --prompt-stdin --json-stream --runtime-mode approval-required \
-     --approval-file <staging>/approval.ndjson --approval-timeout-seconds <n> \
+axle --prompt-stdin --json-stream --runtime-mode approval-required|full-access \
+     [--approval-file <staging>/approval.ndjson --approval-timeout-seconds <n>] \
      --provider <kind> --model <model> --cwd <workspace> \
      --interaction-mode build|plan [--base-url <url>]
 ```
 
+- Interactive jobs run `approval-required` and carry the approval file; scheduled jobs (job `runtimeMode: "full-access"`) omit approval flags entirely, so the agent completes writes without waiting on a control-plane response.
 - The prompt is written to stdin; stdout is parsed as NDJSON (non-JSON and array lines are skipped; oversized lines are dropped).
 - Approval requests stream back as events; the worker appends decisions to the approval file:
 
@@ -257,7 +279,8 @@ axle --prompt-stdin --json-stream --runtime-mode approval-required \
 
 - **Repositories**: clone URLs must be https and their host must be listed in the environment's `repositoryHosts`; clones run credential-free (`GIT_CONFIG_NOSYSTEM=1`, no credential helpers), so a worker cannot leak user tokens and a job cannot fetch anything the environment does not allow.
 - **Workspaces**: one clone per job under `workspaceRoot`; nothing is shared between jobs.
-- **Approvals**: default-deny; the worker only writes an allow when the user, through the control plane, allows that exact request id.
+- **Approvals**: default-deny; the worker only writes an allow when the user, through the control plane, allows that exact request id. Jobs with `runtimeMode: "full-access"` run without an approval file at all — scheduled runs rely on this, and creating the schedule is treated as consent.
+- **Pushed code only**: scheduled runs clone the repository at the resolved commit, so only pushed work is visible; local uncommitted changes never reach a scheduled run.
 - **Artifacts**: storage keys are confined to `jobs/{jobId}/{kind}/{name}` and validated against traversal; writes over the store's byte limit (default 100 MB) are rejected.
 - **Credentials**: the worker token is compared with a timing-safe hash and never logged; invalid config errors never echo the raw configuration.
 - **Observability**: logs never include prompts, worker capabilities, or DB error details.

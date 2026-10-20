@@ -9,7 +9,11 @@ import type {
   CloudJobResult,
   CloudJobState,
 } from "@axle/contracts";
-import { CloudControlPlaneError, type CloudControlPlane, type WorkerLeaseRef } from "./controlPlane.ts";
+import {
+  CloudControlPlaneError,
+  type CloudControlPlane,
+  type WorkerLeaseRef,
+} from "./controlPlane.ts";
 import type { CloudArtifact, FileArtifactStore } from "./artifacts.ts";
 import { ApprovalFile, decisionFromUserPayload } from "./approval.ts";
 import type { AgentExit, AgentProcess, AgentProcessOptions } from "./process.ts";
@@ -114,7 +118,11 @@ class JobRun {
   private consumeError: unknown = null;
   private finalResponse: string | null = null;
   private sessionId: string | null = null;
-  private pendingApproval: { cloudRequestId: string; cliRequestId: string; appended: boolean } | null = null;
+  private pendingApproval: {
+    cloudRequestId: string;
+    cliRequestId: string;
+    appended: boolean;
+  } | null = null;
   private pendingResolve: (() => void) | null = null;
   private lastSequence = 0;
   private eventBudgetExhausted = false;
@@ -176,8 +184,11 @@ class JobRun {
 
   private resolveProvider(): ProviderBinding {
     const requested = this.job.input.providerInstanceId;
-    const binding = this.deps.config.providers.find((entry) => entry.providerInstanceId === requested);
-    if (!binding) throw new Error(`no worker provider binding for provider instance '${requested}'`);
+    const binding = this.deps.config.providers.find(
+      (entry) => entry.providerInstanceId === requested,
+    );
+    if (!binding)
+      throw new Error(`no worker provider binding for provider instance '${requested}'`);
     if (binding.apiKeyEnv !== null && !this.deps.env[binding.apiKeyEnv]?.trim()) {
       throw new Error(`provider credential '${binding.apiKeyEnv}' is not present on this worker`);
     }
@@ -193,7 +204,12 @@ class JobRun {
     const exit = await process.exit;
     await this.consumeTask;
     if (this.consumeError !== null) throw this.consumeError;
-    this.log({ event: "job.agent_exited", exitCode: exit.code, signal: exit.signal, spawnError: exit.spawnError });
+    this.log({
+      event: "job.agent_exited",
+      exitCode: exit.code,
+      signal: exit.signal,
+      spawnError: exit.spawnError,
+    });
     if (this.halted) return { kind: "halted" };
     if (this.cancelled) return { kind: "cancelled" };
     if (this.deadlineExceeded) return { kind: "deadline" };
@@ -212,7 +228,8 @@ class JobRun {
 
   private startAgent(): void {
     const binding = this.provider;
-    if (!binding || !this.approvalFile) throw new Error("run started before provisioning completed");
+    if (!binding || !this.approvalFile)
+      throw new Error("run started before provisioning completed");
     const job = this.job;
     const deadlineMs = Date.parse(job.deadlineAt);
     const remainingSeconds = Number.isFinite(deadlineMs)
@@ -221,13 +238,20 @@ class JobRun {
     const args = [
       "--prompt-stdin",
       "--json-stream",
-      "--runtime-mode", "approval-required",
-      "--approval-file", this.approvalFilePath(),
-      "--approval-timeout-seconds", String(Math.min(3_600, remainingSeconds - 30)),
-      "--provider", binding.provider,
-      "--model", job.input.model,
-      "--cwd", this.workspacePath,
-      "--interaction-mode", job.input.interactionMode === "plan" ? "plan" : "build",
+      "--runtime-mode",
+      job.runtimeMode === "full-access" ? "full-access" : "approval-required",
+      "--approval-file",
+      this.approvalFilePath(),
+      "--approval-timeout-seconds",
+      String(Math.min(3_600, remainingSeconds - 30)),
+      "--provider",
+      binding.provider,
+      "--model",
+      job.input.model,
+      "--cwd",
+      this.workspacePath,
+      "--interaction-mode",
+      job.input.interactionMode === "plan" ? "plan" : "build",
     ];
     if (binding.baseUrl !== null) args.push("--base-url", binding.baseUrl);
     const env = { ...this.deps.env, ...this.deps.config.agentEnv };
@@ -322,7 +346,10 @@ class JobRun {
       });
       this.trackedState = job.state;
       this.lastSequence = job.lastSequence;
-      this.log({ event: "job.waiting_for_approval", toolName: typeof record.toolName === "string" ? record.toolName : null });
+      this.log({
+        event: "job.waiting_for_approval",
+        toolName: typeof record.toolName === "string" ? record.toolName : null,
+      });
     } catch (error) {
       this.pendingApproval = null;
       if (error instanceof CloudControlPlaneError && error.code === "invalid_transition") {
@@ -337,7 +364,8 @@ class JobRun {
 
   private async tryResolveApproval(response: CloudJobLease["response"]): Promise<void> {
     const pending = this.pendingApproval;
-    if (pending === null || response === null || response.requestId !== pending.cloudRequestId) return;
+    if (pending === null || response === null || response.requestId !== pending.cloudRequestId)
+      return;
     if (!pending.appended) {
       if (!this.approvalFile) return;
       const decision = decisionFromUserPayload(response.payload);
@@ -346,7 +374,9 @@ class JobRun {
       this.log({ event: "job.approval_answered", decision });
     }
     try {
-      const job = await this.controlPlane.update(this.environmentId, this.jobId, this.lease, { state: "running" });
+      const job = await this.controlPlane.update(this.environmentId, this.jobId, this.lease, {
+        state: "running",
+      });
       this.trackedState = job.state;
       this.lastSequence = job.lastSequence;
       this.pendingApproval = null;
@@ -399,7 +429,12 @@ class JobRun {
       await this.onDeadlineExceeded();
       return;
     }
-    if (this.pendingApproval !== null && !this.halted && !this.cancelled && !this.deadlineExceeded) {
+    if (
+      this.pendingApproval !== null &&
+      !this.halted &&
+      !this.cancelled &&
+      !this.deadlineExceeded
+    ) {
       await this.tryResolveApproval(lease.response);
     }
   }
@@ -425,7 +460,9 @@ class JobRun {
     } catch (error) {
       if (error instanceof CloudControlPlaneError && error.code === "event_limit_exceeded") {
         try {
-          const job = await this.controlPlane.update(this.environmentId, this.jobId, this.lease, { state: "cancelled" });
+          const job = await this.controlPlane.update(this.environmentId, this.jobId, this.lease, {
+            state: "cancelled",
+          });
           this.trackedState = job.state;
           this.lastSequence = job.lastSequence;
           return;
@@ -542,7 +579,11 @@ class JobRun {
         });
         this.trackedState = job.state;
         this.lastSequence = job.lastSequence;
-        this.log({ event: "job.completed", artifacts: result.artifacts.length, headRevision: result.headRevision });
+        this.log({
+          event: "job.completed",
+          artifacts: result.artifacts.length,
+          headRevision: result.headRevision,
+        });
         return;
       } catch (error) {
         if (error instanceof CloudControlPlaneError && error.code === "lease_lost") {
@@ -560,7 +601,12 @@ class JobRun {
 
   private async markFailed(code: FailureCode, message: string): Promise<void> {
     if (this.halted) return;
-    if (this.trackedState === "completed" || this.trackedState === "failed" || this.trackedState === "cancelled") return;
+    if (
+      this.trackedState === "completed" ||
+      this.trackedState === "failed" ||
+      this.trackedState === "cancelled"
+    )
+      return;
     const event = { type: "worker.failure", code, message: message.slice(0, 2_000) };
     try {
       const job = await this.controlPlane.update(this.environmentId, this.jobId, this.lease, {
@@ -592,7 +638,9 @@ class JobRun {
   }
 
   private async transitionTo(state: CloudJobState): Promise<void> {
-    const job = await this.controlPlane.update(this.environmentId, this.jobId, this.lease, { state });
+    const job = await this.controlPlane.update(this.environmentId, this.jobId, this.lease, {
+      state,
+    });
     this.trackedState = job.state;
     this.lastSequence = job.lastSequence;
     this.log({ event: "job.state", state });
@@ -609,10 +657,15 @@ class JobRun {
       return;
     }
     try {
-      const job = await this.controlPlane.update(this.environmentId, this.jobId, this.lease, { event: record });
+      const job = await this.controlPlane.update(this.environmentId, this.jobId, this.lease, {
+        event: record,
+      });
       this.lastSequence = job.lastSequence;
     } catch (error) {
-      if (error instanceof CloudControlPlaneError && (error.code === "lease_lost" || error.code === "not_found")) {
+      if (
+        error instanceof CloudControlPlaneError &&
+        (error.code === "lease_lost" || error.code === "not_found")
+      ) {
         this.handleControlPlaneError(error, "event");
         return;
       }
@@ -660,7 +713,8 @@ class JobRun {
     if (error instanceof RunAbortedError) {
       return this.cancelled ? { kind: "cancelled" } : { kind: "halted" };
     }
-    const code: FailureCode = this.trackedState === "provisioning" ? "provisioning_failed" : "runtime_failed";
+    const code: FailureCode =
+      this.trackedState === "provisioning" ? "provisioning_failed" : "runtime_failed";
     return { kind: "failed", code, message: messageOf(error) };
   }
 
@@ -674,7 +728,13 @@ class JobRun {
 
   private handleControlPlaneError(error: unknown, phase: string): void {
     if (error instanceof CloudControlPlaneError) {
-      this.log({ level: "warn", event: "control_plane_error", phase, code: error.code, status: error.status });
+      this.log({
+        level: "warn",
+        event: "control_plane_error",
+        phase,
+        code: error.code,
+        status: error.status,
+      });
       if (
         error.code === "lease_lost" ||
         error.code === "not_found" ||
@@ -748,4 +808,3 @@ function errorCodeOf(error: unknown): string {
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-

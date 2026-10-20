@@ -35,6 +35,14 @@ export const CloudJobState = Schema.Literals([
 ]);
 export type CloudJobState = typeof CloudJobState.Type;
 
+/**
+ * How the worker drives the CLI. Manual jobs stay approval-required; scheduled
+ * jobs run full-access so they can finish while the user is offline. The mode
+ * is chosen by the control plane, never by a client-supplied job input.
+ */
+export const CloudJobRuntimeMode = Schema.Literals(["approval-required", "full-access"]);
+export type CloudJobRuntimeMode = typeof CloudJobRuntimeMode.Type;
+
 export const CloudJobCreateInput = Schema.Struct({
   commandId: CloudJobCommandId,
   environmentId: CloudEnvironmentId,
@@ -84,6 +92,9 @@ export type CloudJobResult = typeof CloudJobResult.Type;
 export const CloudJob = Schema.Struct({
   jobId: CloudJobId,
   state: CloudJobState,
+  runtimeMode: CloudJobRuntimeMode,
+  /** Set when the job was dispatched by a cloud schedule. */
+  scheduleId: Schema.NullOr(Identifier),
   input: CloudJobCreateInput,
   limits: CloudJobLimits,
   generation: NonNegativeInt,

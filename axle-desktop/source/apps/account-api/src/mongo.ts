@@ -52,9 +52,7 @@ export async function ensureMongoIndexes(db: Db): Promise<void> {
     db
       .collection("axle_account_usage_models")
       .createIndex({ userId: 1, provider: 1, model: 1 }, { unique: true }),
-    db
-      .collection("axle_cloud_jobs")
-      .createIndex({ userId: 1, commandId: 1 }, { unique: true }),
+    db.collection("axle_cloud_jobs").createIndex({ userId: 1, commandId: 1 }, { unique: true }),
     db.collection("axle_cloud_jobs").createIndex({ userId: 1, createdAt: -1 }),
     db
       .collection("axle_cloud_jobs")
@@ -62,20 +60,27 @@ export async function ensureMongoIndexes(db: Db): Promise<void> {
         { environmentId: 1, createdAt: 1 },
         { partialFilterExpression: { state: "queued" } },
       ),
-    db
-      .collection("axle_cloud_jobs")
-      .createIndex(
-        { environmentId: 1, leaseExpiresAt: 1 },
-        {
-          partialFilterExpression: {
-            state: { $in: ["provisioning", "running", "waiting_for_approval", "waiting_for_input", "finalizing"] },
+    db.collection("axle_cloud_jobs").createIndex(
+      { environmentId: 1, leaseExpiresAt: 1 },
+      {
+        partialFilterExpression: {
+          state: {
+            $in: [
+              "provisioning",
+              "running",
+              "waiting_for_approval",
+              "waiting_for_input",
+              "finalizing",
+            ],
           },
         },
-      ),
+      },
+    ),
     db.collection("axle_cloud_jobs").createIndex({ environmentId: 1, state: 1 }),
-    db
-      .collection("axle_cloud_job_events")
-      .createIndex({ jobId: 1, sequence: 1 }, { unique: true }),
+    db.collection("axle_cloud_jobs").createIndex({ userId: 1, scheduleId: 1, createdAt: -1 }),
+    db.collection("axle_cloud_schedules").createIndex({ userId: 1, createdAt: -1 }),
+    db.collection("axle_cloud_schedules").createIndex({ active: 1, nextRunAt: 1 }),
+    db.collection("axle_cloud_job_events").createIndex({ jobId: 1, sequence: 1 }, { unique: true }),
     db
       .collection("axle_cloud_job_commands")
       .createIndex({ jobId: 1, commandId: 1 }, { unique: true }),

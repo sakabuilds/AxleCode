@@ -24,6 +24,27 @@ describe("cloud store request boundaries", () => {
       }),
     );
   });
+  it("keeps manual jobs approval-required and untagged", async () => {
+    await store.create("user-a", cloudInputFixture);
+    expect(query).toHaveBeenCalledWith(
+      "create",
+      expect.objectContaining({ runtimeMode: "approval-required", scheduleId: null }),
+    );
+  });
+  it("dispatches scheduled jobs full-access and tagged with the schedule", async () => {
+    await store.dispatchScheduled("user-a", cloudInputFixture, "schedule-1");
+    expect(query).toHaveBeenCalledWith(
+      "create",
+      expect.objectContaining({ runtimeMode: "full-access", scheduleId: "schedule-1" }),
+    );
+  });
+  it("lists runs for a schedule under the verified owner", async () => {
+    await store.listBySchedule("user-a", "schedule-1");
+    expect(query).toHaveBeenCalledWith("list-by-schedule", {
+      userId: "user-a",
+      scheduleId: "schedule-1",
+    });
+  });
   it.each([
     "file:///private/repo",
     "ssh://git@github.com/example/repo",

@@ -16,6 +16,11 @@ import type { BillingConfig, CloudJobEntitlement } from "./billingConfig.ts";
 import { resolveCloudJobEntitlement, resolvePlanEntitlement } from "./billingConfig.ts";
 import { CloudJobError } from "./cloudErrors.ts";
 import { createCloudQuery } from "./cloudMongo.ts";
+import {
+  resolveCloudEnvironment,
+  validateCloudModel,
+  validateCloudRepository,
+} from "./cloudTargets.ts";
 import { ensureMongoIndexes } from "./mongo.ts";
 
 export { CloudJobError };
@@ -75,19 +80,18 @@ function canonical(value: unknown): unknown {
   return value;
 }
 
-export function createCloudJobStore(
+/**
+ * Plan precedence: explicit operator assignment in the billing config, then
+ * an active paid subscription recorded from the payment webhook, then the
+ * configured default plan. Only a plan id present in the billing config can
+ * grant entitlements, so a stale subscription cannot widen access.
+ */
+export function createCloudEntitlementResolver(
   query: CloudQuery,
-  config: CloudConfig,
-  billing: BillingConfig | null = null,
-) {
-  /**
-   * Plan precedence: explicit operator assignment in the billing config, then
-   * an active paid subscription recorded from the payment webhook, then the
-   * configured default plan. Only a plan id present in the billing config can
-   * grant entitlements, so a stale subscription cannot widen access.
-   */
-  const entitlementFor = async (userId: string): Promise<CloudJobEntitlement | null> => {
-    if (billing === null) return null;
+  billing: BillingConfig | null,
+): (userId: string) => Promise<CloudJobEntitlement | null> {
+  if (billing === null) return async () => null;
+  return async (userId: string) => {
     if (billing.userPlans?.[userId] !== undefined) {
       return resolveCloudJobEntitlement(billing, userId);
     }
@@ -105,64 +109,74 @@ export function createCloudJobStore(
     }
     return resolveCloudJobEntitlement(billing, userId);
   };
-  const environment = (id: string): CloudEnvironment => {
-    const value = config.environments.find((item) => item.environmentId === id);
-    if (!value) throw new CloudJobError("environment_unavailable");
-    return value;
+}
+
+export function createCloudJobStore(
+  query: CloudQuery,
+  config: CloudConfig,
+  billing: BillingConfig | null = null,
+) {
+  const entitlementFor = createCloudEntitlementResolver(query, billing);
+  const environment = (id: string): CloudEnvironment => resolveCloudEnvironment(config, id);
+  /**
+   * Plan entitlement and the spend gate are resolved server-side; the client
+   * never supplies its plan, balance, or limits.
+   */
+  const createJob = async (
+    userId: string,
+    input: CloudJobCreateInput,
+    runtimeMode: "approval-required" | "full-access",
+    scheduleId: string | null,
+  ): Promise<{ job: CloudJob; created: boolean }> => {
+    const selected = resolveCloudEnvironment(config, input.environmentId);
+    validateCloudRepository(selected, input.repositoryUrl);
+    validateCloudModel(selected, input.providerInstanceId, input.model);
+    const entitlement = await entitlementFor(userId);
+    if (entitlement !== null && !entitlement.cloudJobsEnabled)
+      throw new CloudJobError("cloud_not_entitled");
+    return (await query("create", {
+      userId,
+      jobId: NodeCrypto.randomUUID(),
+      input,
+      inputHash: cloudInputHash(input),
+      limits: selected.limits,
+      maxActiveJobsPerUser:
+        entitlement === null
+          ? config.maxActiveJobsPerUser
+          : Math.min(config.maxActiveJobsPerUser, entitlement.maxConcurrentJobs),
+      planId: entitlement?.planId ?? "operator",
+      monthlyCredits: entitlement?.monthlyCredits ?? 0,
+      creditsPerMinute: billing?.creditsPerMinute ?? 0,
+      runtimeMode,
+      scheduleId,
+    })) as { job: CloudJob; created: boolean };
   };
   return {
     async create(
       userId: string,
       input: CloudJobCreateInput,
     ): Promise<{ job: CloudJob; created: boolean }> {
-      const selected = environment(input.environmentId);
-      let repository: URL;
-      try {
-        repository = new URL(input.repositoryUrl);
-      } catch {
-        throw new CloudJobError("invalid_repository");
-      }
-      if (
-        repository.protocol !== "https:" ||
-        repository.username ||
-        repository.password ||
-        repository.toString() !== input.repositoryUrl ||
-        repository.port ||
-        repository.search ||
-        repository.hash ||
-        !selected.repositoryHosts.includes(repository.hostname) ||
-        !/^\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+(?:\.git)?$/u.test(repository.pathname) ||
-        repository.pathname.split("/").some((part) => part === "." || part === "..")
-      ) {
-        throw new CloudJobError("invalid_repository");
-      }
-      if (
-        !selected.providerModels.some(
-          (item) =>
-            item.providerInstanceId === input.providerInstanceId && item.model === input.model,
-        )
-      ) {
-        throw new CloudJobError("model_unavailable");
-      }
-      // Plan entitlement and the spend gate are resolved server-side; the client
-      // never supplies its plan, balance, or limits.
-      const entitlement = await entitlementFor(userId);
-      if (entitlement !== null && !entitlement.cloudJobsEnabled)
-        throw new CloudJobError("cloud_not_entitled");
-      return (await query("create", {
-        userId,
-        jobId: NodeCrypto.randomUUID(),
-        input,
-        inputHash: cloudInputHash(input),
-        limits: selected.limits,
-        maxActiveJobsPerUser:
-          entitlement === null
-            ? config.maxActiveJobsPerUser
-            : Math.min(config.maxActiveJobsPerUser, entitlement.maxConcurrentJobs),
-        planId: entitlement?.planId ?? "operator",
-        monthlyCredits: entitlement?.monthlyCredits ?? 0,
-        creditsPerMinute: billing?.creditsPerMinute ?? 0,
-      })) as { job: CloudJob; created: boolean };
+      return createJob(userId, input, "approval-required", null);
+    },
+    /**
+     * Dispatches a schedule's run. Scheduled jobs execute full-access so they
+     * finish while the user is offline; the mode is chosen here, never by a
+     * client-supplied input.
+     */
+    async dispatchScheduled(
+      userId: string,
+      input: CloudJobCreateInput,
+      scheduleId: string,
+    ): Promise<{ job: CloudJob; created: boolean }> {
+      return createJob(userId, input, "full-access", scheduleId);
+    },
+    async listBySchedule(
+      userId: string,
+      scheduleId: string,
+    ): Promise<{ jobs: ReadonlyArray<CloudJob> }> {
+      return (await query("list-by-schedule", { userId, scheduleId })) as {
+        jobs: ReadonlyArray<CloudJob>;
+      };
     },
     async list(userId: string): Promise<{ jobs: ReadonlyArray<CloudJob> }> {
       return (await query("list", { userId })) as { jobs: ReadonlyArray<CloudJob> };

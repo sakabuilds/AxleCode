@@ -14,6 +14,7 @@ import { Route as SchedulesRouteImport } from './routes/schedules'
 import { Route as PullRequestsRouteImport } from './routes/pull-requests'
 import { Route as PluginsRouteImport } from './routes/plugins'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as CloudSchedulesRouteImport } from './routes/cloud-schedules'
 import { Route as CloudJobsRouteImport } from './routes/cloud-jobs'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
@@ -62,6 +63,11 @@ const PluginsRoute = PluginsRouteImport.update({
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CloudSchedulesRoute = CloudSchedulesRouteImport.update({
+  id: '/cloud-schedules',
+  path: '/cloud-schedules',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CloudJobsRoute = CloudJobsRouteImport.update({
@@ -189,6 +195,7 @@ const ChatEnvironmentIdThreadIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/cloud-jobs': typeof CloudJobsRoute
+  '/cloud-schedules': typeof CloudSchedulesRoute
   '/onboarding': typeof OnboardingRoute
   '/plugins': typeof PluginsRoute
   '/pull-requests': typeof PullRequestsRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/cloud-jobs': typeof CloudJobsRoute
+  '/cloud-schedules': typeof CloudSchedulesRoute
   '/onboarding': typeof OnboardingRoute
   '/plugins': typeof PluginsRoute
   '/pull-requests': typeof PullRequestsRoute
@@ -249,6 +257,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/cloud-jobs': typeof CloudJobsRoute
+  '/cloud-schedules': typeof CloudSchedulesRoute
   '/onboarding': typeof OnboardingRoute
   '/plugins': typeof PluginsRoute
   '/pull-requests': typeof PullRequestsRoute
@@ -282,6 +291,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/cloud-jobs'
+    | '/cloud-schedules'
     | '/onboarding'
     | '/plugins'
     | '/pull-requests'
@@ -311,6 +321,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/cloud-jobs'
+    | '/cloud-schedules'
     | '/onboarding'
     | '/plugins'
     | '/pull-requests'
@@ -341,6 +352,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_chat'
     | '/cloud-jobs'
+    | '/cloud-schedules'
     | '/onboarding'
     | '/plugins'
     | '/pull-requests'
@@ -373,6 +385,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   CloudJobsRoute: typeof CloudJobsRoute
+  CloudSchedulesRoute: typeof CloudSchedulesRoute
   OnboardingRoute: typeof OnboardingRoute
   PluginsRoute: typeof PluginsRoute
   PullRequestsRoute: typeof PullRequestsRoute
@@ -415,6 +428,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cloud-schedules': {
+      id: '/cloud-schedules'
+      path: '/cloud-schedules'
+      fullPath: '/cloud-schedules'
+      preLoaderRoute: typeof CloudSchedulesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cloud-jobs': {
@@ -663,6 +683,7 @@ const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   CloudJobsRoute: CloudJobsRoute,
+  CloudSchedulesRoute: CloudSchedulesRoute,
   OnboardingRoute: OnboardingRoute,
   PluginsRoute: PluginsRoute,
   PullRequestsRoute: PullRequestsRoute,

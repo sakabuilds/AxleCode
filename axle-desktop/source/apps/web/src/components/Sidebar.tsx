@@ -32,6 +32,7 @@ import { AxleLogo } from "./AxleLogo";
 import { SidebarAccountMenu } from "./account/SidebarAccountMenu";
 import { PluginsSidebarEntry } from "./plugins/PluginsSidebarEntry";
 import { CloudJobsSidebarEntry } from "./cloud/CloudJobsSidebarEntry";
+import { CloudSchedulesSidebarEntry } from "./cloud/CloudSchedulesSidebarEntry";
 import { PullRequestsSidebarEntry } from "./pullRequests/PullRequestsSidebarEntry";
 import { useAtomValue } from "@effect/atom-react";
 import { autoAnimate } from "@formkit/auto-animate";
@@ -3587,6 +3588,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
           </SidebarMenuItem>
           <PullRequestsSidebarEntry />
           <CloudJobsSidebarEntry />
+          <CloudSchedulesSidebarEntry />
           <PluginsSidebarEntry />
           <SidebarMenuItem>
             <SidebarMenuButton

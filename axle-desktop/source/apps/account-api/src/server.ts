@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalConsole:off
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalTimers:off
 import * as NodeFS from "node:fs";
 import * as NodeHttp from "node:http";
 import * as NodeProcess from "node:process";
@@ -12,6 +12,9 @@ import { createAccountDatabase } from "./database.ts";
 import { readBillingConfig } from "./billingConfig.ts";
 import { readCloudConfig } from "./cloudConfig.ts";
 import { createCloudRequestHandler } from "./cloudHandler.ts";
+import { createCloudRevisionResolver } from "./cloudRevision.ts";
+import { createCloudScheduleRunner } from "./cloudScheduleRunner.ts";
+import { createCloudScheduleStore } from "./cloudScheduleStore.ts";
 import { createCloudDatabase, createCloudJobStore } from "./cloudStore.ts";
 import { readGatewayCreditsConfig } from "./gateway.ts";
 import { createAccountRequestHandler, RequestValidationError } from "./handler.ts";
@@ -30,14 +33,34 @@ const authenticate = createAccountAuthenticator(config);
 const cloudConfig = readCloudConfig(NodeProcess.env);
 const billingConfig = readBillingConfig(NodeProcess.env);
 const bachsConfig = readBachsConfig(NodeProcess.env);
-const cloudDatabase = cloudConfig
-  ? createCloudDatabase(mongoDatabase(config.mongodbUri))
-  : null;
-const cloudStore = cloudConfig && cloudDatabase ? createCloudJobStore(cloudDatabase.query, cloudConfig, billingConfig) : null;
+const cloudDatabase = cloudConfig ? createCloudDatabase(mongoDatabase(config.mongodbUri)) : null;
+const cloudStore =
+  cloudConfig && cloudDatabase
+    ? createCloudJobStore(cloudDatabase.query, cloudConfig, billingConfig)
+    : null;
+const cloudScheduleStore =
+  cloudConfig && cloudDatabase
+    ? createCloudScheduleStore(cloudDatabase.query, cloudConfig, billingConfig)
+    : null;
+const scheduleRunner =
+  cloudStore && cloudScheduleStore
+    ? createCloudScheduleRunner({
+        schedules: cloudScheduleStore,
+        jobs: cloudStore,
+        revisions: createCloudRevisionResolver({
+          githubToken: NodeProcess.env.AXLE_GITHUB_TOKEN ?? null,
+        }),
+        log: (message, detail) => console.error(message, detail),
+      })
+    : null;
 const handleCloudRequest = createCloudRequestHandler({
   config: cloudConfig,
   billing: billingConfig,
   store: cloudStore,
+  schedules: cloudScheduleStore,
+  runSchedule: scheduleRunner
+    ? (userId, scheduleId) => scheduleRunner.runNow(userId, scheduleId)
+    : null,
   authenticate,
   touchSession: database.touchSession,
   corsOrigin: config.corsOrigin,
@@ -63,7 +86,10 @@ const server = NodeHttp.createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
     const body = await readBody(request);
     const webRequest = toWebRequest(request, body, url);
-    const result = await handleCloudRequest(webRequest) ?? await handleBillingRequest(webRequest) ?? await handleRequest(webRequest);
+    const result =
+      (await handleCloudRequest(webRequest)) ??
+      (await handleBillingRequest(webRequest)) ??
+      (await handleRequest(webRequest));
     response.writeHead(result.status, Object.fromEntries(result.headers));
     response.end(await result.text());
   } catch (error) {
@@ -83,6 +109,17 @@ await cloudDatabase?.migrate();
 server.listen(config.port, config.host, () => {
   console.log(`Axle account API listening on ${config.host}:${config.port}`);
 });
+if (scheduleRunner) {
+  const runDue = () => {
+    scheduleRunner.runDue().catch((error: unknown) => {
+      console.error("Cloud schedule runner failed", {
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    });
+  };
+  runDue();
+  setInterval(runDue, 30_000).unref();
+}
 
 function toWebRequest(request: NodeHttp.IncomingMessage, body: string, url: URL): Request {
   const headers = new Headers();

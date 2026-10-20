@@ -5,6 +5,7 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  "triggers": { "crons": ["* * * * *"] },
   "services": [
     { "binding": "AXLE_GATEWAY_SERVICE", "service": "axle-gateway" },
     { "binding": "AXLE_AUTH_SERVICE", "service": "axle-auth" },
