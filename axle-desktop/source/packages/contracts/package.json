@@ -1,6 +1,6 @@
 {
   "name": "@axle/contracts",
-  "version": "1.1.31",
+  "version": "1.1.32",
   "private": true,
   "files": [
     "dist"
