@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - Desktop main-process startup probes the on-disk macOS bundle for its code signature before an Effect filesystem service is available.
 import type {
   DesktopAppBranding,
   DesktopAppStageLabel,
