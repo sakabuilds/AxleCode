@@ -1,6 +1,7 @@
-import { CloudJobsApiError } from "@axle/client-runtime/cloud/jobs";
+import { CloudJobsApiError, CloudJobsClient } from "@axle/client-runtime/cloud/jobs";
 import { CloudSchedulesClient } from "@axle/client-runtime/cloud/schedules";
 import { CloudScheduleInput as CloudScheduleInputSchema } from "@axle/contracts";
+import type { CloudEnvironmentSummary } from "@axle/contracts";
 import type {
   CloudJob,
   CloudSchedule,
@@ -51,6 +52,23 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
+import {
+  CloudRepositoryField,
+  CloudSourceRefField,
+  CloudTargetFields,
+  useCloudEnvironmentCatalog,
+  useGitHubBranches,
+  useGitHubRepositories,
+  type CloudEnvironmentCatalogState,
+} from "./cloudTargets";
+import {
+  defaultProviderModel,
+  hostsAllowBranchTracking,
+  isPinnedSourceRef,
+  isValidSourceRef,
+  modelsForProvider,
+  providersForEnvironment,
+} from "./cloudTargets.logic";
 
 const FREQUENCY_OPTIONS: ReadonlyArray<{
   readonly value: CloudScheduleFrequency;
@@ -178,7 +196,7 @@ function emptyDraft(): ScheduleDraft {
     prompt: "",
     environmentId: "linux-standard",
     repositoryUrl: "",
-    sourceRef: "main",
+    sourceRef: "",
     providerInstanceId: "",
     model: "",
     frequency: "daily",
@@ -210,7 +228,10 @@ function draftFromSchedule(schedule: CloudSchedule): ScheduleDraft {
   };
 }
 
-function draftValidationError(draft: ScheduleDraft): string | null {
+function draftValidationError(
+  draft: ScheduleDraft,
+  environment: CloudEnvironmentSummary | null,
+): string | null {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(draft.environmentId.trim())) {
     return "Environment id must start with a letter or digit and use only letters, digits, dashes, or underscores.";
   }
@@ -219,9 +240,15 @@ function draftValidationError(draft: ScheduleDraft): string | null {
     return "Repository URL is required.";
   }
   const sourceRef = draft.sourceRef.trim();
-  if (sourceRef.length === 0 || sourceRef.length > 200) return "Branch or commit is required.";
-  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(sourceRef)) {
-    return "Use a branch, tag, or full commit id without spaces.";
+  if (!isValidSourceRef(sourceRef)) {
+    return "Choose a branch or enter a branch, tag, or full commit id without spaces.";
+  }
+  if (
+    environment !== null &&
+    !hostsAllowBranchTracking(environment.repositoryHosts) &&
+    !isPinnedSourceRef(sourceRef)
+  ) {
+    return "This environment only supports GitHub branch tracking. Paste a full commit SHA.";
   }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(draft.providerInstanceId.trim())) {
     return "Provider instance id must start with a letter or digit and use only letters, digits, dashes, or underscores.";
@@ -523,6 +550,7 @@ function ScheduleDetail({
 function ScheduleDialog({
   open,
   schedule,
+  catalog,
   submitting,
   error,
   onOpenChange,
@@ -530,6 +558,7 @@ function ScheduleDialog({
 }: {
   readonly open: boolean;
   readonly schedule: CloudSchedule | null;
+  readonly catalog: CloudEnvironmentCatalogState;
   readonly submitting: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
@@ -537,6 +566,10 @@ function ScheduleDialog({
 }) {
   const [draft, setDraft] = useState<ScheduleDraft>(emptyDraft);
   const [formError, setFormError] = useState<string | null>(null);
+  const repositoryState = useGitHubRepositories(open);
+  const branchState = useGitHubBranches(draft.repositoryUrl, open);
+  const selectedEnvironment =
+    catalog.environments.find((item) => item.environmentId === draft.environmentId) ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -544,7 +577,46 @@ function ScheduleDialog({
     setFormError(null);
   }, [open, schedule]);
 
-  const validationError = useMemo(() => draftValidationError(draft), [draft]);
+  useEffect(() => {
+    if (!open || catalog.environments.length === 0) return;
+    setDraft((current) => {
+      if (catalog.environments.some((item) => item.environmentId === current.environmentId)) {
+        return current;
+      }
+      const environment = catalog.environments[0];
+      if (environment === undefined) return current;
+      return {
+        ...current,
+        environmentId: environment.environmentId,
+        ...defaultProviderModel(environment),
+      };
+    });
+  }, [catalog.environments, open]);
+
+  useEffect(() => {
+    if (!open || selectedEnvironment === null) return;
+    setDraft((current) => {
+      const fallback = defaultProviderModel(selectedEnvironment);
+      const providerInstanceId = providersForEnvironment(selectedEnvironment).includes(
+        current.providerInstanceId,
+      )
+        ? current.providerInstanceId
+        : fallback.providerInstanceId;
+      const allowedModels = modelsForProvider(selectedEnvironment, providerInstanceId);
+      const model = allowedModels.includes(current.model)
+        ? current.model
+        : (allowedModels[0] ?? fallback.model);
+      if (providerInstanceId === current.providerInstanceId && model === current.model) {
+        return current;
+      }
+      return { ...current, providerInstanceId, model };
+    });
+  }, [open, selectedEnvironment]);
+
+  const validationError = useMemo(
+    () => draftValidationError(draft, selectedEnvironment),
+    [draft, selectedEnvironment],
+  );
 
   const update = useCallback(
     <Key extends keyof ScheduleDraft>(key: Key, value: ScheduleDraft[Key]) => {
@@ -598,76 +670,44 @@ function ScheduleDialog({
               onChange={(event) => update("prompt", event.target.value)}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="cloud-schedule-environment">Environment</Label>
-              <Input
-                id="cloud-schedule-environment"
-                value={draft.environmentId}
-                disabled={submitting}
-                placeholder="linux-standard"
-                onChange={(event) => update("environmentId", event.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cloud-schedule-active">Status</Label>
-              <Select
-                value={draft.active ? "active" : "paused"}
-                onValueChange={(value) => update("active", value === "active")}
-              >
-                <SelectTrigger id="cloud-schedule-active" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="paused">Paused</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="cloud-schedule-repository">Repository URL</Label>
-            <Input
-              id="cloud-schedule-repository"
-              value={draft.repositoryUrl}
-              disabled={submitting}
-              placeholder="https://github.com/you/repo.git"
-              onChange={(event) => update("repositoryUrl", event.target.value)}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="cloud-schedule-source-ref">Branch or commit</Label>
-              <Input
-                id="cloud-schedule-source-ref"
-                value={draft.sourceRef}
-                disabled={submitting}
-                placeholder="main"
-                className="font-mono text-xs"
-                onChange={(event) => update("sourceRef", event.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="cloud-schedule-provider">Provider instance</Label>
-              <Input
-                id="cloud-schedule-provider"
-                value={draft.providerInstanceId}
-                disabled={submitting}
-                placeholder="anthropic-default"
-                onChange={(event) => update("providerInstanceId", event.target.value)}
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="cloud-schedule-model">Model</Label>
-            <Input
-              id="cloud-schedule-model"
-              value={draft.model}
-              disabled={submitting}
-              placeholder="claude-sonnet-4-5"
-              onChange={(event) => update("model", event.target.value)}
-            />
-          </div>
+          <CloudRepositoryField
+            repositoryUrl={draft.repositoryUrl}
+            hosts={selectedEnvironment?.repositoryHosts ?? []}
+            repositories={repositoryState.repositories}
+            bridgeAvailable={repositoryState.bridgeAvailable}
+            busy={repositoryState.busy}
+            error={repositoryState.error}
+            disabled={submitting}
+            onRefresh={repositoryState.refresh}
+            onChange={(value) => {
+              setDraft((current) => ({ ...current, repositoryUrl: value, sourceRef: "" }));
+            }}
+          />
+          <CloudSourceRefField
+            value={draft.sourceRef}
+            supported={branchState.supported}
+            branches={branchState.branches}
+            defaultBranch={branchState.defaultBranch}
+            busy={branchState.busy}
+            error={branchState.error}
+            disabled={submitting}
+            label="Branch or commit"
+            helper="Each run uses the latest commit on this branch, so push changes before the next run. The exact commit is captured when the run starts."
+            onChange={(value) => update("sourceRef", value)}
+          />
+          <CloudTargetFields
+            environments={catalog.environments}
+            environmentsBusy={catalog.busy}
+            environmentsError={catalog.error}
+            environmentId={draft.environmentId}
+            providerInstanceId={draft.providerInstanceId}
+            model={draft.model}
+            disabled={submitting}
+            idPrefix="cloud-schedule"
+            onChange={(patch) => {
+              setDraft((current) => ({ ...current, ...patch }));
+            }}
+          />
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="cloud-schedule-frequency">Repeat</Label>
@@ -760,18 +800,38 @@ function ScheduleDialog({
               </div>
             </div>
           ) : null}
-          <div className="space-y-1.5">
-            <Label htmlFor="cloud-schedule-time-zone">Time zone</Label>
-            <Input
-              id="cloud-schedule-time-zone"
-              value={draft.timeZone}
-              disabled={submitting}
-              placeholder="Africa/Lagos"
-              onChange={(event) => update("timeZone", event.target.value)}
-            />
-            <p className="text-[11px] text-muted-foreground">
-              IANA time zone. Daylight saving changes are applied automatically.
-            </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="cloud-schedule-time-zone">Time zone</Label>
+              <Input
+                id="cloud-schedule-time-zone"
+                value={draft.timeZone}
+                disabled={submitting}
+                placeholder="Africa/Lagos"
+                onChange={(event) => update("timeZone", event.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                IANA time zone. Daylight saving changes are applied automatically.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="cloud-schedule-active">Status</Label>
+              <Select
+                value={draft.active ? "active" : "paused"}
+                onValueChange={(value) => update("active", value === "active")}
+              >
+                <SelectTrigger id="cloud-schedule-active" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="paused">Paused</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Paused schedules keep their settings but do not run.
+              </p>
+            </div>
           </div>
           <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-muted-foreground">
             <span className="block text-[10px] font-medium uppercase tracking-[0.12em]">
@@ -839,6 +899,12 @@ export function CloudSchedulesPage() {
     if (accountApiUrl === null) return null;
     return new CloudSchedulesClient({ baseUrl: accountApiUrl, getToken: readClerkAccountToken });
   }, []);
+  const catalogClient = useMemo(() => {
+    const { accountApiUrl } = resolveCloudPublicConfig();
+    if (accountApiUrl === null) return null;
+    return new CloudJobsClient({ baseUrl: accountApiUrl, getToken: readClerkAccountToken });
+  }, []);
+  const catalog = useCloudEnvironmentCatalog(catalogClient);
 
   const [phase, setPhase] = useState<"loading" | "ready" | "signed_out" | "unconfigured" | "error">(
     client === null ? "unconfigured" : "loading",
@@ -1213,6 +1279,7 @@ export function CloudSchedulesPage() {
       <ScheduleDialog
         open={dialogOpen}
         schedule={editing}
+        catalog={catalog}
         submitting={submitting}
         error={submitError}
         onOpenChange={(open) => {
