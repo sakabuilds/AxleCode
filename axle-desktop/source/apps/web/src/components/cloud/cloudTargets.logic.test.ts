@@ -9,6 +9,7 @@ import {
   humanizeIdentifier,
   isPinnedSourceRef,
   isValidSourceRef,
+  mergeAxleCatalogModels,
   modelsForProvider,
   providersForEnvironment,
   repositoryFullNameFromUrl,
@@ -80,6 +81,23 @@ describe("cloud target helpers", () => {
       providerInstanceId: "anthropic-default",
       model: "claude-sonnet-4-5",
     });
+  });
+
+  it("adds the live Axle catalog to Axle-gateway providers only", () => {
+    const withAxle: CloudEnvironmentSummary = {
+      ...environment,
+      providerModels: [
+        ...environment.providerModels,
+        { providerInstanceId: "axle-default", model: "axle/glm-5.3" },
+      ],
+    };
+    const merged = mergeAxleCatalogModels([withAxle], [{ id: "glm-5.3" }, { id: "gemma-4" }])[0]!;
+    expect(modelsForProvider(merged, "axle-default")).toEqual(["axle/glm-5.3", "axle/gemma-4"]);
+    expect(modelsForProvider(merged, "anthropic-default")).toEqual([
+      "claude-sonnet-4-5",
+      "claude-opus-4-1",
+    ]);
+    expect(mergeAxleCatalogModels([environment], [{ id: "gemma-4" }])[0]).toBe(environment);
   });
 
   it("recognizes refs and pinned commits", () => {
