@@ -1,8 +1,7 @@
 use axle_agent::{AgentLoop, AgentLoopOptions, ApprovalConfig, InteractionMode};
 use axle_ai::{
-    codex_auth_status, login_codex, logout_codex, AnthropicProvider, AssistantMessageEvent,
-    CodexProvider, CompletionOptions, ContentPart, GeminiProvider, LlmProvider, Message,
-    OpenAiProvider, OpenRouterProvider, DEFAULT_OPENROUTER_BASE_URL,
+    AnthropicProvider, AssistantMessageEvent, CompletionOptions, ContentPart, GeminiProvider,
+    LlmProvider, Message, OpenAiProvider, OpenRouterProvider, DEFAULT_OPENROUTER_BASE_URL,
 };
 use axle_config::{AgentProfile, DEFAULT_CONTEXT_WINDOW_TOKENS};
 use axle_extensions::{AxleEvent, EventBus, JsExtensionRunner};
@@ -38,22 +37,6 @@ const DEFAULT_AXLE_API_KEY: &str = "axle-desktop-free";
 #[command(name = "axle")]
 #[command(about = "Axle AI Coding Agent", long_about = None)]
 struct Cli {
-    #[arg(long, help = "Sign in with a ChatGPT Codex subscription")]
-    codex_login: bool,
-
-    #[arg(long, help = "Print ChatGPT Codex authentication status as JSON")]
-    codex_auth_status: bool,
-
-    #[arg(
-        long,
-        hide = true,
-        help = "Refresh the saved ChatGPT plan-usage session"
-    )]
-    codex_auth_refresh: bool,
-
-    #[arg(long, help = "Remove the saved ChatGPT Codex authentication")]
-    codex_logout: bool,
-
     #[arg(short, long, help = "Prompt to execute directly")]
     prompt: Option<String>,
 
@@ -1073,24 +1056,6 @@ async fn main() -> anyhow::Result<()> {
     // creation, or any tool work. Never degrade supervised execution to full access.
     let approval = resolve_approval_config(&cli)?;
 
-    if cli.codex_login {
-        println!("{}", serde_json::to_string(&login_codex().await?)?);
-        return Ok(());
-    }
-    if cli.codex_auth_refresh {
-        let _ = axle_ai::codex_auth::valid_codex_credentials().await?;
-        println!("{}", serde_json::to_string(&codex_auth_status())?);
-        return Ok(());
-    }
-    if cli.codex_auth_status {
-        println!("{}", serde_json::to_string(&codex_auth_status())?);
-        return Ok(());
-    }
-    if cli.codex_logout {
-        println!("{}", serde_json::to_string(&logout_codex().await?)?);
-        return Ok(());
-    }
-
     if !cli.json && !cli.json_stream {
         tracing_subscriber::fmt()
             .with_env_filter(EnvFilter::from_default_env().add_directive("axle=info".parse()?))
@@ -1139,7 +1104,6 @@ async fn main() -> anyhow::Result<()> {
         compose_append_prompt(cli_append_prompt.as_deref(), agent_profile.as_ref());
 
     let provider: Arc<dyn LlmProvider> = match effective_provider.to_lowercase().as_str() {
-        "openai-codex" | "codex" | "chatgpt" => Arc::new(CodexProvider::new()),
         "anthropic" => {
             let key = resolve_api_key(cli.api_key.as_deref(), "ANTHROPIC_API_KEY")?;
             let base_url = configured_base_url(
