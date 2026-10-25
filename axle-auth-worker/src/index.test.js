@@ -37,13 +37,12 @@ test("uses the Bearer HTTP scheme for Slack bot and user tokens", () => {
   assert.equal(authorizationHeader({ tokenType: "bearer", accessToken: "provider-token" }), "bearer provider-token");
 });
 
-test("plugin catalog is the supported eight services", () => {
+test("plugin catalog is the supported seven services", () => {
   assert.deepEqual(PLUGIN_IDS, [
     "github",
     "jira",
     "notion",
     "gmail",
-    "outlook",
     "slack",
     "sentry",
     "figma",
@@ -65,7 +64,6 @@ test("health endpoint reports configured state without leaking secret", async ()
     tokenEncryptionConfigured: false,
     providerClientSecretsConfigured: {
       gmail: false,
-      outlook: false,
       slack: false,
       jira: false,
       notion: false,
@@ -76,6 +74,16 @@ test("health endpoint reports configured state without leaking secret", async ()
   });
   assert.equal(JSON.stringify(body).includes(env.GITHUB_CLIENT_SECRET), false);
   assert.equal(response.headers.get("cache-control"), "no-store, max-age=0");
+});
+
+test("health treats a public OAuth client as configured without a secret", async () => {
+  const response = await handleRequest(
+    new Request("https://auth.example/health"),
+    { ...env, SENTRY_CLIENT_ID: "sentry-public-client" },
+  );
+  const body = await response.json();
+  assert.equal(body.providerClientSecretsConfigured.sentry, true);
+  assert.equal(body.providerClientSecretsConfigured.slack, false);
 });
 
 test("creates stable anonymous plugin sessions without Clerk authentication", async () => {
