@@ -53,12 +53,7 @@ import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import {
   getModelSelectionContextWindowTokens,
   isAuthoritativeContextWindowSource,
-  withModelSelectionContextWindow,
 } from "../../provider/modelContextStability.ts";
-import {
-  isCodexOAuthModel,
-  normalizeCodexOAuthEffectiveContextWindowTokens,
-} from "../../provider/codexContextWindow.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 
@@ -446,19 +441,7 @@ const make = Effect.gen(function* () {
     readonly selection: ModelSelection;
     readonly thread: OrchestrationThread;
   }) {
-    const rawSelection = input.selection;
-    const selection = isCodexOAuthModel(rawSelection.model)
-      ? (() => {
-          const requested = getModelSelectionContextWindowTokens(rawSelection);
-          const effective = normalizeCodexOAuthEffectiveContextWindowTokens(
-            rawSelection.model,
-            requested,
-          );
-          return effective === undefined
-            ? rawSelection
-            : withModelSelectionContextWindow(rawSelection, effective, "oauth");
-        })()
-      : rawSelection;
+    const selection = input.selection;
     if (isAuthoritativeContextWindowSource(selection.contextWindowSource)) {
       return selection;
     }
@@ -573,16 +556,12 @@ const make = Effect.gen(function* () {
         Effect.map((info) => ({ instanceId: storedInstanceId, info, migrated: false }) as const),
         Effect.catch((originalError) =>
           providerService.getInstanceInfo(AXLE_INSTANCE_ID).pipe(
-            Effect.map(
-              (info) => ({ instanceId: AXLE_INSTANCE_ID, info, migrated: true }) as const,
-            ),
+            Effect.map((info) => ({ instanceId: AXLE_INSTANCE_ID, info, migrated: true }) as const),
             Effect.mapError(() => originalError),
           ),
         ),
       );
-    const currentResolution = yield* resolveInstanceWithAxleMigration(
-      storedCurrentInstanceId,
-    ).pipe(
+    const currentResolution = yield* resolveInstanceWithAxleMigration(storedCurrentInstanceId).pipe(
       Effect.mapError(
         () =>
           new ProviderAdapterRequestError({
