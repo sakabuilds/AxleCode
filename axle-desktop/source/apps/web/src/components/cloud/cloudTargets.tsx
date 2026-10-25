@@ -2,6 +2,7 @@ import { CloudJobsApiError, type CloudJobsClient } from "@axle/client-runtime/cl
 import type { CloudEnvironmentSummary } from "@axle/contracts";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { fetchAxleModelRates } from "../../account/axleGateway";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
@@ -10,6 +11,7 @@ import {
   filterRepositoriesByHosts,
   humanizeIdentifier,
   isPinnedSourceRef,
+  mergeAxleCatalogModels,
   modelsForProvider,
   providersForEnvironment,
   repositoryFullNameFromUrl,
@@ -74,11 +76,10 @@ export function useCloudEnvironmentCatalog(
     if (client === null) return;
     let cancelled = false;
     setBusy(true);
-    void client
-      .listEnvironments()
-      .then((next) => {
+    void Promise.all([client.listEnvironments(), fetchAxleModelRates().catch(() => [])])
+      .then(([next, axleModels]) => {
         if (cancelled) return;
-        setEnvironments(next);
+        setEnvironments(mergeAxleCatalogModels(next, axleModels));
         setError(null);
       })
       .catch((cause: unknown) => {
