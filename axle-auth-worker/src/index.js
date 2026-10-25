@@ -14,6 +14,7 @@ import { verifyAccessToken } from "./identity.js";
 
 const GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token";
 const GITHUB_API = "https://api.github.com";
+const FIGMA_REFRESH_URL = "https://api.figma.com/v1/oauth/refresh";
 const GITHUB_API_VERSION = "2022-11-28";
 const MAX_BODY_BYTES = 64 * 1024;
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -41,7 +42,7 @@ const PROVIDERS = {
     clientSecret: "SLACK_CLIENT_SECRET",
     authorizeUrl: "https://slack.com/oauth/v2/authorize",
     tokenUrl: "https://slack.com/api/oauth.v2.access",
-    scopes: ["channels:read", "channels:history", "groups:read", "groups:history", "chat:write", "users:read"],
+    scopes: ["channels:read", "channels:history", "channels:join", "groups:read", "groups:history", "chat:write", "users:read"],
     pkce: false,
   },
   jira: {
@@ -722,6 +723,16 @@ async function handlePluginCallback(request, env, pluginId) {
     const provider = requireProviderConfig(env, pluginId);
     const token = await exchangeProviderCode(env, pluginId, provider, code, pending.redirectUri, pending.verifier);
     await saveConnection(env, pending.userId, pluginId, token);
+    if (pluginId === "slack") {
+      await joinSlackPublicChannels(token).catch((error) => {
+        console.error(
+          JSON.stringify({
+            event: "slack_auto_join_failed",
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      });
+    }
     return new Response(callbackHtml(pluginId, true, "Connected."), { headers: { ...securityHeaders(), "Content-Type": "text/html; charset=utf-8" } });
   } catch (error) {
     return new Response(callbackHtml(pluginId, false, error instanceof Error ? error.message : "OAuth exchange failed."), { status: 502, headers: { ...securityHeaders(), "Content-Type": "text/html; charset=utf-8" } });
@@ -766,6 +777,16 @@ async function refreshProviderToken(env, pluginId, connection) {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({ grant_type: "refresh_token", client_id: provider.clientId, client_secret: provider.clientSecret, refresh_token: connection.refreshToken }),
+    });
+  } else if (pluginId === "figma") {
+    response = await fetch(FIGMA_REFRESH_URL, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Basic ${btoa(`${provider.clientId}:${provider.clientSecret}`)}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ refresh_token: connection.refreshToken }),
     });
   } else {
     const fields = {
@@ -875,6 +896,85 @@ async function apiJson(url, connection, init = {}, extraHeaders = {}) {
   return value;
 }
 
+const SLACK_API = "https://slack.com/api";
+const SLACK_AUTO_JOIN_LIMIT = 200;
+
+function slackErrorCode(error) {
+  const message = error instanceof Error ? error.message : "";
+  const match = /^Slack API error: ([a-z_]+)$/u.exec(message);
+  return match ? match[1] : null;
+}
+
+async function joinSlackChannel(connection, channel, friendly = true) {
+  try {
+    await apiJson(`${SLACK_API}/conversations.join`, connection, {
+      method: "POST",
+      body: JSON.stringify({ channel }),
+    });
+  } catch (error) {
+    const code = slackErrorCode(error);
+    if (code === "already_in_channel") return;
+    if (!friendly) throw error;
+    if (code === "missing_scope") {
+      throw new Error(
+        "Reconnect Slack to grant the channels:join permission, or invite the Axle app to this channel manually.",
+      );
+    }
+    if (code === "is_archived") throw new Error("This Slack channel is archived.");
+    if (code === "method_not_supported_for_channel_type" || code === "channel_not_found") {
+      throw new Error(
+        "The Axle app is not in this private channel. Invite it in Slack (channel details > Integrations > Add apps) and retry.",
+      );
+    }
+    throw new Error("The Axle app could not join this Slack channel. Invite it in Slack and retry.");
+  }
+}
+
+// Slack installs a bot but never adds it to channels. Join public channels
+// right after OAuth so the integration can read and post without a manual
+// invite; private channels still require the user to add the app in Slack.
+async function joinSlackPublicChannels(connection) {
+  let cursor = "";
+  let joined = 0;
+  const deadline = Date.now() + 10_000;
+  for (let page = 0; page < 25 && joined < SLACK_AUTO_JOIN_LIMIT && Date.now() < deadline; page += 1) {
+    const params = new URLSearchParams({
+      types: "public_channel",
+      exclude_archived: "true",
+      limit: "200",
+    });
+    if (cursor) params.set("cursor", cursor);
+    const value = await apiJson(`${SLACK_API}/conversations.list?${params.toString()}`, connection);
+    const channels = Array.isArray(value.channels) ? value.channels : [];
+    for (const channel of channels) {
+      if (joined >= SLACK_AUTO_JOIN_LIMIT || Date.now() >= deadline) break;
+      if (typeof channel?.id !== "string" || channel.is_member === true) continue;
+      try {
+        await joinSlackChannel(connection, channel.id, false);
+        joined += 1;
+      } catch (error) {
+        const code = slackErrorCode(error);
+        if (code === "missing_scope" || code === "ratelimited" || code === "invalid_auth" || code === "not_authed") {
+          return joined;
+        }
+      }
+    }
+    cursor = typeof value.response_metadata?.next_cursor === "string" ? value.response_metadata.next_cursor : "";
+    if (!cursor) break;
+  }
+  return joined;
+}
+
+async function withSlackChannelMembership(connection, channel, request) {
+  try {
+    return await request();
+  } catch (error) {
+    if (slackErrorCode(error) !== "not_in_channel") throw error;
+    await joinSlackChannel(connection, channel);
+    return await request();
+  }
+}
+
 function rfc822Raw(input) {
   const to = inputString(input, "to");
   const subject = inputString(input, "subject");
@@ -946,10 +1046,19 @@ async function executePluginAction(env, session, pluginId, action, input) {
   }
 
   if (pluginId === "slack") {
-    const base = "https://slack.com/api";
-    if (action === "list_channels") return apiJson(`${base}/conversations.list?limit=${inputNumber(input, "limit", 100, 1, 200)}&types=public_channel,private_channel`, connection);
-    if (action === "read_channel") return apiJson(`${base}/conversations.history?channel=${encodeURIComponent(inputString(input, "channel"))}&limit=${inputNumber(input, "limit", 50, 1, 100)}`, connection);
-    if (action === "send_message") return apiJson(`${base}/chat.postMessage`, connection, { method: "POST", body: JSON.stringify({ channel: inputString(input, "channel"), text: inputString(input, "text") }) });
+    if (action === "list_channels") return apiJson(`${SLACK_API}/conversations.list?limit=${inputNumber(input, "limit", 100, 1, 200)}&types=public_channel,private_channel`, connection);
+    if (action === "read_channel" || action === "send_message") {
+      const channel = inputString(input, "channel");
+      if (action === "read_channel") {
+        return withSlackChannelMembership(connection, channel, () =>
+          apiJson(`${SLACK_API}/conversations.history?channel=${encodeURIComponent(channel)}&limit=${inputNumber(input, "limit", 50, 1, 100)}`, connection),
+        );
+      }
+      const text = inputString(input, "text");
+      return withSlackChannelMembership(connection, channel, () =>
+        apiJson(`${SLACK_API}/chat.postMessage`, connection, { method: "POST", body: JSON.stringify({ channel, text }) }),
+      );
+    }
   }
 
   if (pluginId === "jira") {
