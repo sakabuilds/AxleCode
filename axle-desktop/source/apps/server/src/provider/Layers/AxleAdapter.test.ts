@@ -15,10 +15,8 @@ import {
   makeAxleAssistantSegmenter,
   makeAxleProcessArgs,
   makeAxleStreamDecoder,
-  normalizeAxleContextWindow,
   parseAxleContextWindowTokens,
   formatAxleProcessError,
-  resolveAxleRuntimeContextWindow,
   captureAxleSessionIdentity,
   readAxleSessionBinding,
   resolveAxleSessionId,
@@ -417,7 +415,7 @@ describe("Axle session continuity", () => {
     ).toContain("repaired the session history automatically");
     expect(
       formatAxleProcessError(
-        "agent_router API error (HTTP 400 Bad Request): {\"error\":{\"message\":\"Invalid schema for function 'ls': null is not of type \\\"array\\\"\"}}",
+        'agent_router API error (HTTP 400 Bad Request): {"error":{"message":"Invalid schema for function \'ls\': null is not of type \\"array\\""}}',
         "project",
       ),
     ).toContain("tool schemas");
@@ -433,7 +431,7 @@ describe("Axle session continuity", () => {
     const args = makeAxleProcessArgs({
       cwd: "C:\\workspace",
       prompt: "Name this thread",
-      model: "openai-codex/gpt-5.6-sol",
+      model: "openai/gpt-5.6-sol",
       textOnly: true,
     });
 
@@ -502,7 +500,7 @@ describe("Axle session continuity", () => {
     const args = makeAxleProcessArgs({
       cwd: "C:\\workspace",
       prompt,
-      model: "openai-codex/gpt-5.6-sol",
+      model: "openai/gpt-5.6-sol",
       reasoningEffort: "xhigh",
     });
 
@@ -526,41 +524,6 @@ describe("Axle session continuity", () => {
     expect(parseAxleContextWindowTokens("unsupported")).toBeUndefined();
   });
 
-  it("caps only the OAuth Codex context window", () => {
-    const environment = { AXLE_CODEX_HOME: "C:\\axle-test-codex-home-that-does-not-exist" };
-    expect(normalizeAxleContextWindow("openai-codex/gpt-5.6-sol", "1m", environment)).toBe(
-      "258400",
-    );
-    expect(normalizeAxleContextWindow("openai/gpt-5.6-sol", "1m", environment)).toBe("1m");
-    expect(normalizeAxleContextWindow("openai-codex/gpt-5.6-sol", "128k", environment)).toBe(
-      "128k",
-    );
-  });
-
-  it("does not pass an unverified Models.dev context window to the runtime", () => {
-    const environment = { AXLE_CODEX_HOME: "C:\\axle-test-codex-home-that-does-not-exist" };
-    expect(
-      resolveAxleRuntimeContextWindow(
-        "openai-codex/gpt-5.6-sol",
-        {
-          instanceId: ProviderInstanceId.make("axle"),
-          model: "openai-codex/gpt-5.6-sol",
-          contextWindowSource: "models.dev",
-          options: [{ id: "contextWindow", value: "1m" }],
-        },
-        environment,
-      ),
-    ).toBe("258400");
-    expect(
-      resolveAxleRuntimeContextWindow("openai-codex/gpt-5.6-sol", {
-        instanceId: ProviderInstanceId.make("axle"),
-        model: "openai-codex/gpt-5.6-sol",
-        contextWindowSource: "provider",
-        options: [{ id: "contextWindow", value: "258400" }],
-      }),
-    ).toBe("258400");
-  });
-
   it("maps the provider default mode to Axle's build mode", () => {
     const args = makeAxleProcessArgs({
       cwd: "C:\\workspace",
@@ -576,7 +539,7 @@ describe("Axle session continuity", () => {
     const args = makeAxleProcessArgs({
       cwd: "C:\\workspace",
       prompt: "Describe this image",
-      model: "openai-codex/gpt-5.6-sol",
+      model: "openai/gpt-5.6-sol",
       images: [{ path: "C:\\state\\attachments\\image.png", mimeType: "image/png" }],
     });
 
