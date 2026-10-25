@@ -367,7 +367,6 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
-        AXLE_CODEX_HOME: environment.path.join(environment.stateDir, "chatgpt-auth"),
         AXLE_BINARY_PATH:
           configuredAxleBinaryPath ||
           (environment.isPackaged
@@ -492,13 +491,6 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       forwardedEnvNames.push(name);
     }
   }
-  const windowsAuthHome = environment.path.join(environment.stateDir, "chatgpt-auth");
-  const wslAuthHome = yield* wslEnvironment.windowsToWslPath(distroForConfig, windowsAuthHome);
-  if (Option.isSome(wslAuthHome)) {
-    forwardedEnv.AXLE_CODEX_HOME = wslAuthHome.value;
-    forwardedEnvNames.push("AXLE_CODEX_HOME");
-  }
-
   // Build an explicit copy of process.env minus T3CODE_HOME (dev-runner
   // exports the Windows-side base dir for the primary; if it leaks into
   // the WSL backend the Linux side ends up sharing C:\Users\...\.t3 via
@@ -506,7 +498,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   // their env-ids collide).
   const parentEnvWithoutT3Home: Record<string, string | undefined> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (key === "T3CODE_HOME" || key === "AXLE_CODEX_HOME") continue;
+    if (key === "T3CODE_HOME") continue;
     parentEnvWithoutT3Home[key] = value;
   }
   const wslEnv = mergeWslEnv(parentEnvWithoutT3Home.WSLENV, forwardedEnvNames);
