@@ -90,18 +90,18 @@ test("admin analytics endpoint requires its dedicated bearer secret", async () =
 test("OAuth callback keeps the provider token-exchange error visible", async () => {
   const store = makeKv();
   await store.put(
-    "oauth:test-outlook-state",
+    "oauth:test-gmail-state",
     JSON.stringify({
       userId: "user_test",
-      pluginId: "outlook",
-      redirectUri: "https://auth.example/v1/plugins/outlook/callback",
+      pluginId: "gmail",
+      redirectUri: "https://auth.example/v1/plugins/gmail/callback",
       verifier: "verifier_test",
     }),
   );
   const env = {
     PLUGIN_STORE: store,
-    OUTLOOK_CLIENT_ID: "client-id",
-    OUTLOOK_CLIENT_SECRET: "client-secret",
+    GMAIL_CLIENT_ID: "client-id",
+    GMAIL_CLIENT_SECRET: "client-secret",
   };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
@@ -112,7 +112,7 @@ test("OAuth callback keeps the provider token-exchange error visible", async () 
   try {
     const response = await handleWrappedRequest(
       new Request(
-        "https://auth.example/v1/plugins/outlook/callback?code=code-12345678&state=test-outlook-state",
+        "https://auth.example/v1/plugins/gmail/callback?code=code-12345678&state=test-gmail-state",
       ),
       env,
     );
