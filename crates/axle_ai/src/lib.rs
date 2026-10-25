@@ -1,6 +1,4 @@
 pub mod anthropic;
-pub mod codex;
-pub mod codex_auth;
 pub mod formatting;
 pub mod gemini;
 pub mod openai;
@@ -11,8 +9,6 @@ mod stream_parser;
 pub mod types;
 
 pub use anthropic::AnthropicProvider;
-pub use codex::CodexProvider;
-pub use codex_auth::{codex_auth_status, login_codex, logout_codex, CodexAuthStatus};
 pub use gemini::GeminiProvider;
 pub use openai::OpenAiProvider;
 pub use openrouter::{OpenRouterProvider, DEFAULT_OPENROUTER_BASE_URL};
