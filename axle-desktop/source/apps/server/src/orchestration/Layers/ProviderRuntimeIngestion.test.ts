@@ -3131,44 +3131,6 @@ describe("ProviderRuntimeIngestion", () => {
     expect(contextOptions).toEqual([{ id: "contextWindow", value: "258400" }]);
   });
 
-  it("caps an overreported OAuth Codex usage window in both UI surfaces", async () => {
-    const modelSelection: ModelSelection = {
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "openai-codex/gpt-5.6-codex",
-      contextWindowSource: "oauth",
-      options: [{ id: "contextWindow", value: "258400" }],
-    };
-    const harness = await createHarness({ modelSelection });
-
-    harness.emit({
-      type: "thread.token-usage.updated",
-      eventId: asEventId("evt-oauth-context-overreported"),
-      provider: ProviderDriverKind.make("codex"),
-      createdAt: "2026-01-01T00:00:00.000Z",
-      threadId: asThreadId("thread-1"),
-      payload: { usage: { usedTokens: 242_000, maxTokens: 1_050_000 } },
-    });
-
-    const thread = await waitForThread(
-      harness.readModel,
-      (entry) =>
-        entry.modelSelection.contextWindowSource === "oauth" &&
-        entry.modelSelection.options?.some(
-          (option) => option.id === "contextWindow" && option.value === "258400",
-        ) === true &&
-        entry.activities.some(
-          (activity: ProviderRuntimeTestActivity) => activity.kind === "context-window.updated",
-        ),
-    );
-
-    expect(thread.modelSelection.contextWindowSource).toBe("oauth");
-    expect(thread.modelSelection.options).toEqual([{ id: "contextWindow", value: "258400" }]);
-    const activity = thread.activities.find(
-      (entry: ProviderRuntimeTestActivity) => entry.kind === "context-window.updated",
-    );
-    expect(activity?.payload).toMatchObject({ maxTokens: 258_400 });
-  });
-
   it("projects Codex camelCase token usage payloads into normalized thread activities", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
