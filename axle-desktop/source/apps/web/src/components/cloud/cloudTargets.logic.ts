@@ -71,6 +71,41 @@ export function modelsForProvider(
     .map((item) => item.model);
 }
 
+/**
+ * Environments whose provider instance already speaks the Axle gateway expose
+ * the whole live Axle catalog, not just the one model in operator config.
+ */
+export function mergeAxleCatalogModels(
+  environments: ReadonlyArray<CloudEnvironmentSummary>,
+  models: ReadonlyArray<{ readonly id: string }>,
+): ReadonlyArray<CloudEnvironmentSummary> {
+  if (models.length === 0) return environments;
+  const axleModels = models.map((model) => `axle/${model.id}`);
+  return environments.map((environment) => {
+    const axleProviders = new Set(
+      environment.providerModels
+        .filter((item) => item.model.startsWith("axle/"))
+        .map((item) => item.providerInstanceId),
+    );
+    if (axleProviders.size === 0) return environment;
+    const known = new Set(
+      environment.providerModels.map((item) => `${item.providerInstanceId}\0${item.model}`),
+    );
+    const additions: Array<{ providerInstanceId: string; model: string }> = [];
+    for (const providerInstanceId of axleProviders) {
+      for (const model of axleModels) {
+        const key = `${providerInstanceId}\0${model}`;
+        if (known.has(key)) continue;
+        known.add(key);
+        additions.push({ providerInstanceId, model });
+      }
+    }
+    return additions.length === 0
+      ? environment
+      : { ...environment, providerModels: [...environment.providerModels, ...additions] };
+  });
+}
+
 export function defaultProviderModel(environment: CloudEnvironmentSummary | null): {
   readonly providerInstanceId: string;
   readonly model: string;
