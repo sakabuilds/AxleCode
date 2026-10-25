@@ -13,7 +13,6 @@ import {
   ThreadId,
   type ChatAttachment,
   type CanonicalRequestType,
-  type ModelSelection,
   type ProviderApprovalDecision,
   type ToolLifecycleItemType,
   TurnId,
@@ -31,10 +30,6 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { getModelSelectionStringOptionValue } from "@axle/shared/model";
 import { errorTag } from "@axle/shared/observability";
-import {
-  isCodexOAuthModel,
-  normalizeCodexOAuthEffectiveContextWindowTokens,
-} from "../codexContextWindow.ts";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { T3_CODE_PULL_REQUEST_REVIEW_INSTRUCTIONS } from "../CodexDeveloperInstructions.ts";
@@ -174,7 +169,11 @@ export function formatAxleProcessError(
   if (/429|rate limit|too many requests/iu.test(detail)) {
     return "The provider is rate-limiting requests. Axle retried automatically; wait a few seconds and send the message again.";
   }
-  if (/http 5\d\d|internal server error|bad gateway|service unavailable|gateway timeout/iu.test(detail)) {
+  if (
+    /http 5\d\d|internal server error|bad gateway|service unavailable|gateway timeout/iu.test(
+      detail,
+    )
+  ) {
     return "The provider had a temporary server error and Axle's automatic retries were exhausted. Try again in a few seconds.";
   }
   return detail;
@@ -680,45 +679,6 @@ export function parseAxleContextWindowTokens(value: string | undefined): number 
         : 1;
   const tokens = amount * multiplier;
   return Number.isSafeInteger(tokens) && tokens > 0 ? tokens : undefined;
-}
-
-export function normalizeAxleContextWindow(
-  model: string,
-  value: string | undefined,
-  environment: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  if (!isCodexOAuthModel(model)) return value;
-  const requestedTokens = parseAxleContextWindowTokens(value);
-  const effectiveTokens = normalizeCodexOAuthEffectiveContextWindowTokens(
-    model,
-    requestedTokens,
-    environment,
-  );
-  if (effectiveTokens === undefined) return undefined;
-  if (effectiveTokens % 1_000_000 === 0) return `${effectiveTokens / 1_000_000}m`;
-  if (effectiveTokens % 1_000 === 0) return `${effectiveTokens / 1_000}k`;
-  return `${effectiveTokens}`;
-}
-
-/**
- * Models.dev can describe a model when the provider has not exposed a
- * capability yet. Keep that fallback visible for non-OAuth providers, but use
- * the account-safe Codex OAuth fallback in the runtime even when the catalog
- * only supplied Models.dev metadata.
- */
-export function resolveAxleRuntimeContextWindow(
-  model: string,
-  selection: ModelSelection | undefined,
-  environment: NodeJS.ProcessEnv = process.env,
-): string | undefined {
-  if (selection?.contextWindowSource === "models.dev" && !isCodexOAuthModel(model)) {
-    return undefined;
-  }
-  return normalizeAxleContextWindow(
-    model,
-    selection ? getModelSelectionStringOptionValue(selection, "contextWindow") : undefined,
-    environment,
-  );
 }
 
 const AXLE_SESSION_ID_PATTERN =
@@ -1746,22 +1706,16 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
             threadId: input.threadId,
             ...(workspaceContext === "none" ? {} : { cwd: runtimeCwd }),
             ...(input.modelSelection?.model ? { model: input.modelSelection.model } : {}),
-            ...(input.modelSelection?.contextWindowSource !== "models.dev" ||
-            isCodexOAuthModel(input.modelSelection?.model)
+            ...(input.modelSelection?.contextWindowSource !== "models.dev"
               ? (() => {
                   const selectedContext = input.modelSelection
-                    ? normalizeAxleContextWindow(
-                        input.modelSelection.model,
-                        getModelSelectionStringOptionValue(input.modelSelection, "contextWindow"),
-                      )
+                    ? getModelSelectionStringOptionValue(input.modelSelection, "contextWindow")
                     : undefined;
                   const selectedContextTokens = parseAxleContextWindowTokens(selectedContext);
                   return selectedContext !== undefined
                     ? {
                         contextWindowTokens: selectedContextTokens,
-                        contextWindowSource: isCodexOAuthModel(input.modelSelection?.model)
-                          ? ("oauth" as const)
-                          : ("provider" as const),
+                        contextWindowSource: "provider" as const,
                       }
                     : {};
                 })()
@@ -1822,17 +1776,14 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
           const reasoningEffort = input.modelSelection
             ? getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort")
             : undefined;
-          const contextWindow = resolveAxleRuntimeContextWindow(
-            model,
-            input.modelSelection,
-            options.environment,
-          );
+          const contextWindow =
+            input.modelSelection?.contextWindowSource === "models.dev"
+              ? undefined
+              : input.modelSelection
+                ? getModelSelectionStringOptionValue(input.modelSelection, "contextWindow")
+                : undefined;
           const contextWindowTokens = parseAxleContextWindowTokens(contextWindow);
-          const effectiveContextWindowTokens = normalizeCodexOAuthEffectiveContextWindowTokens(
-            model,
-            contextWindowTokens,
-            options.environment,
-          );
+          const effectiveContextWindowTokens = contextWindowTokens;
           const interactionMode = input.interactionMode ?? "default";
           state.nextTurn += 1;
           const turnId = TurnId.make(`axle-${state.nextTurn}-${NodeCrypto.randomUUID()}`);
@@ -1859,9 +1810,7 @@ export const makeAxleAdapter = (options: AxleAdapterOptions) =>
               ...(effectiveContextWindowTokens !== undefined
                 ? {
                     contextWindowTokens: effectiveContextWindowTokens,
-                    contextWindowSource: isCodexOAuthModel(model)
-                      ? ("oauth" as const)
-                      : ("provider" as const),
+                    contextWindowSource: "provider" as const,
                   }
                 : {}),
               updatedAt: new Date().toISOString(),
