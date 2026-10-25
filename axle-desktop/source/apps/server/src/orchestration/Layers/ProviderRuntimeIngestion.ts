@@ -44,10 +44,6 @@ import {
   getModelSelectionContextWindowTokens,
   withModelSelectionContextWindow,
 } from "../../provider/modelContextStability.ts";
-import {
-  isCodexOAuthModel,
-  normalizeCodexOAuthEffectiveContextWindowTokens,
-} from "../../provider/codexContextWindow.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -256,23 +252,11 @@ function assistantSegmentMessageId(baseKey: string, segmentIndex: number): Messa
 }
 function buildContextWindowActivityPayload(
   event: ProviderRuntimeEvent,
-  selection?: ModelSelection,
 ): ThreadTokenUsageSnapshot | undefined {
   if (event.type !== "thread.token-usage.updated" || event.payload.usage.usedTokens <= 0) {
     return undefined;
   }
-  const maxTokens = event.payload.usage.maxTokens;
-  if (
-    maxTokens === undefined ||
-    (selection?.contextWindowSource !== "oauth" && !isCodexOAuthModel(selection?.model))
-  ) {
-    return event.payload.usage;
-  }
-  return {
-    ...event.payload.usage,
-    maxTokens:
-      normalizeCodexOAuthEffectiveContextWindowTokens(selection?.model, maxTokens) ?? maxTokens,
-  };
+  return event.payload.usage;
 }
 
 function modelSelectionForObservedContextWindow(
@@ -295,19 +279,13 @@ function modelSelectionForObservedContextWindow(
     return undefined;
   }
 
-  const oauthContext =
-    selection.contextWindowSource === "oauth" || isCodexOAuthModel(selection.model);
-  const effectiveMaxTokens = oauthContext
-    ? (normalizeCodexOAuthEffectiveContextWindowTokens(selection.model, maxTokens) ?? maxTokens)
-    : maxTokens;
-  const source = oauthContext ? "oauth" : "provider";
   if (
-    getModelSelectionContextWindowTokens(selection) === effectiveMaxTokens &&
-    selection.contextWindowSource === source
+    getModelSelectionContextWindowTokens(selection) === maxTokens &&
+    selection.contextWindowSource === "provider"
   ) {
     return undefined;
   }
-  return withModelSelectionContextWindow(selection, effectiveMaxTokens, source);
+  return withModelSelectionContextWindow(selection, maxTokens, "provider");
 }
 
 function normalizeRuntimeTurnState(
@@ -370,7 +348,6 @@ function requestKindFromCanonicalRequestType(
 export function runtimeEventToActivities(
   event: ProviderRuntimeEvent,
   taskTitle?: string,
-  modelSelection?: ModelSelection,
 ): ReadonlyArray<OrchestrationThreadActivity> {
   const maybeSequence = (() => {
     const eventWithSequence = event as ProviderRuntimeEvent & { sessionSequence?: number };
@@ -656,7 +633,7 @@ export function runtimeEventToActivities(
     }
 
     case "thread.token-usage.updated": {
-      const payload = buildContextWindowActivityPayload(event, modelSelection);
+      const payload = buildContextWindowActivityPayload(event);
       if (!payload) {
         return [];
       }
@@ -1946,7 +1923,7 @@ const make = Effect.gen(function* () {
         }
       }
 
-      const activities = runtimeEventToActivities(event, taskTitle, thread.modelSelection);
+      const activities = runtimeEventToActivities(event, taskTitle);
       yield* Effect.forEach(activities, (activity) =>
         providerCommandId(event, "thread-activity-append").pipe(
           Effect.flatMap((commandId) =>
