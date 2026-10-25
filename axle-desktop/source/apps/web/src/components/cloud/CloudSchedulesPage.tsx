@@ -30,7 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { readClerkAccountToken } from "../../account/clerkRuntime";
 import { useAccountActions } from "../../account/AccountAuthProvider";
 import { resolveCloudPublicConfig } from "../../cloud/publicConfig";
-import { scheduledTasksLimit } from "../../entitlements/gates";
+import { cloudJobsLocked, scheduledTasksLimit } from "../../entitlements/gates";
 import { resolvedEntitlements, useEntitlements } from "../../entitlements/useEntitlements";
 import { cn, randomUUID } from "../../lib/utils";
 import { formatRelativeTimeLabel, formatRelativeTimeUntilLabel } from "../../timestampFormat";
@@ -274,10 +274,26 @@ function draftValidationError(
   return null;
 }
 
-function PageShell({ children }: { readonly children: ReactNode }) {
+function PageShell({
+  children,
+  embedded = false,
+}: {
+  readonly children: ReactNode;
+  readonly embedded?: boolean;
+}) {
   return (
-    <main className="@container/cloud flex min-h-0 flex-1 flex-col overflow-hidden bg-background pt-[var(--workspace-topbar-height)] text-foreground">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border @3xl/cloud:flex-row">
+    <main
+      className={cn(
+        "@container/cloud flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground",
+        !embedded && "pt-[var(--workspace-topbar-height)]",
+      )}
+    >
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col overflow-hidden @3xl/cloud:flex-row",
+          !embedded && "border-t border-border",
+        )}
+      >
         {children}
       </div>
     </main>
@@ -890,10 +906,11 @@ function ScheduleDialog({
   );
 }
 
-export function CloudSchedulesPage() {
+export function CloudSchedulesPage({ embedded = false }: { readonly embedded?: boolean } = {}) {
   const { signIn } = useAccountActions();
   const entitlements = resolvedEntitlements(useEntitlements());
   const scheduleLimit = scheduledTasksLimit(entitlements);
+  const cloudLocked = cloudJobsLocked(entitlements);
   const client = useMemo(() => {
     const { accountApiUrl } = resolveCloudPublicConfig();
     if (accountApiUrl === null) return null;
@@ -1022,6 +1039,10 @@ export function CloudSchedulesPage() {
   }, [client, selectedId]);
 
   const openCreateFlow = useCallback(() => {
+    if (cloudLocked) {
+      openUpgradeDialog("cloud-jobs");
+      return;
+    }
     if (scheduleLimit !== null && schedules.length >= scheduleLimit) {
       openUpgradeDialog("schedules");
       return;
@@ -1029,7 +1050,7 @@ export function CloudSchedulesPage() {
     setEditing(null);
     setSubmitError(null);
     setDialogOpen(true);
-  }, [scheduleLimit, schedules.length]);
+  }, [cloudLocked, scheduleLimit, schedules.length]);
 
   const openEditFlow = useCallback(() => {
     if (selected === null) return;
@@ -1124,7 +1145,7 @@ export function CloudSchedulesPage() {
 
   if (client === null || phase === "unconfigured") {
     return (
-      <PageShell>
+      <PageShell embedded={embedded}>
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -1143,7 +1164,7 @@ export function CloudSchedulesPage() {
 
   if (phase === "signed_out") {
     return (
-      <PageShell>
+      <PageShell embedded={embedded}>
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -1176,7 +1197,7 @@ export function CloudSchedulesPage() {
   }
 
   return (
-    <PageShell>
+    <PageShell embedded={embedded}>
       <SchedulesAsideShell>
         <div className="shrink-0 border-b border-border px-4 pb-3 pt-3">
           <div className="flex items-center gap-2">
@@ -1210,6 +1231,18 @@ export function CloudSchedulesPage() {
           <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
             Runs on Axle cloud workers, independent of this computer.
           </p>
+          {cloudLocked ? (
+            <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+              Cloud schedules are included with Axle Pro.{" "}
+              <button
+                type="button"
+                className="underline underline-offset-2 transition-colors hover:text-foreground"
+                onClick={() => openUpgradeDialog("cloud-jobs")}
+              >
+                Upgrade
+              </button>
+            </p>
+          ) : null}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loadError !== null ? (
