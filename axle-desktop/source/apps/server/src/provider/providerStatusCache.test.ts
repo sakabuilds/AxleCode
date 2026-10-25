@@ -188,7 +188,7 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
     const cachedProvider = makeProvider(AXLE_DRIVER, {
       models: [
         {
-          slug: "openai-codex/gpt-5.2",
+          slug: "openai/gpt-5.2",
           name: "GPT-5.2",
           isCustom: false,
           capabilities: emptyCapabilities,
@@ -216,7 +216,7 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
     const previousProvider = makeProvider(AXLE_DRIVER, {
       models: [
         {
-          slug: "openai-codex/gpt-5.2",
+          slug: "openai/gpt-5.2",
           name: "GPT-5.2",
           isCustom: false,
           capabilities: emptyCapabilities,
@@ -232,7 +232,7 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
     const nextProvider = makeProvider(AXLE_DRIVER, {
       models: [
         {
-          slug: "openai-codex/gpt-6-astra",
+          slug: "openai/gpt-6-astra",
           name: "GPT-6 Astra",
           isCustom: false,
           capabilities: emptyCapabilities,
