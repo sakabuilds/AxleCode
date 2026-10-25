@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalFetchInEffect:off
 import Mime from "@effect/platform-node/Mime";
-import * as NodeChildProcess from "node:child_process";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -51,10 +50,6 @@ const DESKTOP_RENDERER_ORIGINS = [
   "axle://app",
   "axle-dev://app",
 ];
-const AXLE_CODEX_AUTH_ROUTE = "/api/axle/codex-auth";
-const CODEX_AUTH_STATUS_TIMEOUT_MS = 20_000;
-const CODEX_AUTH_LOGIN_TIMEOUT_MS = 15 * 60_000;
-
 export const browserApiCorsLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -106,121 +101,6 @@ const authenticateRawRouteWithScope = (
       return yield* failEnvironmentScopeRequired(scope);
     }
   });
-
-type AxleCodexAuthStatus = {
-  readonly authenticated: boolean;
-  readonly subject?: string | null;
-  readonly expires?: number | null;
-  readonly planUsageAuthorized: boolean;
-};
-
-class AxleCodexAuthCommandError extends Data.TaggedError("AxleCodexAuthCommandError")<{
-  readonly detail: string;
-  readonly cause?: unknown;
-}> {}
-
-const runAxleCodexAuthCommand = (argument: string) =>
-  Effect.tryPromise({
-    try: () =>
-      new Promise<AxleCodexAuthStatus>((resolve, reject) => {
-        const binaryPath = process.env.AXLE_BINARY_PATH?.trim() || "axle";
-        const child = NodeChildProcess.spawn(binaryPath, [argument], {
-          env: process.env,
-          windowsHide: true,
-          shell: false,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        let stdout = "";
-        let stderr = "";
-        let settled = false;
-        let timeout: ReturnType<typeof setTimeout>;
-        const timeoutMs =
-          argument === "--codex-login" ? CODEX_AUTH_LOGIN_TIMEOUT_MS : CODEX_AUTH_STATUS_TIMEOUT_MS;
-        const finish = (callback: () => void) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timeout);
-          callback();
-        };
-        timeout = setTimeout(() => {
-          child.kill();
-          finish(() => reject(new Error("ChatGPT authentication service timed out.")));
-        }, timeoutMs);
-        child.stdout.setEncoding("utf8");
-        child.stderr.setEncoding("utf8");
-        child.stdout.on("data", (chunk: string) => {
-          stdout += chunk;
-        });
-        child.stderr.on("data", (chunk: string) => {
-          stderr += chunk;
-        });
-        child.once("error", (error) => finish(() => reject(error)));
-        child.once("close", (code) => {
-          finish(() => {
-            if (code !== 0) {
-              reject(
-                new AxleCodexAuthCommandError({
-                  detail: stderr.trim() || `Axle exited with code ${code ?? "unknown"}.`,
-                }),
-              );
-              return;
-            }
-            try {
-              resolve(JSON.parse(stdout.trim()) as AxleCodexAuthStatus);
-            } catch (cause) {
-              reject(
-                new AxleCodexAuthCommandError({
-                  detail: "Axle returned invalid ChatGPT authentication status.",
-                  cause,
-                }),
-              );
-            }
-          });
-        });
-      }),
-    catch: (cause) =>
-      cause instanceof AxleCodexAuthCommandError
-        ? cause
-        : new AxleCodexAuthCommandError({
-            detail: cause instanceof Error ? cause.message : String(cause),
-            cause,
-          }),
-  });
-
-const axleCodexAuthResponse = (argument: string) =>
-  runAxleCodexAuthCommand(argument).pipe(
-    Effect.map((status) => HttpServerResponse.jsonUnsafe(status)),
-    Effect.catch((error) =>
-      Effect.succeed(HttpServerResponse.jsonUnsafe({ error: error.detail }, { status: 500 })),
-    ),
-  );
-
-export const axleCodexAuthRouteLayer = Layer.mergeAll(
-  HttpRouter.add(
-    "GET",
-    AXLE_CODEX_AUTH_ROUTE,
-    Effect.gen(function* () {
-      yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
-      return yield* axleCodexAuthResponse("--codex-auth-status");
-    }),
-  ),
-  HttpRouter.add(
-    "POST",
-    `${AXLE_CODEX_AUTH_ROUTE}/login`,
-    Effect.gen(function* () {
-      yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
-      return yield* axleCodexAuthResponse("--codex-login");
-    }),
-  ),
-  HttpRouter.add(
-    "POST",
-    `${AXLE_CODEX_AUTH_ROUTE}/logout`,
-    Effect.gen(function* () {
-      yield* authenticateRawRouteWithScope(AuthOrchestrationOperateScope);
-      return yield* axleCodexAuthResponse("--codex-logout");
-    }),
-  ),
-);
 
 const AXLE_CREDITS_ROUTE = "/api/axle/credits";
 const AXLE_USAGE_ROUTE = "/api/axle/usage";
