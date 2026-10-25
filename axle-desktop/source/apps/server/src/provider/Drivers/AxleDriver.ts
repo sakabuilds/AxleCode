@@ -25,11 +25,7 @@ import {
   type ProviderDriver,
   type ProviderInstance,
 } from "../ProviderDriver.ts";
-import {
-  makeAxleAdapter,
-  resolveAxleRuntimeContextWindow,
-  runAxleTextGeneration,
-} from "../Layers/AxleAdapter.ts";
+import { makeAxleAdapter, runAxleTextGeneration } from "../Layers/AxleAdapter.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { discoverAxleModels, type AxleModelDiscovery } from "./AxleModelCatalog.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -117,18 +113,16 @@ function parseJsonObject(value: string): Record<string, unknown> | null {
 
 export function resolveAxleTextGenerationRuntimeOptions(input: {
   readonly modelSelection: ModelSelection;
-  readonly environment: NodeJS.ProcessEnv;
 }): {
   readonly reasoningEffort?: string | undefined;
   readonly contextWindow?: string | undefined;
 } {
-  const { modelSelection, environment } = input;
+  const { modelSelection } = input;
   const reasoningEffort = getModelSelectionStringOptionValue(modelSelection, "reasoningEffort");
-  const contextWindow = resolveAxleRuntimeContextWindow(
-    modelSelection.model,
-    modelSelection,
-    environment,
-  );
+  const contextWindow =
+    modelSelection.contextWindowSource === "models.dev"
+      ? undefined
+      : getModelSelectionStringOptionValue(modelSelection, "contextWindow");
   return {
     ...(reasoningEffort ? { reasoningEffort } : {}),
     ...(contextWindow ? { contextWindow } : {}),
@@ -166,10 +160,7 @@ function makeTextGeneration(input: {
       model: modelSelection.model,
       ...(workspaceContext === "none" ? { workspaceContext } : {}),
       ...(systemPrompt ? { customInstructions: systemPrompt } : {}),
-      ...resolveAxleTextGenerationRuntimeOptions({
-        modelSelection,
-        environment: input.environment,
-      }),
+      ...resolveAxleTextGenerationRuntimeOptions({ modelSelection }),
       environment: input.environment,
     }).pipe(
       Effect.mapError(
