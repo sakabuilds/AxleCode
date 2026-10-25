@@ -18,12 +18,10 @@ describe("Axle metadata generation", () => {
       contextWindowSource: "provider" as const,
     };
 
-    expect(
-      resolveAxleTextGenerationRuntimeOptions({
-        modelSelection,
-        environment: {},
-      }),
-    ).toEqual({ reasoningEffort: "high", contextWindow: "200k" });
+    expect(resolveAxleTextGenerationRuntimeOptions({ modelSelection })).toEqual({
+      reasoningEffort: "high",
+      contextWindow: "200k",
+    });
   });
 
   it("uses an explicit metadata prompt instead of asking the main agent to name itself", () => {
