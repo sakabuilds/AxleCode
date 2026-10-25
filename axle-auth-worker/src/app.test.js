@@ -87,6 +87,55 @@ test("admin analytics endpoint requires its dedicated bearer secret", async () =
   });
 });
 
+test("Figma token exchange authenticates with Basic credentials", async () => {
+  const store = makeKv();
+  await store.put(
+    "oauth:test-figma-state",
+    JSON.stringify({
+      userId: "user_test",
+      pluginId: "figma",
+      redirectUri: "https://auth.example/v1/plugins/figma/callback",
+      verifier: "verifier_test",
+    }),
+  );
+  const env = {
+    PLUGIN_STORE: store,
+    FIGMA_CLIENT_ID: "figma-client-id",
+    FIGMA_CLIENT_SECRET: "figma-client-secret",
+  };
+  const originalFetch = globalThis.fetch;
+  let captured = null;
+  globalThis.fetch = async (url, init) => {
+    captured = { url: String(url), init };
+    return Response.json(
+      { error: "invalid_grant", error_description: "Authorization code expired." },
+      { status: 400 },
+    );
+  };
+  try {
+    const response = await handleWrappedRequest(
+      new Request(
+        "https://auth.example/v1/plugins/figma/callback?code=code-12345678&state=test-figma-state",
+      ),
+      env,
+    );
+    assert.equal(response.status, 502);
+    assert.equal(captured.url, "https://api.figma.com/v1/oauth/token");
+    assert.equal(
+      captured.init.headers.Authorization,
+      `Basic ${btoa("figma-client-id:figma-client-secret")}`,
+    );
+    const body = new URLSearchParams(captured.init.body);
+    assert.equal(body.get("code"), "code-12345678");
+    assert.equal(body.get("code_verifier"), "verifier_test");
+    assert.equal(body.get("redirect_uri"), "https://auth.example/v1/plugins/figma/callback");
+    assert.equal(body.get("client_id"), null);
+    assert.equal(body.get("client_secret"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("OAuth callback keeps the provider token-exchange error visible", async () => {
   const store = makeKv();
   await store.put(
