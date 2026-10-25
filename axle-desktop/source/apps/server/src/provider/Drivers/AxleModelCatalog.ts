@@ -7,19 +7,11 @@ import {
   type ServerProviderModel,
 } from "@axle/contracts";
 import { createModelCapabilities } from "@axle/shared/model";
-import * as NodeChildProcess from "node:child_process";
-import * as NodeFS from "node:fs";
-import * as NodePath from "node:path";
-import {
-  isCodexOAuthModel,
-  normalizeCodexOAuthEffectiveContextWindowTokens,
-  readCodexOAuthContextWindow,
-} from "../codexContextWindow.ts";
 
 type FetchImplementation = typeof globalThis.fetch;
 
 type ProviderDefinition = {
-  readonly env?:
+  readonly env:
     | "OPENAI_API_KEY"
     | "ANTHROPIC_API_KEY"
     | "GEMINI_API_KEY"
@@ -33,7 +25,6 @@ type ProviderDefinition = {
     | "XAI_API_KEY"
     | "AXLE_API_KEY";
   readonly prefix:
-    | "openai-codex"
     | "openai"
     | "anthropic"
     | "google"
@@ -47,7 +38,6 @@ type ProviderDefinition = {
     | "xai"
     | "axle";
   readonly label:
-    | "OpenAI Codex"
     | "OpenAI"
     | "Claude"
     | "Google"
@@ -67,60 +57,6 @@ type ProviderDefinition = {
     modelsDev?: ModelsDevCatalog,
   ) => Promise<ReadonlyArray<RemoteModel>>;
 };
-
-function codexAuthDirectory(environment: NodeJS.ProcessEnv): string | undefined {
-  const environmentHome = environment.USERPROFILE?.trim() || environment.HOME?.trim();
-  return (
-    environment.AXLE_CODEX_HOME?.trim() ||
-    (environmentHome ? NodePath.join(environmentHome, ".axle", "codex-auth") : undefined)
-  );
-}
-
-function readCodexOAuthCredentials(environment: NodeJS.ProcessEnv):
-  | {
-      readonly accessToken: string;
-      readonly expiresAt: number;
-    }
-  | undefined {
-  const authDirectory = codexAuthDirectory(environment);
-  if (!authDirectory) return undefined;
-  try {
-    const credentials: unknown = JSON.parse(
-      NodeFS.readFileSync(NodePath.join(authDirectory, "auth.json"), "utf8"),
-    );
-    if (
-      isRecord(credentials) &&
-      credentials.auth_mode === "siwc" &&
-      isRecord(credentials.tokens) &&
-      nonEmptyString(credentials.tokens.access_token) &&
-      nonEmptyString(credentials.tokens.refresh_token) &&
-      nonEmptyString(credentials.tokens.scope) &&
-      nonEmptyString(credentials.tokens.client_id) &&
-      typeof credentials.tokens.expires === "number" &&
-      Number.isSafeInteger(credentials.tokens.expires)
-    ) {
-      const scopes = new Set(nonEmptyString(credentials.tokens.scope)!.split(/\s+/u));
-      if (
-        !["offline_access", "resource.invoke", "chatgpt.tokens.use.direct"].every((scope) =>
-          scopes.has(scope),
-        )
-      ) {
-        return undefined;
-      }
-      return {
-        accessToken: nonEmptyString(credentials.tokens.access_token)!,
-        expiresAt: credentials.tokens.expires,
-      };
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function hasCodexOAuthAuthentication(environment: NodeJS.ProcessEnv): boolean {
-  return Boolean(readCodexOAuthCredentials(environment));
-}
 
 type RemoteReasoningEffort = {
   readonly id: string;
@@ -156,47 +92,6 @@ export type AxleModelDiscovery = {
 type ModelsDevCatalog = Readonly<Record<string, Readonly<Record<string, Record<string, unknown>>>>>;
 
 const REQUEST_TIMEOUT_MS = 12_000;
-const CODEX_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
-
-const CHATGPT_CODEX_MODELS = [
-  { id: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
-  { id: "gpt-6-astra", name: "GPT-6 Astra" },
-  { id: "gpt-6-sol", name: "GPT-6 Sol" },
-  { id: "gpt-6-luna", name: "GPT-6 Luna" },
-  { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
-  { id: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
-  { id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
-] as const satisfies ReadonlyArray<RemoteModel>;
-const CHATGPT_CODEX_MODEL_ORDER = new Map(
-  CHATGPT_CODEX_MODELS.map((model, index) => [`openai-codex/${model.id}`, index] as const),
-);
-
-async function refreshCodexOAuthSession(environment: NodeJS.ProcessEnv): Promise<void> {
-  const binaryPath = environment.AXLE_BINARY_PATH?.trim() || "axle";
-  await new Promise<void>((resolve, reject) => {
-    const child = NodeChildProcess.spawn(binaryPath, ["--codex-auth-refresh"], {
-      env: environment,
-      windowsHide: true,
-      shell: false,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-    let stderr = "";
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
-    child.once("error", reject);
-    child.once("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(
-          new Error(stderr.trim() || `Axle auth refresh exited with code ${code ?? "unknown"}.`),
-        );
-      }
-    });
-  });
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -544,97 +439,6 @@ function mergeRemoteModelMetadata(
   };
 }
 
-function applyCodexOAuthContextPolicy(
-  model: RemoteModel,
-  environment: NodeJS.ProcessEnv,
-): RemoteModel {
-  if (!isCodexOAuthModel(`openai-codex/${model.id}`)) return model;
-
-  const modelSlug = `openai-codex/${model.id}`;
-  const oauthContext = readCodexOAuthContextWindow(modelSlug, environment);
-  const effectiveDefaultContextWindowTokens = oauthContext?.effectiveContextWindowTokens;
-  const maxEffectiveContextWindowTokens = oauthContext?.maxEffectiveContextWindowTokens;
-  const contextWindows = (model.contextWindows ?? [])
-    .map((contextWindow) => {
-      const tokens = normalizeCodexOAuthEffectiveContextWindowTokens(
-        modelSlug,
-        contextWindow.tokens,
-        environment,
-      );
-      return tokens === undefined
-        ? undefined
-        : {
-            ...contextWindow,
-            tokens,
-            id: canonicalContextWindowId(tokens),
-            ...(contextWindow.tokens !== tokens
-              ? { label: humanizeContextWindow(tokens) }
-              : contextWindow.label
-                ? { label: contextWindow.label }
-                : {}),
-          };
-    })
-    .filter((contextWindow): contextWindow is RemoteContextWindow => contextWindow !== undefined)
-    .filter(
-      (contextWindow, index, all) =>
-        all.findIndex((candidate) => candidate.tokens === contextWindow.tokens) === index,
-    );
-  if (maxEffectiveContextWindowTokens !== undefined) {
-    const selectableSizes = [
-      64_000,
-      128_000,
-      256_000,
-      512_000,
-      1_000_000,
-      maxEffectiveContextWindowTokens,
-    ].filter((tokens) => tokens <= maxEffectiveContextWindowTokens);
-    for (const tokens of selectableSizes) {
-      if (contextWindows.some((contextWindow) => contextWindow.tokens === tokens)) continue;
-      contextWindows.push({
-        id: canonicalContextWindowId(tokens),
-        tokens,
-        label: humanizeContextWindow(tokens),
-      });
-    }
-    contextWindows.sort((left, right) => left.tokens - right.tokens);
-  }
-  if (
-    effectiveDefaultContextWindowTokens !== undefined &&
-    !contextWindows.some(
-      (contextWindow) => contextWindow.tokens === effectiveDefaultContextWindowTokens,
-    )
-  ) {
-    contextWindows.push({
-      id: canonicalContextWindowId(effectiveDefaultContextWindowTokens),
-      tokens: effectiveDefaultContextWindowTokens,
-      label: humanizeContextWindow(effectiveDefaultContextWindowTokens),
-    });
-  }
-  const effectiveContextWindows =
-    contextWindows.length > 0
-      ? contextWindows
-      : [
-          {
-            id: canonicalContextWindowId(effectiveDefaultContextWindowTokens ?? 258_400),
-            tokens: effectiveDefaultContextWindowTokens ?? 258_400,
-            label: humanizeContextWindow(effectiveDefaultContextWindowTokens ?? 258_400),
-          },
-        ];
-  const requestedDefault = effectiveDefaultContextWindowTokens ?? model.defaultContextWindowTokens;
-  const defaultContextWindowTokens = effectiveContextWindows.some(
-    (contextWindow) => contextWindow.tokens === requestedDefault,
-  )
-    ? requestedDefault
-    : effectiveContextWindows.at(-1)?.tokens;
-
-  return {
-    ...model,
-    contextWindows: effectiveContextWindows,
-    ...(defaultContextWindowTokens !== undefined ? { defaultContextWindowTokens } : {}),
-    contextWindowSource: "oauth",
-  };
-}
-
 async function fetchJson(
   fetchImplementation: FetchImplementation,
   url: string,
@@ -976,52 +780,6 @@ async function loadGoogleModels(
   );
 }
 
-export async function loadCodexModels(
-  _apiKey: string,
-  fetchImplementation: FetchImplementation,
-  environment: NodeJS.ProcessEnv,
-  _modelsDev?: ModelsDevCatalog,
-): Promise<ReadonlyArray<RemoteModel>> {
-  let credentials = readCodexOAuthCredentials(environment);
-  if (!credentials) return [];
-  if (credentials.expiresAt <= Date.now() + 5 * 60 * 1000) {
-    await refreshCodexOAuthSession(environment);
-    credentials = readCodexOAuthCredentials(environment);
-    if (!credentials) {
-      throw new Error("The ChatGPT session could not be refreshed for model discovery");
-    }
-  }
-
-  try {
-    const payload = await fetchJson(fetchImplementation, CODEX_MODELS_ENDPOINT, {
-      headers: { Authorization: `Bearer ${credentials.accessToken}` },
-    });
-    if (!Array.isArray(payload.models)) return CHATGPT_CODEX_MODELS;
-    const metadataByModelId = new Map(
-      payload.models.flatMap((entry): ReadonlyArray<readonly [string, Record<string, unknown>]> => {
-        if (!isRecord(entry)) return [];
-        const id =
-          nonEmptyString(entry.slug) ?? nonEmptyString(entry.id) ?? nonEmptyString(entry.model);
-        return id ? [[id, entry]] : [];
-      }),
-    );
-    return CHATGPT_CODEX_MODELS.map((model) => {
-      const metadata = metadataByModelId.get(model.id);
-      if (!metadata) return model;
-      const enriched = remoteModelFromRecord({ ...metadata, id: model.id });
-      return enriched ? { ...enriched, name: model.name } : model;
-    });
-  } catch {
-    return CHATGPT_CODEX_MODELS;
-  }
-}
-export type CodexModelLoader = (
-  environment: NodeJS.ProcessEnv,
-) => Promise<ReadonlyArray<RemoteModel>>;
-
-const loadCodexModelsForDiscovery: CodexModelLoader = (environment) =>
-  loadCodexModels("authenticated", globalThis.fetch, environment);
-
 const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
   // Axle's own provider. It is configured by the app, not by the user: the
   // gateway, the model catalog, and the free daily credits are all part of the
@@ -1039,11 +797,6 @@ const PROVIDERS: ReadonlyArray<ProviderDefinition> = [
         modelsDev,
         "axle",
       ),
-  },
-  {
-    prefix: "openai-codex",
-    label: "OpenAI Codex",
-    load: loadCodexModels,
   },
   {
     env: "OPENAI_API_KEY",
@@ -1183,9 +936,6 @@ function isProviderAvailable(
   if (provider.prefix === "ollama-cloud") {
     return environment.OLLAMA_CLOUD_CONFIGURED === "true";
   }
-  if (provider.env === undefined) {
-    return hasCodexOAuthAuthentication(environment);
-  }
   if (provider.prefix === "axle") {
     return true;
   }
@@ -1194,16 +944,13 @@ function isProviderAvailable(
 
 /**
  * The credential a provider authenticates its probe with: the user's own
- * variable when they set one, Axle's built-in token for the preconfigured
- * provider, and the OAuth session for Codex.
+ * variable when they set one, or Axle's built-in token for the preconfigured
+ * provider.
  */
 function providerCredential(
   provider: ProviderDefinition,
   environment: NodeJS.ProcessEnv,
 ): string | undefined {
-  if (provider.env === undefined) {
-    return "authenticated";
-  }
   const configured = environment[provider.env]?.trim();
   if (configured) {
     return configured;
@@ -1214,7 +961,6 @@ function providerCredential(
 export async function discoverAxleModels(
   environment: NodeJS.ProcessEnv,
   fetchImplementation: FetchImplementation = globalThis.fetch,
-  codexModelLoader: CodexModelLoader = loadCodexModelsForDiscovery,
 ): Promise<AxleModelDiscovery> {
   const custom = customProviders(environment);
   const configured: ReadonlyArray<{
@@ -1257,22 +1003,12 @@ export async function discoverAxleModels(
   const results = await Promise.all(
     configured.map(async ({ provider, apiKey }) => {
       try {
-        const loadedRemoteModels =
-          provider.prefix === "openai-codex"
-            ? await codexModelLoader(environment)
-            : await provider.load(apiKey, fetchImplementation, environment, modelsDev);
-        const remoteModels =
-          provider.prefix === "openai-codex"
-            ? loadedRemoteModels
-                .map((model) =>
-                  mergeRemoteModelMetadata(
-                    model,
-                    modelsDevModel(modelsDev, "openai-codex", model.id) ??
-                      modelsDevModel(modelsDev, "openai", model.id),
-                  ),
-                )
-                .map((model) => applyCodexOAuthContextPolicy(model, environment))
-            : loadedRemoteModels;
+        const remoteModels = await provider.load(
+          apiKey,
+          fetchImplementation,
+          environment,
+          modelsDev,
+        );
         const seen = new Set<string>();
         const models = remoteModels.flatMap((remoteModel): ReadonlyArray<ServerProviderModel> => {
           const id = remoteModel.id.trim().replace(/^models\//u, "");
@@ -1377,15 +1113,7 @@ export async function discoverAxleModels(
       const providerDelta =
         (providerOrder.get(left.subProvider ?? "") ?? Number.MAX_SAFE_INTEGER) -
         (providerOrder.get(right.subProvider ?? "") ?? Number.MAX_SAFE_INTEGER);
-      const codexModelDelta =
-        (CHATGPT_CODEX_MODEL_ORDER.get(left.slug) ?? Number.POSITIVE_INFINITY) -
-        (CHATGPT_CODEX_MODEL_ORDER.get(right.slug) ?? Number.POSITIVE_INFINITY);
-      return (
-        providerDelta ||
-        (Number.isFinite(codexModelDelta)
-          ? codexModelDelta
-          : left.name.localeCompare(right.name, undefined, { numeric: true }))
-      );
+      return providerDelta || left.name.localeCompare(right.name, undefined, { numeric: true });
     })
     .map((model, index) => (index === 0 ? { ...model, isDefault: true } : model));
 
