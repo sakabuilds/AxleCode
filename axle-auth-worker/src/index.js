@@ -1188,6 +1188,7 @@ export {
   isPkceVerifier,
   isPluginId,
   PLUGIN_IDS,
+  PROVIDERS,
   requireStore,
   sha256,
   randomToken,
