@@ -136,6 +136,69 @@ test("Figma token exchange authenticates with Basic credentials", async () => {
   }
 });
 
+test("Slack callback joins public channels after connecting", async () => {
+  const store = makeKv();
+  await store.put(
+    "oauth:test-slack-state",
+    JSON.stringify({
+      userId: "user_test",
+      pluginId: "slack",
+      redirectUri: "https://auth.example/v1/plugins/slack/callback",
+      verifier: null,
+    }),
+  );
+  const env = {
+    PLUGIN_STORE: store,
+    SLACK_CLIENT_ID: "slack-client-id",
+    SLACK_CLIENT_SECRET: "slack-client-secret",
+    PLUGIN_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32).toString("base64url"),
+  };
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const value = String(url);
+    calls.push({ url: value, init });
+    if (value === "https://slack.com/api/oauth.v2.access") {
+      return Response.json({
+        ok: true,
+        access_token: "xoxb-test-token",
+        token_type: "bot",
+        team: { id: "T1", name: "Test" },
+      });
+    }
+    if (value.startsWith("https://slack.com/api/conversations.list")) {
+      return Response.json({
+        ok: true,
+        channels: [
+          { id: "C1", is_member: false },
+          { id: "C2", is_member: true },
+        ],
+        response_metadata: { next_cursor: "" },
+      });
+    }
+    if (value === "https://slack.com/api/conversations.join") {
+      return Response.json({ ok: true });
+    }
+    throw new Error(`Unexpected fetch: ${value}`);
+  };
+  try {
+    const response = await handleWrappedRequest(
+      new Request(
+        "https://auth.example/v1/plugins/slack/callback?code=code-12345678&state=test-slack-state",
+      ),
+      env,
+    );
+    assert.equal(response.status, 200);
+    const joins = calls.filter(
+      (call) => call.url === "https://slack.com/api/conversations.join",
+    );
+    assert.equal(joins.length, 1);
+    assert.deepEqual(JSON.parse(joins[0].init.body), { channel: "C1" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("OAuth callback keeps the provider token-exchange error visible", async () => {
   const store = makeKv();
   await store.put(
