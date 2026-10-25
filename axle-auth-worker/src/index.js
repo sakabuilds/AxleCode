@@ -22,7 +22,7 @@ const AUTH_WAIT_MS = 55_000;
 const AUTH_POLL_MS = 750;
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
 const MCP_PROTOCOL_VERSION = "2025-06-18";
-const PLUGIN_IDS = ["github", "jira", "notion", "gmail", "outlook", "slack", "sentry", "figma"];
+const PLUGIN_IDS = ["github", "jira", "notion", "gmail", "slack", "sentry", "figma"];
 const jwksCache = new Map();
 
 const PROVIDERS = {
@@ -33,15 +33,6 @@ const PROVIDERS = {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     tokenUrl: "https://oauth2.googleapis.com/token",
     scopes: ["https://www.googleapis.com/auth/gmail.modify", "https://www.googleapis.com/auth/gmail.send"],
-    pkce: true,
-  },
-  outlook: {
-    label: "Outlook",
-    clientId: "OUTLOOK_CLIENT_ID",
-    clientSecret: "OUTLOOK_CLIENT_SECRET",
-    authorizeUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-    tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-    scopes: ["offline_access", "User.Read", "Mail.ReadWrite", "Mail.Send"],
     pkce: true,
   },
   slack: {
@@ -79,6 +70,8 @@ const PROVIDERS = {
     tokenUrl: "https://sentry.io/oauth/token/",
     scopes: ["org:read", "project:read", "event:read", "event:write"],
     pkce: true,
+    // Sentry's public OAuth clients authenticate with PKCE and have no secret.
+    publicClient: true,
   },
   figma: {
     label: "Figma",
@@ -128,7 +121,9 @@ function requireProviderConfig(env, pluginId) {
   const clientId = env[provider.clientId]?.trim();
   const clientSecret = env[provider.clientSecret]?.trim();
   if (!clientId) throw new Error(`${provider.clientId} is not configured.`);
-  if (!clientSecret) throw new Error(`${provider.clientSecret} is not configured.`);
+  if (!clientSecret && !provider.publicClient) {
+    throw new Error(`${provider.clientSecret} is not configured.`);
+  }
   return { ...provider, clientId, clientSecret };
 }
 
@@ -617,9 +612,6 @@ async function startPluginAuthorization(request, env, session, pluginId) {
     url.searchParams.set("scope", provider.scopes.join(" "));
     url.searchParams.set("access_type", "offline");
     url.searchParams.set("prompt", "consent");
-  } else if (pluginId === "outlook") {
-    url.searchParams.set("scope", provider.scopes.join(" "));
-    url.searchParams.set("response_mode", "query");
   } else if (pluginId === "slack") {
     url.searchParams.set("scope", provider.scopes.join(","));
   } else if (pluginId === "jira") {
@@ -668,10 +660,10 @@ async function exchangeProviderCode(env, pluginId, provider, code, redirectUri, 
     const fields = {
       grant_type: "authorization_code",
       client_id: provider.clientId,
-      client_secret: provider.clientSecret,
       code,
       redirect_uri: redirectUri,
     };
+    if (provider.clientSecret) fields.client_secret = provider.clientSecret;
     if (verifier) fields.code_verifier = verifier;
     response = await fetch(provider.tokenUrl, {
       method: "POST",
@@ -776,10 +768,16 @@ async function refreshProviderToken(env, pluginId, connection) {
       body: JSON.stringify({ grant_type: "refresh_token", client_id: provider.clientId, client_secret: provider.clientSecret, refresh_token: connection.refreshToken }),
     });
   } else {
+    const fields = {
+      grant_type: "refresh_token",
+      client_id: provider.clientId,
+      refresh_token: connection.refreshToken,
+    };
+    if (provider.clientSecret) fields.client_secret = provider.clientSecret;
     response = await fetch(provider.tokenUrl, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "refresh_token", client_id: provider.clientId, client_secret: provider.clientSecret, refresh_token: connection.refreshToken }),
+      body: new URLSearchParams(fields),
     });
   }
   const value = await response.json().catch(() => ({}));
@@ -947,18 +945,6 @@ async function executePluginAction(env, session, pluginId, action, input) {
     if (action === "create_draft") return apiJson(`${base}/drafts`, connection, { method: "POST", body: JSON.stringify({ message: { raw: rfc822Raw(input) } }) });
   }
 
-  if (pluginId === "outlook") {
-    const base = "https://graph.microsoft.com/v1.0/me";
-    if (action === "list_messages") {
-      const query = inputString(input, "query", false);
-      const suffix = query ? `&$search=${encodeURIComponent(`\"${query.replaceAll('"', '')}\"`)}` : "";
-      return apiJson(`${base}/messages?$top=${inputNumber(input, "limit", 25, 1, 100)}&$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview${suffix}`, connection, {}, query ? { ConsistencyLevel: "eventual" } : {});
-    }
-    if (action === "get_message") return apiJson(`${base}/messages/${encodeURIComponent(inputString(input, "messageId"))}`, connection);
-    if (action === "send_email") return apiJson(`${base}/sendMail`, connection, { method: "POST", body: JSON.stringify({ message: { subject: inputString(input, "subject"), body: { contentType: "Text", content: inputString(input, "body") }, toRecipients: [{ emailAddress: { address: inputString(input, "to") } }] }, saveToSentItems: true }) });
-    if (action === "create_draft") return apiJson(`${base}/messages`, connection, { method: "POST", body: JSON.stringify({ subject: inputString(input, "subject"), body: { contentType: "Text", content: inputString(input, "body") }, toRecipients: [{ emailAddress: { address: inputString(input, "to") } }] }) });
-  }
-
   if (pluginId === "slack") {
     const base = "https://slack.com/api";
     if (action === "list_channels") return apiJson(`${base}/conversations.list?limit=${inputNumber(input, "limit", 100, 1, 200)}&types=public_channel,private_channel`, connection);
@@ -1021,7 +1007,6 @@ const ACTIONS = {
   jira: ["search_issues", "get_issue", "create_issue", "update_issue"],
   notion: ["search", "get_page", "create_page", "update_page"],
   gmail: ["search_messages", "get_message", "send_email", "create_draft"],
-  outlook: ["list_messages", "get_message", "send_email", "create_draft"],
   slack: ["list_channels", "read_channel", "send_message"],
   sentry: ["list_issues", "get_issue", "update_issue"],
   figma: ["get_file", "get_comments", "post_comment"],
@@ -1108,7 +1093,8 @@ export async function handleRequest(request, env) {
     const providerClientSecretsConfigured = Object.fromEntries(
       Object.entries(PROVIDERS).map(([pluginId, provider]) => [
         pluginId,
-        Boolean(env[provider.clientSecret]?.trim()),
+        Boolean(env[provider.clientSecret]?.trim()) ||
+          Boolean(provider.publicClient && env[provider.clientId]?.trim()),
       ]),
     );
     return json({
