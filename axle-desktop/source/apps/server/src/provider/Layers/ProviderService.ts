@@ -70,10 +70,6 @@ import {
   sameModelSelectionModel,
   withModelSelectionContextWindow,
 } from "../modelContextStability.ts";
-import {
-  isCodexOAuthModel,
-  normalizeCodexOAuthEffectiveContextWindowTokens,
-} from "../codexContextWindow.ts";
 const isModelSelection = Schema.is(ModelSelection);
 
 interface PendingTurnLatency {
@@ -488,17 +484,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         if (observedContextWindow !== undefined && observedContextWindow > 0) {
           const persistedSelection = readPersistedModelSelection(binding.runtimePayload);
           const selectedModel = persistedSelection?.model;
-          const oauthContext =
-            isCodexOAuthModel(selectedModel) ||
-            (isRuntimePayloadRecord(binding.runtimePayload) &&
-              binding.runtimePayload.contextWindowSource === "oauth");
-          const effectiveContextWindow = oauthContext
-            ? (normalizeCodexOAuthEffectiveContextWindowTokens(
-                selectedModel,
-                observedContextWindow,
-              ) ?? observedContextWindow)
-            : observedContextWindow;
-          const contextSource = oauthContext ? "oauth" : "provider";
+          const effectiveContextWindow = observedContextWindow;
+          const contextSource = "provider";
           const stabilizedSelection = persistedSelection
             ? withModelSelectionContextWindow(
                 persistedSelection,
