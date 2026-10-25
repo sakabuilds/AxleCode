@@ -1,6 +1,6 @@
 # Axle plugin auth worker
 
-This Worker owns persistent per-installation plugin authorization for Axle Desktop. Composio is not used. GitHub keeps Axle's existing native desktop OAuth flow; Gmail, Outlook, Slack, Jira, Notion, Sentry, and Figma use their provider OAuth flows directly through this Worker. Axle account sign-in is not required to create a plugin session or connect a provider; each provider still requires its own authorization.
+This Worker owns persistent per-installation plugin authorization for Axle Desktop. Composio is not used. GitHub keeps Axle's existing native desktop OAuth flow; Gmail, Slack, Jira, Notion, Sentry, and Figma use their provider OAuth flows directly through this Worker. Axle account sign-in is not required to create a plugin session or connect a provider; each provider still requires its own authorization.
 
 The desktop renderer receives an opaque, encrypted Axle plugin-session token. When no Axle account session exists, the Worker issues an anonymous session scoped to a stable, random installation ID; session creation and validation are stateless and do not use Cloudflare KV. Provider access/refresh tokens remain encrypted at rest in Cloudflare KV and are never returned to the renderer.
 
@@ -62,7 +62,6 @@ Configure each provider application to allow the callback on the deployed Worker
 ```text
 Google sign-in: https://axle-auth.axle-download-worker.workers.dev/v1/auth/callback/google
 Gmail:   https://axle-auth.axle-download-worker.workers.dev/v1/plugins/gmail/callback
-Outlook: https://axle-auth.axle-download-worker.workers.dev/v1/plugins/outlook/callback
 Slack:   https://axle-auth.axle-download-worker.workers.dev/v1/plugins/slack/callback
 Jira:    https://axle-auth.axle-download-worker.workers.dev/v1/plugins/jira/callback
 Notion:  https://axle-auth.axle-download-worker.workers.dev/v1/plugins/notion/callback
