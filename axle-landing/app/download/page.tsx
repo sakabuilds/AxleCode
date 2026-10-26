@@ -69,7 +69,7 @@ export default function DownloadPage() {
           <Reveal>
             <div className="mt-10 flex flex-col gap-5 border-t border-white/[0.08] pt-7 text-sm text-mute sm:flex-row sm:items-center sm:justify-between">
               <p>Looking for another build or release notes?</p>
-              <a href={SITE.releases} className="inline-flex items-center gap-2 text-paper underline decoration-white/20 underline-offset-4 transition-colors duration-[400ms] hover:decoration-white/70" target="_blank" rel="noopener noreferrer">Browse GitHub releases <ArrowUpRight size={15} /></a>
+              <a href="/changelog" className="inline-flex items-center gap-2 text-paper underline decoration-white/20 underline-offset-4 transition-colors duration-[400ms] hover:decoration-white/70">Read release notes <ArrowUpRight size={15} /></a>
             </div>
           </Reveal>
 
