@@ -5,7 +5,6 @@ import {
   ArrowUpRight,
   BookOpen,
   ChevronRight,
-  Code2,
   Folder,
   KeyRound,
   ShieldCheck,
@@ -73,12 +72,6 @@ export default function DocsPage() {
               <DocsNavigation />
             </div>
           </details>
-          <a
-            className="mt-8 hidden items-center gap-2 border-t border-white/10 pt-5 text-xs text-mute lg:flex"
-            href="https://github.com/axle-ai-code/Axle"
-          >
-            <Code2 size={14} /> View source <ArrowUpRight size={12} />
-          </a>
         </aside>
         <article className="min-w-0 space-y-12">
           <header id="overview" className="scroll-mt-32">
@@ -509,12 +502,6 @@ export default function DocsPage() {
                 'allowed_tools = ["read", "grep", "find", "ls"]',
               ]}
             />
-            <a
-              href="https://github.com/axle-ai-code/Axle/blob/main/docs/axle-configuration.md"
-              className="inline-flex items-center gap-2 text-sm text-paper"
-            >
-              Full runtime configuration <ArrowUpRight size={15} />
-            </a>
           </DocSection>
           <DocSection
             id="troubleshooting"
@@ -550,10 +537,10 @@ export default function DocsPage() {
             <div className="mt-8 border-t border-white/10 pt-7">
               <p className="text-sm text-paper">Still need a hand?</p>
               <a
-                href="https://github.com/axle-ai-code/Axle/issues"
+                href="/company#contact"
                 className="mt-3 inline-flex items-center gap-2 text-xs text-mute"
               >
-                Open an issue with the error and steps to reproduce{" "}
+                Contact us with the error and steps to reproduce{" "}
                 <ArrowUpRight size={14} />
               </a>
             </div>
@@ -564,10 +551,10 @@ export default function DocsPage() {
           <div className="mt-9 border-t border-white/10 pt-5">
             <p className="text-[11px] text-mute">Something unclear?</p>
             <a
-              href="https://github.com/axle-ai-code/Axle/issues"
+              href="/company#contact"
               className="mt-3 inline-flex items-center gap-2 text-[11px]"
             >
-              Suggest an edit <ArrowUpRight size={12} />
+              Send feedback <ArrowUpRight size={12} />
             </a>
           </div>
         </aside>

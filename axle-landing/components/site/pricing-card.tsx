@@ -53,7 +53,7 @@ const PLANS = [
       "Everything in Pro",
       "4,000 Axle credits every month",
       "Up to 100 scheduled tasks",
-      "More concurrent cloud jobs",
+      "More concurrent cloud schedules",
     ],
   },
   {
@@ -69,7 +69,7 @@ const PLANS = [
       "Everything in Pro+",
       "10,000 Axle credits every month",
       "Up to 200 scheduled tasks",
-      "The highest cloud-job concurrency",
+      "The highest cloud-schedule concurrency",
     ],
   },
 ] as const;
