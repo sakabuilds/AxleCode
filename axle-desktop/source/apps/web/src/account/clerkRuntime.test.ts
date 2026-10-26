@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { claimClerkDesktopSignIn } from "./clerkRuntime";
+import {
+  claimClerkDesktopSignIn,
+  clerkProviderAuthUrl,
+  fetchSignInProviders,
+} from "./clerkRuntime";
 
-const originalFetch = globalThis.fetch;
 const STATE = "state_1234567890123456";
 
 afterEach(() => {
-  vi.stubGlobal("fetch", originalFetch);
+  vi.unstubAllGlobals();
 });
 
 describe("claimClerkDesktopSignIn", () => {
@@ -72,5 +75,68 @@ describe("claimClerkDesktopSignIn", () => {
       ),
     );
     expect(await claimClerkDesktopSignIn(STATE)).toBeNull();
+  });
+});
+
+describe("clerkProviderAuthUrl", () => {
+  it("starts the chosen provider directly with the desktop callback", () => {
+    vi.stubGlobal("window", { location: { protocol: "axle:", host: "app" } });
+
+    const url = new URL(clerkProviderAuthUrl(STATE, "github"));
+
+    expect(url.pathname).toBe("/v1/auth/start");
+    expect(url.searchParams.get("provider")).toBe("github");
+    expect(url.searchParams.get("state")).toBe(STATE);
+    expect(url.searchParams.get("redirect_uri")).toBe("axle://app/clerk-callback");
+  });
+});
+
+describe("fetchSignInProviders", () => {
+  it("returns the providers the worker can complete", async () => {
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            providers: [
+              { id: "google", label: "Google" },
+              { id: "github", label: "GitHub" },
+            ],
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await fetchSignInProviders()).toEqual([
+      { id: "google", label: "Google" },
+      { id: "github", label: "GitHub" },
+    ]);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/auth/providers");
+  });
+
+  it("drops malformed provider entries", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ providers: [{ id: "google", label: "Google" }, { id: 7 }, null] }),
+            { status: 200 },
+          ),
+      ),
+    );
+
+    expect(await fetchSignInProviders()).toEqual([{ id: "google", label: "Google" }]);
+  });
+
+  it("returns nothing when the worker is unreachable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("network down");
+      }),
+    );
+
+    expect(await fetchSignInProviders()).toEqual([]);
   });
 });

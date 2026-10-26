@@ -407,15 +407,11 @@ function configuredProviders(env) {
 }
 
 /**
- * Providers offered on the sign-in pages. Google is the method Axle ships
- * with, so once it is configured the pages show it alone. If it is not
- * configured, the remaining providers are offered rather than leaving users
- * with no way to reach their account.
+ * Providers offered on the sign-in pages. Every configured provider is listed
+ * so desktop sign-in can offer both GitHub and Google.
  */
 function signInProviders(env) {
-  const configured = configuredProviders(env);
-  const google = configured.filter((provider) => provider.id === "google");
-  return google.length > 0 ? google : configured;
+  return configuredProviders(env);
 }
 
 /** Build the provider consent URL; shared by sign-in and account linking. */
